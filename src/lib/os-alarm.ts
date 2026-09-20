@@ -69,11 +69,10 @@ async function resolveRingingAlarmId(): Promise<string | null> {
   return loadNativeAlarmId();
 }
 
+/** System swipe-to-stop only (no secondary Sit button — was clunky/inconsistent on iOS). */
 const iosGate = {
   alertTitle: ALARM_TITLE,
-  alertActionMode: 'openAppOnly' as const,
-  secondaryButtonTitle: 'Sit',
-  secondaryButtonBehavior: 'openApp' as const,
+  alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   metadata: { source: 'quiett-home' },
 };
@@ -81,9 +80,7 @@ const iosGate = {
 /** Carriers / bail one-shots — no rescheduleImmediate cascade. */
 const bailIosGate = {
   alertTitle: ALARM_TITLE,
-  alertActionMode: 'openAppOnly' as const,
-  secondaryButtonTitle: 'Sit',
-  secondaryButtonBehavior: 'openApp' as const,
+  alertActionMode: 'default' as const,
   stopIntentBehavior: 'openApp' as const,
   metadata: { source: 'quiett-bail' },
 };
@@ -91,8 +88,7 @@ const bailIosGate = {
 const androidGate = {
   alertTitle: ALARM_TITLE,
   alertBody: 'Sit to begin your morning',
-  alertActionMode: 'openAppOnly' as const,
-  secondaryButtonTitle: 'Sit',
+  alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   launchUri: 'quiett://session',
   maxRingDurationSeconds: 0,
@@ -462,6 +458,30 @@ async function armTimerBackup(alarmId: string, delaySeconds: number): Promise<bo
     console.warn('[quiett os-alarm] timer backup failed', delaySeconds, e);
     return false;
   }
+}
+
+/**
+ * Foreground dead-man while meditating: keep a custom-sound AlarmKit backup ~8s out.
+ * Refreshed often from session so an active sit never reaches the fire time; force-quit
+ * leaves that native timer armed. Bail rearm replaces with near-immediate delays.
+ */
+export async function armMeditationDeadMan(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (await isWakeResolvedToday()) return;
+  void markPendingSitWake('meditating');
+  const primaryId = (await loadNativeAlarmId()) || (await ensureAlarmId());
+  const carriers = await loadBailCarrierIds();
+  const waveIds = [primaryId, ...carriers];
+  await armTimerBackup(primaryId, 8);
+  if (carriers[0]) await armTimerBackup(carriers[0], 12);
+  if (carriers[1]) await armTimerBackup(carriers[1], 16);
+  await saveBailTimerIds(waveIds);
+}
+
+export async function clearMeditationDeadMan(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const primaryId = await loadNativeAlarmId();
+  await cancelBailTimerWaves(primaryId);
 }
 
 async function cancelBailTimerWaves(preservePrimaryId?: string | null): Promise<void> {

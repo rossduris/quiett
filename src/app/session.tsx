@@ -49,6 +49,8 @@ import {
   type SitMinutes,
 } from '@/lib/storage';
 import {
+  armMeditationDeadMan,
+  clearMeditationDeadMan,
   completeOsAlarmAndReschedule,
   prepareBailSoundCarriers,
   rearmOsAlarmAfterBail,
@@ -146,23 +148,85 @@ export default function SessionScreen() {
     };
   }, []);
 
+  // Gate pose → phase while backgrounded so a dead camera does not exit meditating
+  // before bail re-arm runs (POSE_BROKEN would bounce meditating → alarming).
+  const appActive = useRef(AppState.currentState === 'active');
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
   useEffect(() => {
+    let inactiveArm: ReturnType<typeof setTimeout> | null = null;
+    const clearInactiveArm = () => {
+      if (inactiveArm) {
+        clearTimeout(inactiveArm);
+        inactiveArm = null;
+      }
+    };
+
     const onAppState = (state: AppStateStatus) => {
       if (missionDone.current) return;
       if (state === 'active') {
-        // Back in /session — silence AlarmKit again, resume in-app harsh only.
-        void silenceOsRingForSession().then(() => playHarshAlarm());
+        clearInactiveArm();
+        appActive.current = true;
+        // Back in /session — kill OS nag; resume the right in-app bed by phase.
+        void silenceOsRingForSession().then(() => {
+          if (phaseRef.current === 'meditating') {
+            void crossfadeToMeditation();
+            // Restore dead-man after silence cancelled backups.
+            void armMeditationDeadMan();
+          } else {
+            void playHarshAlarm();
+          }
+        });
+        return;
+      }
+      if (state === 'inactive') {
+        // App switcher: JS still runs briefly — arm now so force-quit still nags.
+        // Short debounce so Control Center peeks that return to active cancel the arm.
+        appActive.current = false;
+        clearInactiveArm();
+        inactiveArm = setTimeout(() => {
+          if (missionDone.current) return;
+          if (AppState.currentState === 'active') return;
+          void rearmOsAlarmAfterBail();
+          void stopAllAudio();
+        }, 250);
         return;
       }
       if (state === 'background') {
-        // Fire rearm immediately — do not await audio/storage first (iOS suspends JS fast).
+        clearInactiveArm();
+        appActive.current = false;
         void rearmOsAlarmAfterBail();
         void stopAllAudio();
       }
     };
     const sub = AppState.addEventListener('change', onAppState);
-    return () => sub.remove();
+    return () => {
+      clearInactiveArm();
+      sub.remove();
+    };
   }, []);
+
+
+  // Force-quit during countdown skips background JS — keep a native backup armed ahead.
+  useEffect(() => {
+    if (phase !== 'meditating') {
+      void clearMeditationDeadMan();
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      if (!alive || missionDone.current) return;
+      if (!appActive.current) return;
+      void armMeditationDeadMan();
+    };
+    tick();
+    const id = setInterval(tick, 5_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [phase]);
 
   useEffect(() => {
     phaseTone.value = withTiming(PHASE_TONE[phase], {
@@ -190,6 +254,9 @@ export default function SessionScreen() {
   }, [detector, permission?.granted, cameraReady]);
 
   useEffect(() => {
+    // Ignore pose loss while backgrounded/inactive — camera freeze is not a real break,
+    // and it was aborting meditating before swipe-away could re-arm.
+    if (!appActive.current) return;
     if (pose === 'holding') dispatch({ type: 'POSE_HOLDING' });
     else dispatch({ type: 'POSE_BROKEN' });
   }, [pose]);

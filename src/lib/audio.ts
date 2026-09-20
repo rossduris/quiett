@@ -6,7 +6,7 @@ import {
 import { AppState } from 'react-native';
 import {
   meditationSoundById,
-  QUIETT_HARSH_ALARM,
+  QUIETT_HARSH_SESSION,
 } from '@/constants/sounds';
 import { loadAlarmSoundId, loadMeditationSoundId } from '@/lib/storage';
 
@@ -16,7 +16,7 @@ let modeReady = false;
 let loadedAlarmId: string | null = null;
 let loadedMeditationId: string | null = null;
 
-/** Loudspeaker playback for in-app harsh / meditation (foreground session). */
+/** Exclusive loudspeaker playback for in-app harsh (media stream; denser than AlarmKit file). */
 async function ensureMode() {
   if (modeReady) return;
   try {
@@ -25,8 +25,8 @@ async function ensureMode() {
       shouldPlayInBackground: true,
       allowsRecording: false,
       shouldRouteThroughEarpiece: false,
-      // mix so AlarmKit can take over on bail without a sticky exclusive session
-      interruptionMode: 'mixWithOthers',
+      // Exclusive focus so the sit harsh is not ducked under other audio.
+      interruptionMode: 'doNotMix',
     });
   } catch (e) {
     console.warn('[quiett audio] mode', e);
@@ -40,10 +40,10 @@ function rebuildHarsh() {
   } catch {
     /* ignore */
   }
-  harsh = createAudioPlayer(QUIETT_HARSH_ALARM);
+  harsh = createAudioPlayer(QUIETT_HARSH_SESSION);
   harsh.loop = true;
   harsh.volume = 1;
-  loadedAlarmId = 'quiett_harsh';
+  loadedAlarmId = 'quiett_harsh_session';
 }
 
 async function ensurePlayers() {
@@ -52,7 +52,7 @@ async function ensurePlayers() {
     loadMeditationSoundId(),
   ]);
 
-  if (!harsh || loadedAlarmId !== 'quiett_harsh') {
+  if (!harsh || loadedAlarmId !== 'quiett_harsh_session') {
     rebuildHarsh();
   }
 
@@ -71,13 +71,13 @@ async function ensurePlayers() {
 
 /**
  * In-app harsh for /session while foreground.
- * Skip when backgrounded — AlarmKit owns the nag there; activating the session
- * after re-arm throws "Session activation failed".
+ * Skip when backgrounded — AlarmKit owns the nag there.
  */
 export async function playHarshAlarm() {
   if (AppState.currentState !== 'active') {
     return;
   }
+  modeReady = false; // re-assert doNotMix each sit open
   await ensureMode();
   await ensurePlayers();
   try {
@@ -86,11 +86,13 @@ export async function playHarshAlarm() {
     /* ignore */
   }
   try {
+    harsh!.volume = 1;
     harsh!.play();
   } catch (e) {
     console.warn('[quiett audio] harsh retry', e);
     try {
       rebuildHarsh();
+      harsh!.volume = 1;
       harsh!.play();
     } catch (e2) {
       console.warn('[quiett audio] harsh', e2);

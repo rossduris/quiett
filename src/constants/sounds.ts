@@ -10,6 +10,8 @@ export type SoundOption = {
 
 /** Canonical Quiett wake tone — same file AlarmKit uses on the lock screen. */
 export const QUIETT_HARSH_ALARM = require('../../assets/audio/quiett-harsh.m4a');
+/** Denser/hotter render for in-app /session (media stream is quieter than AlarmKit). */
+export const QUIETT_HARSH_SESSION = require('../../assets/audio/quiett-harsh-session.m4a');
 
 export const ALARM_SOUNDS: readonly SoundOption[] = [
   {
