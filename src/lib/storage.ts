@@ -7,6 +7,7 @@ import {
 const KEYS = {
   alarmTime: 'quiett.alarmTime',
   alarmEnabled: 'quiett.alarmEnabled',
+  alarmWeekdays: 'quiett.alarmWeekdays',
   sitMinutes: 'quiett.sitMinutes.v2',
   alarmSoundId: 'quiett.alarmSoundId',
   meditationSoundId: 'quiett.meditationSoundId',
@@ -22,7 +23,10 @@ const KEYS = {
   bailCarrierIds: 'quiett.bailCarrierIds',
 } as const;
 
-export type AlarmPrefs = { time: string; enabled: boolean };
+/** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler convention). */
+export type AlarmWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export type AlarmPrefs = { time: string; enabled: boolean; weekdays: AlarmWeekday[] };
 export type StreakData = { count: number; lastCompletedDate: string | null };
 /** Sit length in minutes. `0.5` = 30 seconds (dev / quick test). */
 export type SitMinutes = 0.5 | 2 | 3 | 5 | 10;
@@ -37,7 +41,9 @@ export type AccountData = {
 export const DEFAULT_SIT_MINUTES: SitMinutes = 0.5;
 export const SIT_MINUTE_OPTIONS: readonly SitMinutes[] = [0.5, 2, 3, 5, 10];
 
-const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true };
+/** Fresh install default: Mon–Fri (weekends off). */
+const DEFAULT_WEEKDAYS: AlarmWeekday[] = [1, 2, 3, 4, 5];
+const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true, weekdays: DEFAULT_WEEKDAYS };
 
 export const SIGNED_OUT_ACCOUNT: AccountData = {
   signedIn: false,
@@ -62,6 +68,31 @@ function parseSitMinutes(raw: string | null): SitMinutes {
 export function dayKey(offset = 0, from: Date = new Date()): string {
   const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + offset);
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+}
+
+/** ISO weekday for a date: 1=Mon … 7=Sun. */
+export function isoWeekday(date: Date): AlarmWeekday {
+  const dow = date.getDay(); // 0=Sun … 6=Sat
+  return (dow === 0 ? 7 : dow) as AlarmWeekday;
+}
+
+/** True if the date falls on a scheduled alarm weekday. */
+export function isScheduledDay(date: Date, weekdays: readonly AlarmWeekday[]): boolean {
+  const iso = isoWeekday(date);
+  return weekdays.includes(iso);
+}
+
+function parseWeekdays(raw: string | null): AlarmWeekday[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((n): n is AlarmWeekday => 
+      typeof n === 'number' && n >= 1 && n <= 7
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function loadSitMinutes(): Promise<SitMinutes> {
@@ -185,13 +216,20 @@ export async function saveNativeAlarmId(id: string | null): Promise<void> {
 }
 
 export async function loadAlarmPrefs(): Promise<AlarmPrefs> {
-  const [time, enabled] = await Promise.all([
+  const [time, enabled, weekdaysRaw] = await Promise.all([
     AsyncStorage.getItem(KEYS.alarmTime),
     AsyncStorage.getItem(KEYS.alarmEnabled),
+    AsyncStorage.getItem(KEYS.alarmWeekdays),
   ]);
+  
+  const weekdays = parseWeekdays(weekdaysRaw);
+  
   return {
     time: time ?? DEFAULT_ALARM.time,
     enabled: enabled === null ? DEFAULT_ALARM.enabled : enabled === '1',
+    // Migration: existing prefs without weekdays → all 7 days (preserve daily alarms).
+    // Fresh install (no stored time either) → Mon–Fri default.
+    weekdays: weekdays.length > 0 ? weekdays : (time ? [1, 2, 3, 4, 5, 6, 7] : DEFAULT_WEEKDAYS),
   };
 }
 
@@ -199,6 +237,7 @@ export async function saveAlarmPrefs(prefs: AlarmPrefs): Promise<void> {
   await Promise.all([
     AsyncStorage.setItem(KEYS.alarmTime, prefs.time),
     AsyncStorage.setItem(KEYS.alarmEnabled, prefs.enabled ? '1' : '0'),
+    AsyncStorage.setItem(KEYS.alarmWeekdays, JSON.stringify(prefs.weekdays)),
   ]);
 }
 
@@ -240,16 +279,46 @@ async function addCompletedDay(key: string): Promise<string[]> {
 }
 
 export async function recordSuccessfulSit(): Promise<StreakData> {
-  const current = await loadStreak();
+  const [current, prefs] = await Promise.all([loadStreak(), loadAlarmPrefs()]);
   const today = dayKey(0);
   await addCompletedDay(today);
+  
   if (current.lastCompletedDate === today) return current;
-  const next = current.lastCompletedDate === dayKey(-1) ? current.count + 1 : 1;
+
+  // Count consecutive scheduled mornings only: walk back from yesterday until we hit
+  // an unscheduled day, a missed scheduled day, or a completed day.
+  const completedSet = new Set(await loadCompletedDaysRaw());
+  completedSet.add(today);
+  
+  let streak = 1;
+  let checkDate = new Date();
+  checkDate.setDate(checkDate.getDate() - 1);
+  
+  while (true) {
+    const key = dayKey(0, checkDate);
+    const scheduled = isScheduledDay(checkDate, prefs.weekdays);
+    
+    if (!scheduled) {
+      // Unscheduled off-day: skip backward without breaking streak.
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    if (completedSet.has(key)) {
+      // Completed scheduled day: extend streak and continue backward.
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      // Missing scheduled day: streak breaks here.
+      break;
+    }
+  }
+
   await Promise.all([
-    AsyncStorage.setItem(KEYS.streak, String(next)),
+    AsyncStorage.setItem(KEYS.streak, String(streak)),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
-  return { count: next, lastCompletedDate: today };
+  return { count: streak, lastCompletedDate: today };
 }
 
 /** Emergency: reset streak count / last date, keep completed-day history for week strip. */
