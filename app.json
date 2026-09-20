@@ -1,24 +1,40 @@
 {
   "expo": {
-    "name": "quiett",
+    "name": "Quiett",
     "slug": "quiett",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "quiett",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.rossduris.quiett"
+      "bundleIdentifier": "com.rossduris.quiett",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Quiett uses the front camera to confirm you are sitting upright during your morning sit.",
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSAlarmKitUsageDescription": "Quiett schedules a morning alarm that only ends after you sit. Allow alarms so it can wake you even when the phone is locked."
+      },
+      "appleTeamId": "EY7Z8634G7"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B0F14",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "package": "com.rossduris.quiett"
     },
     "web": {
       "output": "static",
@@ -29,11 +45,38 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#0B0F14",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 200
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Quiett to use the front camera to confirm your morning sit.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true,
+          "enableBackgroundRecording": false
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "./plugins/withQuiettAlarmScheduler.js",
+        {
+          "alarmKitUsageDescription": "Quiett schedules a morning alarm that only ends after you sit. Allow alarms so it can wake you even when the phone is locked.",
+          "iosAlarmSounds": [
+            "./assets/audio/quiett-harsh.caf"
+          ]
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

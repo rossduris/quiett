@@ -1,56 +1,72 @@
-# Welcome to your Expo app 👋
+# Quiett
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Wake. Meditate. Begin.**
 
-## Get started
 
-1. Install dependencies
+An alarm that won’t fully let go until you sit upright and still — then it turns into a short morning meditation.
 
-   ```bash
-   npm install
-   ```
+> **MVP shell** — session loop is demoable with **mock pose controls**. Real on-device pose comes later.
 
-2. Start the app
+## Product rules
 
-   ```bash
-   npx expo start
-   ```
+See [`docs/MVP-BRIEF.md`](./docs/MVP-BRIEF.md).
 
-In the output, you'll find options to open the app in a
+## Run on device
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+From the project root on your Mac:
 
 ```bash
-npm run reset-project
+cd /Users/rossduris/Development/quiett
+
+# Install Expo SDK 57–compatible deps (after applying this MVP shell)
+npx expo install expo-camera expo-audio @react-native-async-storage/async-storage @react-native-community/datetimepicker
+
+npx expo start
+# then press `i` for iOS simulator, or scan the QR with a dev build / Expo Go
+# Camera needs a **development build** or device with camera permissions:
+npx expo run:ios
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Native rebuild
 
-### Other setup steps
+`expo-camera` and `expo-audio` use config plugins (already listed in `app.json`). After adding them the first time:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npx expo prebuild --clean   # only if you regenerate native projects
+npx expo run:ios
+```
 
-## Learn more
+If `ios/` / `android/` already exist (they do), prefer `npx expo run:ios` so native permission strings from the plugins are applied.
 
-To learn more about developing your project with Expo, look at the following resources:
+### Demo the loop
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. Home → set alarm time (persisted) → **Start demo session**
+2. Allow camera when prompted (preview is real; pose is mocked)
+3. DEV panel: **Hold pose** → wait ~2.5s confirm → meditation audio + timer (`0:20` in `__DEV__`, `3:00` in production)
+4. **Break pose** → harsh alarm returns
+5. Hold again → finish timer → success + streak
+6. Or **Hold to emergency dismiss** (~2s) → streak resets
 
-## Join the community
+## Architecture notes
 
-Join our community of developers creating universal apps.
+| Piece | Status |
+|-------|--------|
+| Session state machine | Real (`src/lib/session-machine.ts`) |
+| Front camera preview | Real (`expo-camera`) |
+| Pose detection | **Mock** (`src/lib/pose`) — swap detector later |
+| Alarm / meditation audio | Placeholder remote tones via `expo-audio` |
+| Persistence | AsyncStorage (alarm time + streak) |
+| Scheduled OS alarms | Not yet (demo session from Home) |
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Apply this shell onto the Mac project
+
+If these files live in a staging folder, copy them over the blank Expo app (keep existing `assets/`, `ios/`, `android/`, `node_modules`):
+
+```bash
+# from staging → Mac project
+rsync -av --exclude node_modules --exclude ios --exclude android \
+  ./src ./docs ./app.json ./README.md \
+  /Users/rossduris/Development/quiett/
+```
+
+Then install packages and run as above.

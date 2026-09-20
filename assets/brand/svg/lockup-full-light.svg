@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 140" role="img" aria-label="Quiett — Wake. Meditate. Begin.">
+  <title>Quiett full lockup</title>
+  <rect x="0" y="30" width="80" height="80" rx="18" fill="#0B0F14"/>
+  <g transform="translate(0 30) scale(0.625)">
+    <path fill="none" stroke="#A8C5D4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"
+      d="M84 64 A28 28 0 1 0 64 92 H92"/>
+  </g>
+  <text x="100" y="72" font-family="Inter, Geist, ui-sans-serif, system-ui, sans-serif" font-size="48" font-weight="600" fill="#0B0F14">Quiett</text>
+  <text x="100" y="106" font-family="Inter, Geist, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="500" fill="#5C6B7E">Wake. Meditate. Begin.</text>
+</svg>
