@@ -214,7 +214,24 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Morning alarm</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardLabel}>Morning alarm</Text>
+            <Pressable
+              onPress={toggleEnabled}
+              style={({ pressed }) => [
+                styles.statusChip,
+                alarm.enabled && styles.statusChipOn,
+                pressed && styles.pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={alarm.enabled ? 'Alarm on, tap to turn off' : 'Alarm off, tap to turn on'}
+            >
+              <Text style={[styles.statusText, alarm.enabled && styles.statusTextOn]}>
+                {alarm.enabled ? 'ON' : 'OFF'}
+              </Text>
+            </Pressable>
+          </View>
+          
           <Pressable onPress={() => setShowPicker(true)} style={styles.timeHit}>
             <Text style={styles.time}>{displayTime(alarm.time)}</Text>
           </Pressable>
@@ -261,12 +278,14 @@ export default function HomeScreen() {
             <PrimaryButton label="Done" variant="secondary" onPress={() => setShowPicker(false)} />
           )}
 
-          <PrimaryButton
-            label={alarm.enabled ? 'Alarm on' : 'Alarm off'}
-            variant={alarm.enabled ? 'primary' : 'secondary'}
-            onPress={toggleEnabled}
-            style={{ marginTop: spacing.md }}
-          />
+          {!alarm.enabled && (
+            <PrimaryButton
+              label="Turn alarm on"
+              variant="primary"
+              onPress={toggleEnabled}
+              style={{ marginTop: spacing.md }}
+            />
+          )}
         </View>
 
         <View style={styles.streakCard}>
@@ -322,12 +341,38 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   cardLabel: {
     color: colors.textDim,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
+  },
+  statusChip: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.sm,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusChipOn: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
+  },
+  statusText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  statusTextOn: {
+    color: colors.calm,
   },
   timeHit: { paddingVertical: spacing.sm },
   time: { ...typography.hero, color: colors.text },
@@ -339,8 +384,8 @@ const styles = StyleSheet.create({
   },
   dayPill: {
     flex: 1,
-    height: 36,
-    borderRadius: radii.sm,
+    height: 28,
+    borderRadius: radii.sm - 2,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: 'transparent',
@@ -356,9 +401,9 @@ const styles = StyleSheet.create({
   },
   dayLabel: {
     color: colors.textMuted,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   dayLabelSelected: {
     color: colors.bg,
