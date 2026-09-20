@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import AlarmScheduler, {
   type AlarmPermissionResponse,
-  type AlarmWeekday,
 } from 'react-native-alarm-scheduler';
 import {
   clearBailAlarmId,
@@ -29,7 +28,6 @@ import {
   resolveHarshAlarmSoundUri,
 } from '@/lib/harsh-alarm-asset';
 
-const DAILY: AlarmWeekday[] = [1, 2, 3, 4, 5, 6, 7];
 const ALARM_TITLE = 'Quiett — sit to begin';
 
 /** True after session silenced the OS ring; cleared on sit success / emergency. */
@@ -169,7 +167,7 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
       hour,
       minute,
       title: ALARM_TITLE,
-      weekdays: DAILY,
+      weekdays: prefs.weekdays,
       soundUri,
       ios: {
         ...iosGate,
