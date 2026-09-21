@@ -2,15 +2,22 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { WeekStreakStrip } from '@/components/WeekStreakStrip';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { SETUP_LEAD, SETUP_NOTE, SETUP_TIPS } from '@/constants/setup-tips';
 import {
   loadAccount,
+  loadAlarmPrefs,
+  loadCompletedDays,
+  loadStreak,
   signInWithAppleStub,
   signOut,
   type AccountData,
+  type AlarmPrefs,
+  type StreakData,
 } from '@/lib/storage';
 
 function initialFor(account: AccountData): string {
@@ -28,14 +35,26 @@ export default function YouScreen() {
     displayName: null,
     email: null,
   });
+  const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
+  const [completedDays, setCompletedDays] = useState<string[]>([]);
+  const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
+  const [tipsExpanded, setTipsExpanded] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const a = await loadAccount();
+        const [acct, strk, days, alrm] = await Promise.all([
+          loadAccount(),
+          loadStreak(),
+          loadCompletedDays(),
+          loadAlarmPrefs(),
+        ]);
         if (!alive) return;
-        setAccount(a);
+        setAccount(acct);
+        setStreak(strk);
+        setCompletedDays(days);
+        setAlarm(alrm);
       })();
       return () => {
         alive = false;
@@ -51,61 +70,116 @@ export default function YouScreen() {
     setAccount(await signOut());
   };
 
+  const totalMornings = completedDays.length;
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
+      <View style={styles.topBar}>
+        <Text style={styles.screenTitle}>You</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+          onPress={() => router.push('/settings')}
+          style={({ pressed }) => [styles.gearBtn, pressed && styles.pressed]}
+          hitSlop={12}
+        >
+          <Ionicons name="settings-outline" size={22} color={colors.textMuted} />
+        </Pressable>
+      </View>
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: TAB_BAR_CLEARANCE + spacing.lg }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.screenTitle}>You</Text>
-
-        <View style={styles.accountCard}>
-          <Text style={styles.sectionLabel}>Account</Text>
+        <View style={styles.identityCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initialFor(account)}</Text>
+          </View>
+          <Text style={styles.displayName}>{account.displayName ?? 'You'}</Text>
+          {account.email ? <Text style={styles.email}>{account.email}</Text> : null}
+          
           {account.signedIn ? (
-            <>
-              <View style={styles.accountRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initialFor(account)}</Text>
-                </View>
-                <View style={styles.accountMeta}>
-                  <Text style={styles.accountName}>{account.displayName ?? 'You'}</Text>
-                  {account.email ? (
-                    <Text style={styles.accountEmail}>{account.email}</Text>
-                  ) : null}
-                </View>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void onSignOut()}
-                style={({ pressed }) => [styles.signOutPill, pressed && styles.pressed]}
-              >
-                <Text style={styles.signOutText}>Sign out</Text>
-              </Pressable>
-            </>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void onSignOut()}
+              style={({ pressed }) => [styles.signOutPill, pressed && styles.pressed]}
+            >
+              <Text style={styles.signOutText}>Sign out</Text>
+            </Pressable>
           ) : (
             <>
-              <Text style={styles.accountCopy}>Save streak across devices</Text>
+              <Text style={styles.signInHint}>Save streak across devices</Text>
               <PrimaryButton label="Sign in with Apple" onPress={() => void onSignIn()} />
             </>
           )}
         </View>
 
-        <View style={styles.setupBlock}>
-          <Text style={styles.sectionLabel}>Camera setup</Text>
-          <Text style={styles.lead}>{SETUP_LEAD}</Text>
-          {SETUP_TIPS.map((tip) => (
-            <View key={tip.title} style={styles.tipCard}>
-              <Text style={styles.tipTitle}>{tip.title}</Text>
-              <Text style={styles.tipBody}>{tip.body}</Text>
+        <View style={styles.statsCard}>
+          <View style={styles.statsHero}>
+            <Text style={styles.statsBig}>{streak.count}</Text>
+            <Text style={styles.statsBigLabel}>day streak</Text>
+          </View>
+          <View style={styles.statsSecondary}>
+            <View style={styles.statCol}>
+              <Text style={styles.statsSmallNum}>{totalMornings}</Text>
+              <Text style={styles.statsSmallLabel}>Total mornings</Text>
             </View>
-          ))}
-          <Text style={styles.note}>{SETUP_NOTE}</Text>
-          <PrimaryButton
-            label="Try a demo session"
+          </View>
+          <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
+        </View>
+
+        <View style={styles.actionsCard}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/settings')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons name="settings-outline" size={20} color={colors.text} />
+              <Text style={styles.actionLabel}>Settings</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <View style={styles.actionDivider} />
+          <Pressable
+            accessibilityRole="button"
             onPress={() => router.push('/session')}
-            style={{ marginTop: spacing.sm }}
-          />
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons name="play-circle-outline" size={20} color={colors.text} />
+              <Text style={styles.actionLabel}>Try a demo meditation</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+        </View>
+
+        <View style={styles.tipsCard}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setTipsExpanded(!tipsExpanded)}
+            style={({ pressed }) => [styles.tipsHeader, pressed && styles.pressed]}
+          >
+            <Text style={styles.tipsHeaderLabel}>How to set up your camera</Text>
+            <Ionicons
+              name={tipsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={colors.textMuted}
+            />
+          </Pressable>
+          {tipsExpanded ? (
+            <View style={styles.tipsContent}>
+              <Text style={styles.tipsLead}>{SETUP_LEAD}</Text>
+              {SETUP_TIPS.map((tip) => (
+                <View key={tip.title} style={styles.tipCard}>
+                  <Text style={styles.tipTitle}>{tip.title}</Text>
+                  <Text style={styles.tipBody}>{tip.body}</Text>
+                </View>
+              ))}
+              <Text style={styles.tipsNote}>{SETUP_NOTE}</Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -114,47 +188,60 @@ export default function YouScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  content: {
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    gap: spacing.lg,
+    paddingBottom: spacing.md,
   },
   screenTitle: {
     ...typography.title,
     color: colors.text,
   },
-  accountCard: {
+  gearBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  scroll: { flex: 1 },
+  content: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.lg,
+  },
+  identityCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
     gap: spacing.md,
   },
-  sectionLabel: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  accountCopy: { ...typography.body, color: colors.textMuted },
-  accountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: colors.bgElevated,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.text, fontSize: 20, fontWeight: '600' },
-  accountMeta: { flex: 1, gap: 2 },
-  accountName: { ...typography.subtitle, color: colors.text },
-  accountEmail: { color: colors.textMuted, fontSize: 14 },
+  avatarText: { color: colors.text, fontSize: 28, fontWeight: '600' },
+  displayName: { ...typography.subtitle, color: colors.text, fontSize: 20 },
+  email: { color: colors.textMuted, fontSize: 14, marginTop: -spacing.xs },
+  signInHint: { 
+    ...typography.body, 
+    color: colors.textMuted, 
+    fontSize: 15, 
+    marginTop: spacing.xs 
+  },
   signOutPill: {
     marginTop: spacing.sm,
     alignSelf: 'stretch',
@@ -167,18 +254,122 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   signOutText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  pressed: { opacity: 0.85 },
-  setupBlock: { gap: spacing.md },
-  lead: { ...typography.body, color: colors.textMuted, lineHeight: 24 },
-  tipCard: {
+  statsCard: {
     backgroundColor: colors.bgCard,
-    borderRadius: 12,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.lg,
+  },
+  statsHero: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statsBig: {
+    fontSize: 72,
+    fontWeight: '200',
+    color: colors.calm,
+    letterSpacing: -2,
+  },
+  statsBigLabel: {
+    color: colors.textMuted,
+    fontSize: 18,
+    fontWeight: '500',
+  },
+  statsSecondary: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.xl,
+    paddingVertical: spacing.sm,
+  },
+  statCol: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statsSmallNum: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: colors.text,
+    letterSpacing: -0.5,
+  },
+  statsSmallLabel: {
+    color: colors.textDim,
+    fontSize: 13,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  actionsCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  actionLabel: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  actionDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.lg,
+  },
+  tipsCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  tipsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+  },
+  tipsHeaderLabel: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  tipsContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  tipsLead: {
+    ...typography.body,
+    color: colors.textMuted,
+    lineHeight: 24,
+    marginTop: spacing.md,
+  },
+  tipCard: {
+    backgroundColor: colors.bg,
+    borderRadius: radii.md,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.xs,
   },
   tipTitle: { color: colors.text, fontWeight: '600', fontSize: 16 },
-  tipBody: { color: colors.textMuted, lineHeight: 22 },
-  note: { color: colors.warning, fontSize: 12 },
+  tipBody: { color: colors.textMuted, lineHeight: 22, fontSize: 15 },
+  tipsNote: { color: colors.warning, fontSize: 12, lineHeight: 18 },
+  pressed: { opacity: 0.75 },
 });
