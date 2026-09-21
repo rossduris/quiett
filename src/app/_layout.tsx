@@ -15,20 +15,39 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: '600' },
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.bg },
-          animation: 'fade',
+          headerBackTitleVisible: false,
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="settings"
-          options={{ title: 'Settings', headerBackTitle: 'Home' }}
+          options={{
+            title: 'Settings',
+            animation: 'slide_from_right',
+          }}
         />
         <Stack.Screen
           name="session"
-          options={{ headerShown: false, gestureEnabled: false }}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+            animation: 'fade',
+          }}
         />
-        <Stack.Screen name="success" options={{ headerShown: false }} />
-        <Stack.Screen name="emergency" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="success"
+          options={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        />
+        <Stack.Screen
+          name="emergency"
+          options={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        />
       </Stack>
     </>
   );
