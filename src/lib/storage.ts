@@ -7,6 +7,7 @@ import {
 const KEYS = {
   alarmTime: 'quiett.alarmTime',
   alarmEnabled: 'quiett.alarmEnabled',
+  alarmWeekdays: 'quiett.alarmWeekdays',
   sitMinutes: 'quiett.sitMinutes.v2',
   alarmSoundId: 'quiett.alarmSoundId',
   meditationSoundId: 'quiett.meditationSoundId',
@@ -22,7 +23,9 @@ const KEYS = {
   bailCarrierIds: 'quiett.bailCarrierIds',
 } as const;
 
-export type AlarmPrefs = { time: string; enabled: boolean };
+/** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
+export type Weekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type AlarmPrefs = { time: string; enabled: boolean; weekdays: Weekday[] };
 export type StreakData = { count: number; lastCompletedDate: string | null };
 /** Sit length in minutes. `0.5` = 30 seconds (dev / quick test). */
 export type SitMinutes = 0.5 | 2 | 3 | 5 | 10;
@@ -37,7 +40,7 @@ export type AccountData = {
 export const DEFAULT_SIT_MINUTES: SitMinutes = 0.5;
 export const SIT_MINUTE_OPTIONS: readonly SitMinutes[] = [0.5, 2, 3, 5, 10];
 
-const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true };
+const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] };
 
 export const SIGNED_OUT_ACCOUNT: AccountData = {
   signedIn: false,
@@ -184,14 +187,30 @@ export async function saveNativeAlarmId(id: string | null): Promise<void> {
   else await AsyncStorage.removeItem(KEYS.nativeAlarmId);
 }
 
+function parseWeekdays(raw: string | null): Weekday[] {
+  if (!raw) return DEFAULT_ALARM.weekdays;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return DEFAULT_ALARM.weekdays;
+    const valid = parsed.filter((d): d is Weekday => 
+      typeof d === 'number' && d >= 1 && d <= 7
+    );
+    return valid.length > 0 ? valid : DEFAULT_ALARM.weekdays;
+  } catch {
+    return DEFAULT_ALARM.weekdays;
+  }
+}
+
 export async function loadAlarmPrefs(): Promise<AlarmPrefs> {
-  const [time, enabled] = await Promise.all([
+  const [time, enabled, weekdays] = await Promise.all([
     AsyncStorage.getItem(KEYS.alarmTime),
     AsyncStorage.getItem(KEYS.alarmEnabled),
+    AsyncStorage.getItem(KEYS.alarmWeekdays),
   ]);
   return {
     time: time ?? DEFAULT_ALARM.time,
     enabled: enabled === null ? DEFAULT_ALARM.enabled : enabled === '1',
+    weekdays: weekdays === null ? [1, 2, 3, 4, 5, 6, 7] : parseWeekdays(weekdays),
   };
 }
 
@@ -199,6 +218,7 @@ export async function saveAlarmPrefs(prefs: AlarmPrefs): Promise<void> {
   await Promise.all([
     AsyncStorage.setItem(KEYS.alarmTime, prefs.time),
     AsyncStorage.setItem(KEYS.alarmEnabled, prefs.enabled ? '1' : '0'),
+    AsyncStorage.setItem(KEYS.alarmWeekdays, JSON.stringify(prefs.weekdays)),
   ]);
 }
 
@@ -244,12 +264,51 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   const today = dayKey(0);
   await addCompletedDay(today);
   if (current.lastCompletedDate === today) return current;
-  const next = current.lastCompletedDate === dayKey(-1) ? current.count + 1 : 1;
+  
+  const prefs = await loadAlarmPrefs();
+  const scheduledDays = new Set(prefs.weekdays);
+  const yesterday = dayKey(-1);
+  
+  if (current.lastCompletedDate === yesterday) {
+    const next = current.count + 1;
+    await Promise.all([
+      AsyncStorage.setItem(KEYS.streak, String(next)),
+      AsyncStorage.setItem(KEYS.lastCompletedDate, today),
+    ]);
+    return { count: next, lastCompletedDate: today };
+  }
+  
+  const lastDate = current.lastCompletedDate ? new Date(current.lastCompletedDate) : null;
+  if (lastDate) {
+    let consecutiveScheduled = true;
+    const todayDate = new Date(today);
+    let checkDate = new Date(lastDate);
+    checkDate.setDate(checkDate.getDate() + 1);
+    
+    while (checkDate < todayDate) {
+      const isoWeekday = ((checkDate.getDay() + 6) % 7) + 1 as Weekday;
+      if (scheduledDays.has(isoWeekday)) {
+        consecutiveScheduled = false;
+        break;
+      }
+      checkDate.setDate(checkDate.getDate() + 1);
+    }
+    
+    if (consecutiveScheduled) {
+      const next = current.count + 1;
+      await Promise.all([
+        AsyncStorage.setItem(KEYS.streak, String(next)),
+        AsyncStorage.setItem(KEYS.lastCompletedDate, today),
+      ]);
+      return { count: next, lastCompletedDate: today };
+    }
+  }
+  
   await Promise.all([
-    AsyncStorage.setItem(KEYS.streak, String(next)),
+    AsyncStorage.setItem(KEYS.streak, '1'),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
-  return { count: next, lastCompletedDate: today };
+  return { count: 1, lastCompletedDate: today };
 }
 
 /** Emergency: reset streak count / last date, keep completed-day history for week strip. */
@@ -259,6 +318,45 @@ export async function breakStreak(): Promise<StreakData> {
     AsyncStorage.removeItem(KEYS.lastCompletedDate),
   ]);
   return { count: 0, lastCompletedDate: null };
+}
+
+export function getIsoWeekday(date: Date): Weekday {
+  const dow = date.getDay();
+  return ((dow + 6) % 7) + 1 as Weekday;
+}
+
+export function formatWeekdayHint(weekdays: Weekday[]): string {
+  const sorted = [...weekdays].sort((a, b) => a - b);
+  if (sorted.length === 7) return 'every day';
+  if (sorted.length === 5 && sorted.every(d => d >= 1 && d <= 5)) return 'weekdays';
+  if (sorted.length === 2 && sorted[0] === 6 && sorted[1] === 7) return 'weekends';
+  
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (sorted.length <= 3) {
+    return sorted.map(d => names[d - 1]).join(', ');
+  }
+  
+  return `${sorted.length} days`;
+}
+
+export function nextAlarmDate(time: string, weekdays: Weekday[], from = new Date()): Date | null {
+  if (weekdays.length === 0) return null;
+  
+  const [h, m] = time.split(':').map(n => parseInt(n, 10));
+  const now = from;
+  const scheduledDays = new Set(weekdays);
+  
+  for (let offset = 0; offset < 14; offset++) {
+    const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+    candidate.setHours(h || 7, m || 0, 0, 0);
+    
+    const isoWeekday = getIsoWeekday(candidate);
+    if (scheduledDays.has(isoWeekday) && candidate > now) {
+      return candidate;
+    }
+  }
+  
+  return null;
 }
 
 export async function loadAccount(): Promise<AccountData> {

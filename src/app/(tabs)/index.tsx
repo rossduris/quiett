@@ -14,8 +14,10 @@ import {
   loadCompletedDays,
   loadStreak,
   saveAlarmPrefs,
+  formatWeekdayHint,
   type AlarmPrefs,
   type StreakData,
+  type Weekday,
   clearWakeResolved,
 } from '@/lib/storage';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
@@ -38,7 +40,7 @@ function displayTime(hhmm: string): string {
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true });
+  const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -97,6 +99,18 @@ export default function HomeScreen() {
     await persistAlarm(next);
   };
 
+  const toggleWeekday = async (day: Weekday) => {
+    const current = new Set(alarm.weekdays);
+    if (current.has(day)) {
+      if (current.size === 1) return;
+      current.delete(day);
+    } else {
+      current.add(day);
+    }
+    const next = { ...alarm, weekdays: Array.from(current).sort((a, b) => a - b) as Weekday[] };
+    await persistAlarm(next);
+  };
+
   const streakSub =
     streak.lastCompletedDate === dayKey(0)
       ? 'Last sit today'
@@ -131,39 +145,67 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Morning alarm</Text>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardLabel}>Morning alarm</Text>
+            <Pressable
+              onPress={toggleEnabled}
+              style={styles.switchRow}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: alarm.enabled }}
+            >
+              <View style={[styles.switch, alarm.enabled && styles.switchOn]}>
+                <View style={[styles.thumb, alarm.enabled && styles.thumbOn]} />
+              </View>
+            </Pressable>
+          </View>
+
           <Pressable onPress={() => setShowPicker(true)} style={styles.timeHit}>
             <Text style={styles.time}>{displayTime(alarm.time)}</Text>
           </Pressable>
-          <Text style={styles.hint}>Tap time to change · stored on device</Text>
+          <Text style={styles.hint}>Tap to change · {formatWeekdayHint(alarm.weekdays)}</Text>
 
           {showPicker && (
-            <DateTimePicker
-              value={parseTime(alarm.time)}
-              mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onValueChange={onTimeValueChange}
-              onDismiss={() => setShowPicker(false)}
-              themeVariant="dark"
-            />
+            <>
+              <DateTimePicker
+                value={parseTime(alarm.time)}
+                mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onValueChange={onTimeValueChange}
+                onDismiss={() => setShowPicker(false)}
+                themeVariant="dark"
+              />
+              <View style={styles.dayPills}>
+                {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map((label, i) => {
+                  const day = (i + 1) as Weekday;
+                  const selected = alarm.weekdays.includes(day);
+                  return (
+                    <Pressable
+                      key={day}
+                      onPress={() => toggleWeekday(day)}
+                      style={[styles.pill, selected && styles.pillSelected]}
+                      accessibilityRole="button"
+                      accessibilityLabel={label}
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {Platform.OS === 'ios' && (
+                <PrimaryButton label="Done" variant="secondary" onPress={() => setShowPicker(false)} />
+              )}
+            </>
           )}
-          {Platform.OS === 'ios' && showPicker && (
-            <PrimaryButton label="Done" variant="secondary" onPress={() => setShowPicker(false)} />
-          )}
-
-          <PrimaryButton
-            label={alarm.enabled ? 'Alarm on' : 'Alarm off'}
-            variant={alarm.enabled ? 'primary' : 'secondary'}
-            onPress={toggleEnabled}
-            style={{ marginTop: spacing.md }}
-          />
         </View>
 
         <View style={styles.streakCard}>
           <Text style={styles.streakNum}>{streak.count}</Text>
           <Text style={styles.streakLabel}>day streak</Text>
           <Text style={styles.streakSub}>{streakSub}</Text>
-          <WeekStreakStrip completedDays={completedDays} />
+          <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
         </View>
 
         <PrimaryButton label="Start demo session" onPress={() => router.push('/session')} />
@@ -212,6 +254,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   cardLabel: {
     color: colors.textDim,
     fontSize: 12,
@@ -219,9 +266,61 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
+  switchRow: {
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  switch: {
+    width: 51,
+    height: 31,
+    borderRadius: 16,
+    backgroundColor: colors.border,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  switchOn: {
+    backgroundColor: colors.calm,
+  },
+  thumb: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: colors.bg,
+  },
+  thumbOn: {
+    alignSelf: 'flex-end',
+  },
   timeHit: { paddingVertical: spacing.sm },
   time: { ...typography.hero, color: colors.text },
   hint: { color: colors.textMuted, fontSize: 13 },
+  dayPills: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  pill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 44,
+    alignItems: 'center',
+  },
+  pillSelected: {
+    backgroundColor: colors.calm,
+    borderColor: colors.calm,
+  },
+  pillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  pillTextSelected: {
+    color: colors.bg,
+  },
   streakCard: {
     alignItems: 'center',
     backgroundColor: colors.bgCard,
