@@ -1,11 +1,11 @@
-import { Stack } from 'expo-router';
+import { Stack, ThemeProvider, DarkTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { colors } from '@/constants/theme';
 
 export default function RootLayout() {
   return (
-    <>
+    <ThemeProvider value={DarkTheme}>
       <StatusBar style="light" />
       <AlarmHandoffGate />
       <Stack
@@ -15,7 +15,6 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: '600' },
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.bg },
-          headerBackTitleVisible: false,
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -23,6 +22,7 @@ export default function RootLayout() {
           name="settings"
           options={{
             title: 'Settings',
+            headerBackTitle: 'Back',
             animation: 'slide_from_right',
           }}
         />
@@ -49,6 +49,6 @@ export default function RootLayout() {
           }}
         />
       </Stack>
-    </>
+    </ThemeProvider>
   );
 }
