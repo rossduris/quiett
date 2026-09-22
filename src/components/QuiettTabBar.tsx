@@ -35,7 +35,8 @@ export type QuiettTabBarProps = {
 
 const TAB_META: Record<string, { label: string; icon: IconName; iconFocused: IconName }> = {
   index: { label: 'Home', icon: 'home-outline', iconFocused: 'home' },
-  you: { label: 'You', icon: 'person-outline', iconFocused: 'person' },
+  library: { label: 'Library', icon: 'book-outline', iconFocused: 'book' },
+  profile: { label: 'Profile', icon: 'person-outline', iconFocused: 'person' },
 };
 
 /** Calm-style floating pill — real Expo Router tab bar (no stack push / swipe). */

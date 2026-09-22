@@ -4,9 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { WeekStreakStrip } from '@/components/WeekStreakStrip';
+import { StreakCalendar } from '@/components/StreakCalendar';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
+import { longestScheduledStreak, morningsInMonth, nextStreakGoal } from '@/lib/streak-calendar';
 import { SETUP_LEAD, SETUP_NOTE, SETUP_TIPS } from '@/constants/setup-tips';
 import {
   loadAccount,
@@ -26,7 +27,7 @@ function initialFor(account: AccountData): string {
   return 'Y';
 }
 
-export default function YouScreen() {
+export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [account, setAccount] = useState<AccountData>({
@@ -39,6 +40,10 @@ export default function YouScreen() {
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
   const [tipsExpanded, setTipsExpanded] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return { year: today.getFullYear(), month: today.getMonth() };
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -71,20 +76,18 @@ export default function YouScreen() {
   };
 
   const totalMornings = completedDays.length;
+  const bestStreak = longestScheduledStreak(completedDays, alarm.weekdays);
+  const monthMornings = morningsInMonth(
+    calendarMonth.year,
+    calendarMonth.month,
+    completedDays,
+  );
+  const nextGoal = nextStreakGoal(streak.count);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>You</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Settings"
-          onPress={() => router.push('/settings')}
-          style={({ pressed }) => [styles.gearBtn, pressed && styles.pressed]}
-          hitSlop={12}
-        >
-          <Ionicons name="settings-outline" size={22} color={colors.textMuted} />
-        </Pressable>
+        <Text style={styles.screenTitle}>Profile</Text>
       </View>
 
       <ScrollView
@@ -125,8 +128,36 @@ export default function YouScreen() {
               <Text style={styles.statsSmallNum}>{totalMornings}</Text>
               <Text style={styles.statsSmallLabel}>Total mornings</Text>
             </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCol}>
+              <Text style={styles.statsSmallNum}>{bestStreak}</Text>
+              <Text style={styles.statsSmallLabel}>Best streak</Text>
+            </View>
           </View>
-          <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
+          {nextGoal ? (
+            <View style={styles.goalPill}>
+              <Ionicons name="flag-outline" size={15} color={colors.calm} />
+              <Text style={styles.goalText}>{nextGoal.label}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.calendarCard}>
+          <View style={styles.calendarCardTop}>
+            <View>
+              <Text style={styles.calendarTitle}>Streak calendar</Text>
+              <Text style={styles.calendarSub}>
+                {monthMornings} {monthMornings === 1 ? 'morning' : 'mornings'} unlocked
+              </Text>
+            </View>
+          </View>
+          <StreakCalendar
+            completedDays={completedDays}
+            scheduledWeekdays={alarm.weekdays}
+            year={calendarMonth.year}
+            month={calendarMonth.month}
+            onChangeMonth={setCalendarMonth}
+          />
         </View>
 
         <View style={styles.actionsCard}>
@@ -138,18 +169,6 @@ export default function YouScreen() {
             <View style={styles.actionLeft}>
               <Ionicons name="settings-outline" size={20} color={colors.text} />
               <Text style={styles.actionLabel}>Settings</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-          <View style={styles.actionDivider} />
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push('/session')}
-            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-          >
-            <View style={styles.actionLeft}>
-              <Ionicons name="play-circle-outline" size={20} color={colors.text} />
-              <Text style={styles.actionLabel}>Try a demo meditation</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
           </Pressable>
@@ -191,23 +210,12 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
   screenTitle: {
     ...typography.title,
     color: colors.text,
-  },
-  gearBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bgCard,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   scroll: { flex: 1 },
   content: {
@@ -286,6 +294,12 @@ const styles = StyleSheet.create({
   statCol: {
     alignItems: 'center',
     gap: spacing.xs,
+    flex: 1,
+  },
+  statDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.border,
   },
   statsSmallNum: {
     fontSize: 28,
@@ -299,6 +313,46 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  goalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.full,
+    backgroundColor: colors.calmSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(61,207,176,0.28)',
+  },
+  goalText: {
+    color: colors.calm,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  calendarCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.lg,
+  },
+  calendarCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  calendarTitle: {
+    ...typography.subtitle,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  calendarSub: {
+    color: colors.textDim,
+    fontSize: 13,
+    marginTop: spacing.xs,
   },
   actionsCard: {
     backgroundColor: colors.bgCard,

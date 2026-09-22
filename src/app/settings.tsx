@@ -136,7 +136,7 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Meditation track</Text>
-        <Text style={styles.hint}>Plays once you are looking · still</Text>
+        <Text style={styles.hint}>Plays once you are looking · still. Prefer Home → Morning sound, or Library, for guided / healing tones / ambient.</Text>
         {MEDITATION_SOUNDS.map((s) => {
           const selected = s.id === meditationSoundId;
           return (

@@ -3,6 +3,7 @@ import {
   DEFAULT_ALARM_SOUND_ID,
   DEFAULT_MEDITATION_SOUND_ID,
 } from '@/constants/sounds';
+import { DEFAULT_UNLOCK_TRACK_ID, unlockTrackById } from '@/constants/unlock-tracks';
 
 const KEYS = {
   alarmTime: 'quiett.alarmTime',
@@ -11,6 +12,7 @@ const KEYS = {
   sitMinutes: 'quiett.sitMinutes.v2',
   alarmSoundId: 'quiett.alarmSoundId',
   meditationSoundId: 'quiett.meditationSoundId',
+  unlockTrackId: 'quiett.unlockTrackId',
   streak: 'quiett.streak',
   lastCompletedDate: 'quiett.lastCompletedDate',
   completedDays: 'quiett.completedDays',
@@ -91,6 +93,21 @@ export async function loadMeditationSoundId(): Promise<string> {
 
 export async function saveMeditationSoundId(id: string): Promise<void> {
   await AsyncStorage.setItem(KEYS.meditationSoundId, id);
+}
+
+export async function loadUnlockTrackId(): Promise<string> {
+  const raw = await AsyncStorage.getItem(KEYS.unlockTrackId);
+  if (!raw) return DEFAULT_UNLOCK_TRACK_ID;
+  return unlockTrackById(raw).id;
+}
+
+/** Persist next-morning unlock selection and keep session calm audio in sync. */
+export async function saveUnlockTrackId(id: string): Promise<string> {
+  const track = unlockTrackById(id);
+  if (track.locked) return loadUnlockTrackId();
+  await AsyncStorage.setItem(KEYS.unlockTrackId, track.id);
+  await saveMeditationSoundId(track.playbackSoundId);
+  return track.id;
 }
 
 
