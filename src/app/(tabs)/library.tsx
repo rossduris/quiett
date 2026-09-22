@@ -1,20 +1,28 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
+import { meditationSoundById } from '@/constants/sounds';
 import {
   DEFAULT_UNLOCK_TRACK_ID,
   kindLabel,
   kindSectionHint,
+  pickSurpriseTrack,
   unlockTrackById,
   unlockTracksByKind,
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
-import { loadUnlockTrackId, saveUnlockTrackId } from '@/lib/storage';
+import { previewSoundUrl, stopAllAudio } from '@/lib/audio';
+import {
+  loadSurpriseMe,
+  loadUnlockTrackId,
+  saveSurpriseMe,
+  saveUnlockTrackId,
+} from '@/lib/storage';
 
 type Filter = 'all' | UnlockTrackKind;
 
@@ -68,61 +76,87 @@ function TrackArt({ track, large }: { track: UnlockTrack; large?: boolean }) {
 function TrackCard({
   track,
   selected,
+  previewing,
   onPress,
+  onPreview,
 }: {
   track: UnlockTrack;
   selected?: boolean;
+  previewing?: boolean;
   onPress?: () => void;
+  onPreview?: () => void;
 }) {
   const disabled = track.locked;
-  const Wrapper: typeof Pressable | typeof View = onPress && !disabled ? Pressable : View;
 
   return (
-    <Wrapper
-      accessibilityRole={onPress && !disabled ? 'button' : 'summary'}
-      accessibilityState={
-        onPress && !disabled ? { selected: !!selected } : undefined
-      }
-      accessibilityLabel={`${track.title}, ${track.durationLabel}, ${kindLabel(track.kind)}${
-        track.locked ? ', premium coming soon' : selected ? ', selected for next morning' : ''
-      }`}
-      onPress={onPress && !disabled ? onPress : undefined}
+    <View
       style={[
         styles.card,
         track.locked && styles.cardPremium,
         selected && styles.cardSelected,
       ]}
     >
-      <TrackArt track={track} />
-      <View style={styles.cardBody}>
-        <View style={styles.cardTop}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {track.title}
+      <Pressable
+        accessibilityRole={onPress && !disabled ? 'button' : 'summary'}
+        accessibilityState={
+          onPress && !disabled ? { selected: !!selected } : undefined
+        }
+        accessibilityLabel={`${track.title}, ${track.durationLabel}, ${kindLabel(track.kind)}${
+          track.locked ? ', premium coming soon' : selected ? ', selected for next morning' : ''
+        }`}
+        onPress={onPress && !disabled ? onPress : undefined}
+        style={styles.cardMain}
+      >
+        <TrackArt track={track} />
+        <View style={styles.cardBody}>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {track.title}
+            </Text>
+            {track.locked ? (
+              <View style={styles.premiumBadge}>
+                <Text style={styles.premiumBadgeText}>Premium</Text>
+              </View>
+            ) : selected ? (
+              <View style={styles.selectedBadge}>
+                <Text style={styles.selectedBadgeText}>Selected</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.cardBlurb} numberOfLines={2}>
+            {track.blurb}
           </Text>
-          {track.locked ? (
-            <View style={styles.premiumBadge}>
-              <Text style={styles.premiumBadgeText}>Premium</Text>
+          <View style={styles.metaRow}>
+            <View style={styles.metaPill}>
+              <Ionicons name="time-outline" size={12} color={colors.textDim} />
+              <Text style={styles.metaText}>{track.durationLabel}</Text>
             </View>
-          ) : selected ? (
-            <View style={styles.selectedBadge}>
-              <Text style={styles.selectedBadgeText}>Selected</Text>
+            <View style={styles.metaPill}>
+              <Text style={styles.metaText}>{track.mood}</Text>
             </View>
-          ) : null}
-        </View>
-        <Text style={styles.cardBlurb} numberOfLines={2}>
-          {track.blurb}
-        </Text>
-        <View style={styles.metaRow}>
-          <View style={styles.metaPill}>
-            <Ionicons name="time-outline" size={12} color={colors.textDim} />
-            <Text style={styles.metaText}>{track.durationLabel}</Text>
-          </View>
-          <View style={styles.metaPill}>
-            <Text style={styles.metaText}>{track.mood}</Text>
           </View>
         </View>
-      </View>
-    </Wrapper>
+      </Pressable>
+      {!disabled && onPreview ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={previewing ? `Stop preview of ${track.title}` : `Preview ${track.title}`}
+          onPress={onPreview}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.previewBtn,
+            previewing && styles.previewBtnActive,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={previewing ? 'stop' : 'play'}
+            size={16}
+            color={previewing ? colors.calm : colors.text}
+          />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -130,25 +164,73 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
+  const [surpriseMe, setSurpriseMe] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const id = await loadUnlockTrackId();
-        if (alive) setSelectedId(id);
+        const [id, surprise] = await Promise.all([loadUnlockTrackId(), loadSurpriseMe()]);
+        if (!alive) return;
+        setSelectedId(id);
+        setSurpriseMe(surprise);
       })();
       return () => {
         alive = false;
+        void stopAllAudio();
+        setPreviewId(null);
+        setPreviewBusy(false);
       };
     }, []),
   );
 
+  useEffect(() => {
+    return () => {
+      void stopAllAudio();
+    };
+  }, []);
+
   const selectedTrack = useMemo(() => unlockTrackById(selectedId), [selectedId]);
+
   const onSelectTrack = async (track: UnlockTrack) => {
     if (track.locked) return;
     const saved = await saveUnlockTrackId(track.id);
     setSelectedId(saved);
+    if (surpriseMe) {
+      setSurpriseMe(false);
+      await saveSurpriseMe(false);
+    }
+  };
+
+  const onToggleSurprise = async () => {
+    const next = !surpriseMe;
+    setSurpriseMe(next);
+    await saveSurpriseMe(next);
+    if (next) {
+      const picked = pickSurpriseTrack(selectedId);
+      const id = await saveUnlockTrackId(picked.id);
+      setSelectedId(id);
+    }
+  };
+
+  const onPreview = async (track: UnlockTrack) => {
+    if (track.locked || previewBusy) return;
+    if (previewId === track.id) {
+      await stopAllAudio();
+      setPreviewId(null);
+      return;
+    }
+    setPreviewBusy(true);
+    setPreviewId(track.id);
+    try {
+      const sound = meditationSoundById(track.playbackSoundId);
+      await previewSoundUrl(sound.url);
+    } finally {
+      setPreviewBusy(false);
+      setPreviewId((cur) => (cur === track.id ? null : cur));
+    }
   };
 
   const sections = useMemo(() => {
@@ -177,9 +259,25 @@ export default function LibraryScreen() {
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <Text style={styles.heroEyebrow}>Now playing next</Text>
-            <View style={styles.selectedBadge}>
-              <Text style={styles.selectedBadgeText}>Selected</Text>
-            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: surpriseMe }}
+              onPress={() => void onToggleSurprise()}
+              style={({ pressed }) => [
+                styles.surprisePill,
+                surpriseMe && styles.surprisePillOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons
+                name="shuffle-outline"
+                size={14}
+                color={surpriseMe ? colors.calm : colors.textDim}
+              />
+              <Text style={[styles.surpriseText, surpriseMe && styles.surpriseTextOn]}>
+                Surprise me
+              </Text>
+            </Pressable>
           </View>
           <View style={styles.heroMain}>
             <TrackArt track={selectedTrack} large />
@@ -197,12 +295,57 @@ export default function LibraryScreen() {
                     {selectedTrack.durationLabel}
                   </Text>
                 </View>
+                {surpriseMe ? (
+                  <View style={styles.metaPill}>
+                    <Text style={[styles.metaText, { color: colors.calm }]}>Rotating</Text>
+                  </View>
+                ) : (
+                  <View style={styles.selectedBadge}>
+                    <Text style={styles.selectedBadgeText}>Selected</Text>
+                  </View>
+                )}
               </View>
             </View>
+            {!selectedTrack.locked ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  previewId === selectedTrack.id
+                    ? `Stop preview of ${selectedTrack.title}`
+                    : `Preview ${selectedTrack.title}`
+                }
+                onPress={() => void onPreview(selectedTrack)}
+                style={({ pressed }) => [
+                  styles.previewBtn,
+                  styles.heroPreview,
+                  previewId === selectedTrack.id && styles.previewBtnActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name={previewId === selectedTrack.id ? 'stop' : 'play'}
+                  size={18}
+                  color={previewId === selectedTrack.id ? colors.calm : colors.text}
+                />
+              </Pressable>
+            ) : null}
           </View>
           <Text style={styles.heroFoot}>
-            Change anytime on Home or by tapping a track below.
+            Change anytime on Home or by tapping a track below. Preview with play.
           </Text>
+        </View>
+
+        <View style={styles.premiumCard}>
+          <View style={styles.premiumIcon}>
+            <Ionicons name="sparkles-outline" size={20} color={colors.calm} />
+          </View>
+          <View style={styles.premiumBody}>
+            <Text style={styles.premiumTitle}>Coming: human-voiced guides</Text>
+            <Text style={styles.premiumBodyText}>
+              Premium is a guided-voice upgrade. Free guided, healing tones, and ambient
+              stay open to browse — nothing locked behind finishing another track.
+            </Text>
+          </View>
         </View>
 
         <ScrollView
@@ -250,22 +393,15 @@ export default function LibraryScreen() {
                     key={track.id}
                     track={track}
                     selected={selectedId === track.id}
+                    previewing={previewId === track.id}
                     onPress={() => void onSelectTrack(track)}
+                    onPreview={() => void onPreview(track)}
                   />
                 ))}
               </View>
             </View>
           );
         })}
-
-        <View style={styles.footnoteCard}>
-          <Ionicons name="library-outline" size={16} color={colors.mist} />
-          <Text style={styles.footnote}>
-            Browse the full shelf. Premium guided voice is coming as an upgrade —
-            free guided, healing tones, and ambient are ready to pick today.
-          </Text>
-        </View>
-
       </ScrollView>
     </View>
   );
@@ -301,6 +437,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
+  surprisePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  surprisePillOn: {
+    backgroundColor: colors.calmSoft,
+    borderColor: 'rgba(61,207,176,0.45)',
+  },
+  surpriseText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
+  surpriseTextOn: { color: colors.calm },
   heroMain: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -310,6 +463,30 @@ const styles = StyleSheet.create({
   heroTitle: { ...typography.subtitle, color: colors.text, fontSize: 22 },
   heroBlurb: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
   heroFoot: { color: colors.textDim, fontSize: 12, lineHeight: 18 },
+  heroPreview: { width: 44, height: 44, borderRadius: 22 },
+  premiumCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.xl,
+    backgroundColor: colors.calmSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(61,207,176,0.28)',
+  },
+  premiumIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(61,207,176,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(61,207,176,0.35)',
+  },
+  premiumBody: { flex: 1, gap: 4 },
+  premiumTitle: { color: colors.calm, fontSize: 16, fontWeight: '700' },
+  premiumBodyText: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   filters: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
@@ -341,12 +518,18 @@ const styles = StyleSheet.create({
   list: { gap: spacing.sm },
   card: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     backgroundColor: colors.bgCard,
     borderRadius: radii.lg,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    alignItems: 'center',
+  },
+  cardMain: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
     alignItems: 'center',
   },
   cardPremium: { opacity: 0.9 },
@@ -421,22 +604,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.calmSoft,
   },
   selectedBadgeText: { color: colors.calm, fontSize: 11, fontWeight: '700' },
-  footnoteCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.lg,
+  previewBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.bgElevated,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  footnote: {
-    flex: 1,
-    color: colors.textDim,
-    fontSize: 12,
-    lineHeight: 18,
+  previewBtnActive: {
+    backgroundColor: colors.calmSoft,
+    borderColor: 'rgba(61,207,176,0.45)',
   },
   pressed: { opacity: 0.8 },
 });

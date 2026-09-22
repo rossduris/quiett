@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +25,17 @@ function initialFor(account: AccountData): string {
   const name = account.displayName?.trim();
   if (name) return name.charAt(0).toUpperCase();
   return 'Y';
+}
+
+function formatHistoryDay(key: string): string {
+  const [y, m, d] = key.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return key;
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 export default function ProfileScreen() {
@@ -84,6 +95,23 @@ export default function ProfileScreen() {
   );
   const nextGoal = nextStreakGoal(streak.count);
 
+  const recentDays = useMemo(
+    () => [...completedDays].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)).slice(0, 10),
+    [completedDays],
+  );
+
+  const onShareStreak = async () => {
+    const message =
+      streak.count > 0
+        ? `I'm on a ${streak.count}-day Quiett streak (${totalMornings} mornings unlocked). Stay still — then the morning begins.`
+        : `Building mornings with Quiett. Stay still — then the morning begins.`;
+    try {
+      await Share.share({ message });
+    } catch {
+      // User dismissed or share unavailable — ignore.
+    }
+  };
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.topBar}>
@@ -101,7 +129,7 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.displayName}>{account.displayName ?? 'You'}</Text>
           {account.email ? <Text style={styles.email}>{account.email}</Text> : null}
-          
+
           {account.signedIn ? (
             <Pressable
               accessibilityRole="button"
@@ -140,6 +168,34 @@ export default function ProfileScreen() {
               <Text style={styles.goalText}>{nextGoal.label}</Text>
             </View>
           ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Share streak"
+            onPress={() => void onShareStreak()}
+            style={({ pressed }) => [styles.shareBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="share-outline" size={18} color={colors.calm} />
+            <Text style={styles.shareBtnText}>Share streak</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.historyCard}>
+          <Text style={styles.historyTitle}>Recent mornings</Text>
+          {recentDays.length === 0 ? (
+            <Text style={styles.historyEmpty}>
+              No mornings yet — unlock one to start history.
+            </Text>
+          ) : (
+            <View style={styles.historyList}>
+              {recentDays.map((key) => (
+                <View key={key} style={styles.historyRow}>
+                  <View style={styles.historyDot} />
+                  <Text style={styles.historyDate}>{formatHistoryDay(key)}</Text>
+                  <Text style={styles.historyTag}>Unlocked</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.calendarCard}>
@@ -244,11 +300,11 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.text, fontSize: 28, fontWeight: '600' },
   displayName: { ...typography.subtitle, color: colors.text, fontSize: 20 },
   email: { color: colors.textMuted, fontSize: 14, marginTop: -spacing.xs },
-  signInHint: { 
-    ...typography.body, 
-    color: colors.textMuted, 
-    fontSize: 15, 
-    marginTop: spacing.xs 
+  signInHint: {
+    ...typography.body,
+    color: colors.textMuted,
+    fontSize: 15,
+    marginTop: spacing.xs,
   },
   signOutPill: {
     marginTop: spacing.sm,
@@ -331,6 +387,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md - 2,
+    borderRadius: radii.full,
+    backgroundColor: colors.calmSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(61,207,176,0.35)',
+  },
+  shareBtnText: {
+    color: colors.calm,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  historyCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+  },
+  historyTitle: {
+    ...typography.subtitle,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  historyEmpty: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  historyList: { gap: spacing.sm },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 6,
+  },
+  historyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.calm,
+  },
+  historyDate: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  historyTag: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   calendarCard: {
     backgroundColor: colors.bgCard,
     borderRadius: radii.lg,
@@ -377,11 +493,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
     fontWeight: '500',
-  },
-  actionDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.lg,
   },
   tipsCard: {
     backgroundColor: colors.bgCard,

@@ -13,6 +13,7 @@ const KEYS = {
   alarmSoundId: 'quiett.alarmSoundId',
   meditationSoundId: 'quiett.meditationSoundId',
   unlockTrackId: 'quiett.unlockTrackId',
+  surpriseMe: 'quiett.surpriseMe',
   streak: 'quiett.streak',
   lastCompletedDate: 'quiett.lastCompletedDate',
   completedDays: 'quiett.completedDays',
@@ -108,6 +109,15 @@ export async function saveUnlockTrackId(id: string): Promise<string> {
   await AsyncStorage.setItem(KEYS.unlockTrackId, track.id);
   await saveMeditationSoundId(track.playbackSoundId);
   return track.id;
+}
+
+export async function loadSurpriseMe(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.surpriseMe);
+  return raw === '1';
+}
+
+export async function saveSurpriseMe(on: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.surpriseMe, on ? '1' : '0');
 }
 
 

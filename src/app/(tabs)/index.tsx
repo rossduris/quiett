@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,15 +11,20 @@ import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { UnlockTrackPicker } from '@/components/UnlockTrackPicker';
 import { alarmSoundById, DEFAULT_ALARM_SOUND_ID } from '@/constants/sounds';
-import { kindLabel, unlockTrackById, type UnlockTrack } from '@/constants/unlock-tracks';
+import {
+  kindLabel,
+  pickSurpriseTrack,
+  unlockTrackById,
+  type UnlockTrack,
+} from '@/constants/unlock-tracks';
 import {
   getRingsCountdown,
   getTodayStatusChip,
   isUnlockedForToday,
   type TodayStatus,
 } from '@/lib/home-status';
+import { sitDurationPillLabel } from '@/lib/session-machine';
 import {
-  dayKey,
   loadAlarmPrefs,
   loadCompletedDays,
   loadStreak,
@@ -34,6 +39,13 @@ import {
   saveUnlockTrackId,
   loadAlarmSoundId,
   saveAlarmSoundId,
+  DEFAULT_SIT_MINUTES,
+  loadSitMinutes,
+  saveSitMinutes,
+  SIT_MINUTE_OPTIONS,
+  type SitMinutes,
+  loadSurpriseMe,
+  saveSurpriseMe,
 } from '@/lib/storage';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 
@@ -64,7 +76,6 @@ function chipTone(status: TodayStatus): string {
 }
 
 export default function HomeScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
@@ -75,29 +86,40 @@ export default function HomeScreen() {
   const [showAlarmSoundPicker, setShowAlarmSoundPicker] = useState(false);
   const [alarmSoundId, setAlarmSoundId] = useState(DEFAULT_ALARM_SOUND_ID);
   const [unlockTrackId, setUnlockTrackId] = useState(() => unlockTrackById('guided:first-light').id);
+  const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
+  const [surpriseMe, setSurpriseMe] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [a, s, days, resolved, unlockId, soundId] = await Promise.all([
+        const [a, s, days, resolved, unlockId, soundId, sit, surprise] = await Promise.all([
           loadAlarmPrefs(),
           loadStreak(),
           loadCompletedDays(),
           isWakeResolvedToday(),
           loadUnlockTrackId(),
           loadAlarmSoundId(),
+          loadSitMinutes(),
+          loadSurpriseMe(),
         ]);
         if (!alive) return;
         setAlarm(a);
         setStreak(s);
         setCompletedDays(days);
         setWakeResolved(resolved);
-        setUnlockTrackId(unlockId);
         setAlarmSoundId(soundId);
+        setSitMinutes(sit);
+        setSurpriseMe(surprise);
         setNow(new Date());
-        // Reconcile native schedule (e.g. after rebuild / permission grant)
+
+        let nextUnlock = unlockId;
+        if (surprise) {
+          const picked = pickSurpriseTrack(unlockId);
+          nextUnlock = await saveUnlockTrackId(picked.id);
+        }
+        setUnlockTrackId(nextUnlock);
         void syncOsAlarm(a);
       })();
       return () => {
@@ -106,7 +128,6 @@ export default function HomeScreen() {
     }, []),
   );
 
-  // Live countdown — 1-minute tick is enough for "Rings in Xh Ym"
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
@@ -133,20 +154,38 @@ export default function HomeScreen() {
   const onSelectUnlockTrack = async (track: UnlockTrack) => {
     const id = await saveUnlockTrackId(track.id);
     setUnlockTrackId(id);
+    if (surpriseMe) {
+      setSurpriseMe(false);
+      await saveSurpriseMe(false);
+    }
     setShowMorningSoundPicker(false);
   };
 
   const onSelectAlarmSound = async (id: string) => {
     setAlarmSoundId(id);
     await saveAlarmSoundId(id);
-    // Keep native schedule aligned with prefs after tone change.
     void syncOsAlarm(alarm);
+  };
+
+  const onSelectSit = async (minutes: SitMinutes) => {
+    setSitMinutes(minutes);
+    await saveSitMinutes(minutes);
+  };
+
+  const onToggleSurprise = async () => {
+    const next = !surpriseMe;
+    setSurpriseMe(next);
+    await saveSurpriseMe(next);
+    if (next) {
+      const picked = pickSurpriseTrack(unlockTrackId);
+      const id = await saveUnlockTrackId(picked.id);
+      setUnlockTrackId(id);
+    }
   };
 
   const persistAlarm = async (next: AlarmPrefs) => {
     setAlarm(next);
     await saveAlarmPrefs(next);
-    // New / changed alarm after a finished morning must be allowed to force /session again.
     await clearWakeResolved();
     setWakeResolved(false);
     const result = await syncOsAlarm(next);
@@ -166,13 +205,11 @@ export default function HomeScreen() {
 
   const onTimeValueChange = async (_event: unknown, date: Date) => {
     if (Platform.OS === 'android') setShowPicker(false);
-    const next = { ...alarm, time: toHhMm(date) };
-    await persistAlarm(next);
+    await persistAlarm({ ...alarm, time: toHhMm(date) });
   };
 
   const toggleEnabled = async () => {
-    const next = { ...alarm, enabled: !alarm.enabled };
-    await persistAlarm(next);
+    await persistAlarm({ ...alarm, enabled: !alarm.enabled });
   };
 
   const toggleWeekday = async (day: Weekday) => {
@@ -183,34 +220,23 @@ export default function HomeScreen() {
     } else {
       current.add(day);
     }
-    const next = { ...alarm, weekdays: Array.from(current).sort((a, b) => a - b) as Weekday[] };
-    await persistAlarm(next);
+    await persistAlarm({
+      ...alarm,
+      weekdays: Array.from(current).sort((a, b) => a - b) as Weekday[],
+    });
   };
 
-  const streakSub = unlockedToday
-    ? 'Morning complete'
-    : streak.lastCompletedDate === dayKey(0)
-      ? 'Last unlock today'
-      : streak.count > 0
-        ? 'Complete this morning to keep it'
-        : 'Finish a morning meditation to start your streak';
+  const tagline = unlockedToday
+    ? `Day open · streak ${streak.count}`
+    : 'Stay still. Then the morning begins.';
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.topBar}>
         <View style={styles.header}>
           <Text style={styles.brand}>Quiett</Text>
-          <Text style={styles.tagline}>Stay still. Then the morning begins.</Text>
+          <Text style={[styles.tagline, unlockedToday && styles.taglineOpen]}>{tagline}</Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Settings"
-          onPress={() => router.push('/settings')}
-          style={({ pressed }) => [styles.gearBtn, pressed && styles.pressed]}
-          hitSlop={12}
-        >
-          <Ionicons name="settings-outline" size={22} color={colors.textMuted} />
-        </Pressable>
       </View>
 
       <ScrollView
@@ -221,9 +247,29 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
+        {unlockedToday ? (
+          <View style={styles.dayOpenHero}>
+            <Ionicons name="sunny-outline" size={28} color={colors.calm} />
+            <Text style={styles.dayOpenTitle}>Morning unlocked</Text>
+            <Text style={styles.dayOpenBody}>
+              Your day is open. Alarm prep for tomorrow stays below when you need it.
+            </Text>
+            {statusChip ? (
+              <View style={[styles.statusChip, { borderColor: chipTone(statusChip.status) }]}>
+                <View style={[styles.statusDot, { backgroundColor: chipTone(statusChip.status) }]} />
+                <Text style={[styles.statusLabel, { color: chipTone(statusChip.status) }]}>
+                  {statusChip.label}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={[styles.card, styles.heroCard, unlockedToday && styles.cardDimmed]}>
           <View style={styles.cardTop}>
-            <Text style={styles.cardLabel}>Morning alarm</Text>
+            <Text style={styles.cardLabel}>
+              {unlockedToday ? 'Tomorrow alarm' : 'Morning alarm'}
+            </Text>
             <Pressable
               onPress={toggleEnabled}
               style={styles.switchRow}
@@ -239,7 +285,15 @@ export default function HomeScreen() {
           <Pressable onPress={() => setShowPicker((open) => !open)} style={styles.timeHit}>
             <Text style={styles.time}>{displayTime(alarm.time)}</Text>
           </Pressable>
-          <Text style={styles.hint}>Tap to change · {formatWeekdayHint(alarm.weekdays)}</Text>
+
+          {!unlockedToday && rings ? (
+            <View style={styles.ringsRow}>
+              <Ionicons name="moon-outline" size={18} color={colors.mist} />
+              <Text style={styles.ringsText}>{rings.label}</Text>
+            </View>
+          ) : null}
+
+          <Text style={styles.hint}>Tap time to change · {formatWeekdayHint(alarm.weekdays)}</Text>
 
           <Pressable
             accessibilityRole="button"
@@ -295,78 +349,107 @@ export default function HomeScreen() {
             </>
           )}
 
-          {rings ? (
-            <View style={styles.ringsRow}>
-              <Ionicons name="moon-outline" size={16} color={colors.mist} />
-              <Text style={styles.ringsText}>{rings.label}</Text>
-            </View>
-          ) : null}
-
-          {statusChip ? (
-            <View
-              style={[
-                styles.statusChip,
-                { borderColor: chipTone(statusChip.status) },
-              ]}
-            >
-              <View
-                style={[styles.statusDot, { backgroundColor: chipTone(statusChip.status) }]}
-              />
+          {!unlockedToday && statusChip && statusChip.status !== 'unlocked_today' ? (
+            <View style={[styles.statusChip, { borderColor: chipTone(statusChip.status) }]}>
+              <View style={[styles.statusDot, { backgroundColor: chipTone(statusChip.status) }]} />
               <Text style={[styles.statusLabel, { color: chipTone(statusChip.status) }]}>
                 {statusChip.label}
               </Text>
             </View>
           ) : null}
-
-          {unlockedToday ? (
-            <View style={styles.dayOpenStrip}>
-              <Text style={styles.dayOpenText}>Day open · streak {streak.count}</Text>
-            </View>
-          ) : null}
         </View>
 
-        <View style={styles.streakCard}>
-          <Text style={styles.streakNum}>{streak.count}</Text>
+        <View style={[styles.morningCard, unlockedToday && styles.cardDimmed]}>
+          <View style={styles.morningCardTop}>
+            <Text style={styles.cardLabel}>Morning sound</Text>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: surpriseMe }}
+              onPress={() => void onToggleSurprise()}
+              style={({ pressed }) => [styles.surprisePill, surpriseMe && styles.surprisePillOn, pressed && styles.pressed]}
+            >
+              <Ionicons
+                name="shuffle-outline"
+                size={14}
+                color={surpriseMe ? colors.calm : colors.textDim}
+              />
+              <Text style={[styles.surpriseText, surpriseMe && styles.surpriseTextOn]}>
+                Surprise me
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose morning sound"
+            onPress={() => setShowMorningSoundPicker(true)}
+            style={({ pressed }) => [styles.unlockRow, pressed && styles.pressed]}
+          >
+            <View
+              style={[
+                styles.unlockArt,
+                { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
+              ]}
+            >
+              <Ionicons
+                name={
+                  unlockTrack.kind === 'guided'
+                    ? 'mic-outline'
+                    : unlockTrack.kind === 'music'
+                      ? 'musical-notes-outline'
+                      : 'rainy-outline'
+                }
+                size={20}
+                color={colors.text}
+              />
+            </View>
+            <View style={styles.unlockBody}>
+              <Text style={styles.unlockTitle} numberOfLines={1}>
+                {unlockTrack.title}
+              </Text>
+              <Text style={styles.unlockMeta}>
+                {kindLabel(unlockTrack.kind)}
+                {surpriseMe ? ' · rotating' : ''}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+          </Pressable>
+
+          <Text style={styles.lengthLabel}>Unlock length</Text>
+          <View style={styles.lengthRow}>
+            {SIT_MINUTE_OPTIONS.map((m) => {
+              const selected = m === sitMinutes;
+              return (
+                <Pressable
+                  key={String(m)}
+                  onPress={() => void onSelectSit(m)}
+                  style={[styles.lengthPill, selected && styles.lengthPillSelected]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.lengthPillText, selected && styles.lengthPillTextSelected]}>
+                    {sitDurationPillLabel(m)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.streakCard, unlockedToday && styles.streakCardOpen]}>
+          <Text style={[styles.streakNum, unlockedToday && styles.streakNumOpen]}>
+            {streak.count}
+          </Text>
           <Text style={styles.streakLabel}>day streak</Text>
-          <Text style={styles.streakSub}>{streakSub}</Text>
+          <Text style={styles.streakSub}>
+            {unlockedToday
+              ? 'Morning complete'
+              : streak.count > 0
+                ? 'Complete this morning to keep it'
+                : 'Finish a morning meditation to start your streak'}
+          </Text>
           <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
         </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Choose morning sound"
-          onPress={() => setShowMorningSoundPicker(true)}
-          style={({ pressed }) => [styles.unlockCard, pressed && styles.pressed]}
-        >
-          <View
-            style={[
-              styles.unlockArt,
-              { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
-            ]}
-          >
-            <Ionicons
-              name={
-                unlockTrack.kind === 'guided'
-                  ? 'mic-outline'
-                  : unlockTrack.kind === 'music'
-                    ? 'musical-notes-outline'
-                    : 'rainy-outline'
-              }
-              size={18}
-              color={colors.text}
-            />
-          </View>
-          <View style={styles.unlockBody}>
-            <Text style={styles.unlockLabel}>Morning sound</Text>
-            <Text style={styles.unlockTitle} numberOfLines={1}>
-              {unlockTrack.title}
-            </Text>
-            <Text style={styles.unlockMeta}>
-              {kindLabel(unlockTrack.kind)} · {unlockTrack.durationLabel}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
-        </Pressable>
       </ScrollView>
 
       <UnlockTrackPicker
@@ -387,45 +470,50 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    gap: spacing.md,
   },
-  header: { flex: 1, gap: spacing.xs },
+  header: { gap: spacing.xs },
   brand: { ...typography.title, color: colors.text },
   tagline: { ...typography.body, color: colors.textMuted },
-  gearBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bgCard,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+  taglineOpen: { color: colors.calm, fontWeight: '600' },
   pressed: { opacity: 0.75 },
   scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: spacing.lg,
     gap: spacing.lg,
   },
+  dayOpenHero: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.xl,
+    backgroundColor: colors.calmSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(61,207,176,0.28)',
+  },
+  dayOpenTitle: { color: colors.calm, fontSize: 22, fontWeight: '700' },
+  dayOpenBody: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   card: {
     backgroundColor: colors.bgCard,
-    borderRadius: 16,
+    borderRadius: radii.xl,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.sm,
   },
+  heroCard: {
+    paddingVertical: spacing.xl,
+  },
+  cardDimmed: { opacity: 0.88 },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -438,10 +526,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  switchRow: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-  },
+  switchRow: { paddingVertical: 4, paddingHorizontal: 4 },
   switch: {
     width: 51,
     height: 31,
@@ -450,20 +535,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  switchOn: {
-    backgroundColor: colors.calm,
-  },
+  switchOn: { backgroundColor: colors.calm },
   thumb: {
     width: 27,
     height: 27,
     borderRadius: 14,
     backgroundColor: colors.bg,
   },
-  thumbOn: {
-    alignSelf: 'flex-end',
-  },
+  thumbOn: { alignSelf: 'flex-end' },
   timeHit: { paddingVertical: spacing.sm },
-  time: { ...typography.hero, color: colors.text },
+  time: { ...typography.hero, color: colors.text, fontSize: 72 },
   hint: { color: colors.textMuted, fontSize: 13 },
   dayPills: {
     flexDirection: 'row',
@@ -481,34 +562,24 @@ const styles = StyleSheet.create({
     minWidth: 44,
     alignItems: 'center',
   },
-  pillSelected: {
-    backgroundColor: colors.calm,
-    borderColor: colors.calm,
-  },
-  pillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  pillTextSelected: {
-    color: colors.bg,
-  },
+  pillSelected: { backgroundColor: colors.calm, borderColor: colors.calm },
+  pillText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  pillTextSelected: { color: colors.bg },
   ringsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     backgroundColor: colors.bgElevated,
     borderWidth: 1,
     borderColor: colors.border,
   },
   ringsText: {
     color: colors.mist,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   statusChip: {
@@ -530,32 +601,91 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  dayOpenStrip: {
-    marginTop: spacing.xs,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.calmSoft,
+  morningCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.28)',
+    borderColor: colors.border,
+    gap: spacing.md,
   },
-  dayOpenText: {
-    color: colors.calm,
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
+  morningCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  surprisePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  surprisePillOn: {
+    backgroundColor: colors.calmSoft,
+    borderColor: 'rgba(61,207,176,0.45)',
+  },
+  surpriseText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
+  surpriseTextOn: { color: colors.calm },
+  unlockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  unlockArt: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  unlockBody: { flex: 1, gap: 2 },
+  unlockTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  unlockMeta: { color: colors.textMuted, fontSize: 13 },
+  lengthLabel: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  lengthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  lengthPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 48,
+    alignItems: 'center',
+  },
+  lengthPillSelected: {
+    backgroundColor: colors.calm,
+    borderColor: colors.calm,
+  },
+  lengthPillText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  lengthPillTextSelected: { color: colors.bg },
   streakCard: {
     alignItems: 'center',
     backgroundColor: colors.bgCard,
-    borderRadius: 16,
+    borderRadius: radii.xl,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.xs,
   },
-  streakNum: { fontSize: 56, fontWeight: '200', color: colors.calm },
-  streakLabel: { color: colors.textMuted, fontSize: 16 },
+  streakCardOpen: {
+    borderColor: 'rgba(61,207,176,0.28)',
+  },
+  streakNum: { fontSize: 48, fontWeight: '200', color: colors.calm },
+  streakNumOpen: { fontSize: 40 },
+  streakLabel: { color: colors.textMuted, fontSize: 15 },
   streakSub: {
     color: colors.textDim,
     fontSize: 13,
@@ -584,32 +714,4 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   alarmSoundValue: { color: colors.textMuted, fontSize: 13, fontWeight: '600', maxWidth: 140 },
-  unlockCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  unlockArt: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  unlockBody: { flex: 1, gap: 2 },
-  unlockLabel: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-  },
-  unlockTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  unlockMeta: { color: colors.textMuted, fontSize: 13 },
 });
