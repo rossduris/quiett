@@ -21,12 +21,13 @@ import {
   saveBailCarrierIds,
   saveBailTimerIds,
   saveNativeAlarmId,
+  loadAlarmSoundId,
   type AlarmPrefs,
 } from '@/lib/storage';
 import {
-  clearHarshAlarmSoundUriCache,
-  HARSH_ALARM_SOUND_NAME,
-  resolveHarshAlarmSoundUri,
+  alarmKitSoundName,
+  clearAlarmSoundUriCache,
+  resolveAlarmSoundUri,
 } from '@/lib/harsh-alarm-asset';
 
 const ALARM_TITLE = 'Quiett — sit to begin';
@@ -157,12 +158,14 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     }
 
     const { hour, minute } = parseHhMm(prefs.time);
+    const alarmSoundId = await loadAlarmSoundId();
     let soundUri: string | undefined;
     try {
-      soundUri = await resolveHarshAlarmSoundUri();
+      soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
     } catch (e) {
-      console.warn('[quiett os-alarm] harsh asset', e);
+      console.warn('[quiett os-alarm] alarm asset', e);
     }
+    const soundName = alarmKitSoundName(alarmSoundId);
     const scheduled = await AlarmScheduler.scheduleAlarmAsync({
       id,
       hour,
@@ -172,12 +175,12 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
       soundUri,
       ios: {
         ...iosGate,
-        soundName: HARSH_ALARM_SOUND_NAME,
+        ...(soundName ? { soundName } : {}),
         soundUri,
       },
       android: {
         ...androidGate,
-        soundName: 'quiett_harsh',
+        soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
       },
     });
 
@@ -531,13 +534,15 @@ export async function prepareBailSoundCarriers(): Promise<void> {
 
   await disposeBailSoundCarriers();
 
+  const alarmSoundId = await loadAlarmSoundId();
   let soundUri: string | undefined;
   try {
-    clearHarshAlarmSoundUriCache();
-    soundUri = await resolveHarshAlarmSoundUri();
+    clearAlarmSoundUriCache();
+    soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
   } catch (e) {
     console.warn('[quiett os-alarm] carrier sound', e);
   }
+  const soundName = alarmKitSoundName(alarmSoundId);
 
   const ids: string[] = [];
   for (let i = 0; i < 2; i++) {
@@ -553,13 +558,13 @@ export async function prepareBailSoundCarriers(): Promise<void> {
         soundUri,
         ios: {
           ...bailIosGate,
-          soundName: HARSH_ALARM_SOUND_NAME,
+          ...(soundName ? { soundName } : {}),
           soundUri,
         },
         android: {
           ...androidGate,
           stopIntentBehavior: 'openApp',
-          soundName: 'quiett_harsh',
+          soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
           volume: 1,
           enforceVolume: true,
         },

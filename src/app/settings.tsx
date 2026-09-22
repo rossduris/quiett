@@ -5,13 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import {
   ALARM_SOUNDS,
+  ALARM_SOUND_SECTIONS,
+  alarmSoundsBySection,
   MEDITATION_SOUNDS,
   DEFAULT_ALARM_SOUND_ID,
   DEFAULT_MEDITATION_SOUND_ID,
 } from '@/constants/sounds';
 import { previewSoundUrl } from '@/lib/audio';
+import { syncOsAlarm } from '@/lib/os-alarm';
 import {
   DEFAULT_SIT_MINUTES,
+  loadAlarmPrefs,
   loadAlarmSoundId,
   loadMeditationSoundId,
   loadSitMinutes,
@@ -57,8 +61,9 @@ export default function SettingsScreen() {
   const onSelectAlarm = async (id: string) => {
     setAlarmSoundId(id);
     await saveAlarmSoundId(id);
+    void syncOsAlarm(await loadAlarmPrefs());
     const opt = ALARM_SOUNDS.find((s) => s.id === id);
-    if (opt && !previewing) {
+    if (opt && opt.url != null && !previewing) {
       setPreviewing(true);
       try {
         await previewSoundUrl(opt.url);
@@ -72,7 +77,7 @@ export default function SettingsScreen() {
     setMeditationSoundId(id);
     await saveMeditationSoundId(id);
     const opt = MEDITATION_SOUNDS.find((s) => s.id === id);
-    if (opt && !previewing) {
+    if (opt && opt.url != null && !previewing) {
       setPreviewing(true);
       try {
         await previewSoundUrl(opt.url);
@@ -114,22 +119,32 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Alarm sound</Text>
-        <Text style={styles.hint}>Plays when the sit gate is not held</Text>
-        {ALARM_SOUNDS.map((s) => {
-          const selected = s.id === alarmSoundId;
+        <Text style={styles.hint}>Wake tone while the morning gate is not held</Text>
+        {ALARM_SOUND_SECTIONS.map((section) => {
+          const opts = alarmSoundsBySection(section.id);
+          if (opts.length === 0) return null;
           return (
-            <Pressable
-              key={s.id}
-              onPress={() => void onSelectAlarm(s.id)}
-              style={[styles.optionRow, selected && styles.optionSelected]}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-            >
-              <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
-                {s.label}
-              </Text>
-              {selected ? <Text style={styles.check}>✓</Text> : null}
-            </Pressable>
+            <View key={section.id} style={styles.soundSection}>
+              <Text style={styles.sectionLabel}>{section.label}</Text>
+              <Text style={styles.sectionHint}>{section.hint}</Text>
+              {opts.map((s) => {
+                const selected = s.id === alarmSoundId;
+                return (
+                  <Pressable
+                    key={s.id}
+                    onPress={() => void onSelectAlarm(s.id)}
+                    style={[styles.optionRow, selected && styles.optionSelected]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                      {s.label}
+                    </Text>
+                    {selected ? <Text style={styles.check}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
           );
         })}
       </View>
@@ -213,4 +228,12 @@ const styles = StyleSheet.create({
   optionTextSelected: { color: colors.text, fontWeight: '600' },
   check: { color: colors.calm, fontSize: 16, fontWeight: '700' },
   previewHint: { color: colors.textDim, textAlign: 'center', fontSize: 13 },
+  soundSection: { gap: spacing.xs, marginTop: spacing.sm },
+  sectionLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  sectionHint: { color: colors.textDim, fontSize: 12, lineHeight: 16, marginBottom: 4 },
 });

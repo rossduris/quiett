@@ -3,7 +3,11 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, spacing, typography } from '@/constants/theme';
-import { ALARM_SOUNDS, type SoundOption } from '@/constants/sounds';
+import {
+  ALARM_SOUND_SECTIONS,
+  alarmSoundsBySection,
+  type SoundOption,
+} from '@/constants/sounds';
 import { previewSoundUrl } from '@/lib/audio';
 
 type Props = {
@@ -19,7 +23,7 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
 
   const pick = async (opt: SoundOption) => {
     await onSelect(opt.id);
-    if (!previewing) {
+    if (!previewing && opt.url != null) {
       setPreviewing(true);
       try {
         await previewSoundUrl(opt.url);
@@ -36,7 +40,8 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
           <View style={{ flex: 1 }}>
             <Text style={styles.sheetTitle}>Alarm sound</Text>
             <Text style={styles.sheetLead}>
-              Harsh wake tone while the morning gate is not held.
+              Wake tone while the morning gate is not held. Intense cuts through;
+              laid-back is softer. System uses the iOS AlarmKit default.
             </Text>
           </View>
           <Pressable
@@ -54,34 +59,52 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
         >
-          {ALARM_SOUNDS.map((opt) => {
-            const selected = opt.id === selectedId;
+          {ALARM_SOUND_SECTIONS.map((section) => {
+            const opts = alarmSoundsBySection(section.id);
+            if (opts.length === 0) return null;
             return (
-              <Pressable
-                key={opt.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => void pick(opt)}
-                style={({ pressed }) => [
-                  styles.row,
-                  selected && styles.rowSelected,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <View style={styles.rowLeft}>
-                  <Ionicons
-                    name={selected ? 'volume-high' : 'volume-medium-outline'}
-                    size={18}
-                    color={selected ? colors.calm : colors.textMuted}
-                  />
-                  <Text style={[styles.rowTitle, selected && styles.rowTitleSelected]}>
-                    {opt.label}
-                  </Text>
+              <View key={section.id} style={styles.section}>
+                <Text style={styles.sectionTitle}>{section.label}</Text>
+                <Text style={styles.sectionHint}>{section.hint}</Text>
+                <View style={styles.list}>
+                  {opts.map((opt) => {
+                    const selected = opt.id === selectedId;
+                    return (
+                      <Pressable
+                        key={opt.id}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => void pick(opt)}
+                        style={({ pressed }) => [
+                          styles.row,
+                          selected && styles.rowSelected,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <View style={styles.rowLeft}>
+                          <Ionicons
+                            name={
+                              selected
+                                ? 'volume-high'
+                                : opt.section === 'system'
+                                  ? 'phone-portrait-outline'
+                                  : 'volume-medium-outline'
+                            }
+                            size={18}
+                            color={selected ? colors.calm : colors.textMuted}
+                          />
+                          <Text style={[styles.rowTitle, selected && styles.rowTitleSelected]}>
+                            {opt.label}
+                          </Text>
+                        </View>
+                        {selected ? (
+                          <Ionicons name="checkmark-circle" size={18} color={colors.calm} />
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                {selected ? (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.calm} />
-                ) : null}
-              </Pressable>
+              </View>
             );
           })}
           {previewing ? <Text style={styles.previewHint}>Previewing…</Text> : null}
@@ -112,7 +135,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  content: { paddingHorizontal: spacing.lg, gap: spacing.sm },
+  content: { paddingHorizontal: spacing.lg, gap: spacing.lg },
+  section: { gap: spacing.sm },
+  sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  sectionHint: { color: colors.textDim, fontSize: 12, lineHeight: 17, marginBottom: 2 },
+  list: { gap: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

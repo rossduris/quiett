@@ -72,7 +72,19 @@
         {
           "alarmKitUsageDescription": "Quiett schedules a morning alarm that only ends after you sit. Allow alarms so it can wake you even when the phone is locked.",
           "iosAlarmSounds": [
-            "./assets/audio/quiett-harsh.caf"
+            "./assets/audio/quiett-harsh.caf",
+            "./assets/audio/alarms/rise-and-shine.caf",
+            "./assets/audio/alarms/early-bright.caf",
+            "./assets/audio/alarms/fresh-morning.caf",
+            "./assets/audio/alarms/new-day.caf",
+            "./assets/audio/alarms/sunbeam.caf",
+            "./assets/audio/alarms/dayspring.caf",
+            "./assets/audio/alarms/peaceful.caf",
+            "./assets/audio/alarms/slow-wind.caf",
+            "./assets/audio/alarms/dawn-rain.caf",
+            "./assets/audio/alarms/coastal-breeze.caf",
+            "./assets/audio/alarms/hazy-day.caf",
+            "./assets/audio/alarms/new-breath.caf"
           ]
         }
       ],

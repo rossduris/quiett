@@ -226,6 +226,7 @@ export default function LibraryScreen() {
     setPreviewId(track.id);
     try {
       const sound = meditationSoundById(track.playbackSoundId);
+      if (sound.url == null) return;
       await previewSoundUrl(sound.url);
     } finally {
       setPreviewBusy(false);
