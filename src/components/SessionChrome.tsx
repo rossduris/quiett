@@ -19,9 +19,9 @@ function copyFor(phase: SessionPhase): { verb: string; hint: string } {
     case 'alarming':
       return { verb: 'Face the camera', hint: 'Phone propped · look at the lens · hold still' };
     case 'detecting':
-      return { verb: 'Hold still', hint: 'Looking good — starting the sit' };
+      return { verb: 'Hold still', hint: 'Looking good — unlocking your morning' };
     case 'meditating':
-      return { verb: 'Meditate', hint: 'Wake. Meditate. Begin.' };
+      return { verb: 'Stay still', hint: 'Wake. Stay. Begin.' };
     default:
       return { verb: '', hint: '' };
   }
@@ -82,7 +82,7 @@ export function SessionChrome({
         <>
           <Text style={[styles.verb, { color: ringColor }]}>{copy.verb}</Text>
           <Text style={styles.hint}>{copy.hint}</Text>
-          <Text style={styles.sitMeta}>Sit · {timerLabel}</Text>
+          <Text style={styles.sitMeta}>Unlock · {timerLabel}</Text>
         </>
       )}
     </View>

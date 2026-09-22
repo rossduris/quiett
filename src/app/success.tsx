@@ -17,10 +17,10 @@ export default function SuccessScreen() {
         { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
       ]}
     >
-      <Text style={styles.kicker}>Sit complete</Text>
+      <Text style={styles.kicker}>Morning complete</Text>
       <Text style={styles.title}>Morning unlocked</Text>
       <Text style={styles.body}>
-        You stayed upright and still. The alarm is gone — and the day can start quieter.
+        You held still through the gate. Alarm off — the day can start quieter.
       </Text>
       <View style={styles.streak}>
         <Text style={styles.streakNum}>{Number.isFinite(count) ? count : '—'}</Text>

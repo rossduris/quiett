@@ -266,6 +266,12 @@ export default function HomeScreen() {
         ) : null}
 
         <View style={[styles.card, styles.heroCard, unlockedToday && styles.cardDimmed]}>
+          {!unlockedToday ? (
+            <>
+              <View pointerEvents="none" style={styles.sunriseWashTop} />
+              <View pointerEvents="none" style={styles.sunriseWashEdge} />
+            </>
+          ) : null}
           <View style={styles.cardTop}>
             <Text style={styles.cardLabel}>
               {unlockedToday ? 'Tomorrow alarm' : 'Morning alarm'}
@@ -288,7 +294,7 @@ export default function HomeScreen() {
 
           {!unlockedToday && rings ? (
             <View style={styles.ringsRow}>
-              <Ionicons name="moon-outline" size={18} color={colors.mist} />
+              <Ionicons name="sunny-outline" size={18} color={colors.sunrise} />
               <Text style={styles.ringsText}>{rings.label}</Text>
             </View>
           ) : null}
@@ -516,6 +522,26 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     paddingVertical: spacing.xl,
+    overflow: 'hidden',
+  },
+  sunriseWashTop: {
+    position: 'absolute',
+    top: -40,
+    right: -30,
+    width: 220,
+    height: 160,
+    borderRadius: 110,
+    backgroundColor: colors.sunriseDeep,
+    opacity: 0.55,
+  },
+  sunriseWashEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 72,
+    backgroundColor: colors.sunriseSoft,
+    opacity: 0.7,
   },
   cardDimmed: { opacity: 0.88 },
   cardTop: {
@@ -576,12 +602,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     borderRadius: radii.lg,
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.sunriseSoft,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(232,160,106,0.28)',
   },
   ringsText: {
-    color: colors.mist,
+    color: colors.sunrise,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.2,

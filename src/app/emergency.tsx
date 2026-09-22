@@ -18,7 +18,7 @@ export default function EmergencyScreen() {
       <Text style={styles.kicker}>Emergency dismiss</Text>
       <Text style={styles.title}>Streak broken</Text>
       <Text style={styles.body}>
-        You skipped the sit. That is allowed when you need it — but the streak resets to zero. No
+        You skipped the morning gate. That is allowed when you need it — but the streak resets to zero. No
         casual snooze next time.
       </Text>
       <PrimaryButton

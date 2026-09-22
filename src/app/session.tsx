@@ -70,7 +70,7 @@ function ringColorFor(phase: SessionPhase): string {
     case 'alarming':
       return colors.alarm;
     case 'detecting':
-      return colors.accent;
+      return colors.sunrise;
     case 'meditating':
       return colors.calm;
     default:
@@ -357,7 +357,7 @@ export default function SessionScreen() {
     const overlay = interpolateColor(
       phaseTone.value,
       [0, 0.45, 1],
-      ['rgba(255,92,92,0.28)', 'rgba(11,15,20,0.42)', 'rgba(11,15,20,0.58)'],
+      ['rgba(255,92,92,0.28)', 'rgba(10,18,32,0.45)', 'rgba(10,18,32,0.55)'],
     );
     return { backgroundColor: overlay };
   });
@@ -366,7 +366,7 @@ export default function SessionScreen() {
     const glow = interpolateColor(
       phaseTone.value,
       [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(91,140,255,0.22)', 'rgba(61,207,176,0.18)'],
+      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(61,207,176,0.18)'],
     );
     return { backgroundColor: glow };
   });

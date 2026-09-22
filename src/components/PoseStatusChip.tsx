@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: 'rgba(10,18,32,0.62)',
   },
   dot: { width: 7, height: 7, borderRadius: 4 },
   label: {
