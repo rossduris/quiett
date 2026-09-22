@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, spacing, typography } from '@/constants/theme';
@@ -94,11 +94,20 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             { backgroundColor: track.accentSoft, borderColor: track.accent },
                           ]}
                         >
-                          <Ionicons
-                            name={disabled ? 'lock-closed' : kindIcon(kind)}
-                            size={16}
-                            color={disabled ? colors.textDim : colors.text}
-                          />
+                          {track.art ? (
+                            <Image source={track.art} style={styles.artImage} resizeMode="cover" />
+                          ) : (
+                            <Ionicons
+                              name={disabled ? 'lock-closed' : kindIcon(kind)}
+                              size={16}
+                              color={disabled ? colors.textDim : colors.text}
+                            />
+                          )}
+                          {disabled ? (
+                            <View style={styles.artLock}>
+                              <Ionicons name="sparkles-outline" size={10} color={colors.text} />
+                            </View>
+                          ) : null}
                         </View>
                         <View style={styles.rowBody}>
                           <View style={styles.rowTop}>
@@ -176,12 +185,25 @@ const styles = StyleSheet.create({
   },
   rowLocked: { opacity: 0.55 },
   art: {
-    width: 44,
-    height: 44,
+    width: 52,
+    height: 52,
     borderRadius: 14,
     borderWidth: 1,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  artImage: { width: '100%', height: '100%' },
+  artLock: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,15,20,0.55)',
   },
   rowBody: { flex: 1, gap: 3 },
   rowTop: {

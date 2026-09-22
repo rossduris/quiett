@@ -1,4 +1,5 @@
 import { MORNING_GUIDE_TRACKS } from '@/constants/guides';
+import { libraryArtFor } from '@/constants/library-art';
 import { DEFAULT_MEDITATION_SOUND_ID, MEDITATION_SOUNDS } from '@/constants/sounds';
 
 export type UnlockTrackKind = 'guided' | 'music' | 'ambient';
@@ -16,6 +17,8 @@ export type UnlockTrack = {
   accent: string;
   accentSoft: string;
   mood: string;
+  /** Monotone cover art (bundled image). */
+  art?: number;
 };
 
 const GUIDE_PLAYBACK: Record<string, string> = {
@@ -141,11 +144,16 @@ const AMBIENT_TRACKS: UnlockTrack[] = MEDITATION_SOUNDS.map((s) => {
   };
 });
 
-export const UNLOCK_TRACKS: readonly UnlockTrack[] = [
+const _UNLOCK_TRACKS_RAW: UnlockTrack[] = [
   ...GUIDED_TRACKS,
   ...MUSIC_TRACKS,
   ...AMBIENT_TRACKS,
 ];
+
+export const UNLOCK_TRACKS: readonly UnlockTrack[] = _UNLOCK_TRACKS_RAW.map((t) => ({
+  ...t,
+  art: libraryArtFor(t.id) ?? t.art,
+}));
 
 export const DEFAULT_UNLOCK_TRACK_ID = GUIDED_TRACKS[0]!.id;
 

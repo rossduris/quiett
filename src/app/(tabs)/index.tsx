@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -391,17 +391,21 @@ export default function HomeScreen() {
                 { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
               ]}
             >
-              <Ionicons
-                name={
-                  unlockTrack.kind === 'guided'
-                    ? 'mic-outline'
-                    : unlockTrack.kind === 'music'
-                      ? 'musical-notes-outline'
-                      : 'rainy-outline'
-                }
-                size={20}
-                color={colors.text}
-              />
+              {unlockTrack.art ? (
+                <Image source={unlockTrack.art} style={styles.unlockArtImage} resizeMode="cover" />
+              ) : (
+                <Ionicons
+                  name={
+                    unlockTrack.kind === 'guided'
+                      ? 'mic-outline'
+                      : unlockTrack.kind === 'music'
+                        ? 'musical-notes-outline'
+                        : 'rainy-outline'
+                  }
+                  size={20}
+                  color={colors.text}
+                />
+              )}
             </View>
             <View style={styles.unlockBody}>
               <Text style={styles.unlockTitle} numberOfLines={1}>
@@ -637,13 +641,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   unlockArt: {
-    width: 52,
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    overflow: 'hidden',
   },
+  unlockArtImage: { width: '100%', height: '100%' },
   unlockBody: { flex: 1, gap: 2 },
   unlockTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
   unlockMeta: { color: colors.textMuted, fontSize: 13 },

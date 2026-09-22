@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,7 +47,8 @@ function kindIcon(kind: UnlockTrackKind): keyof typeof Ionicons.glyphMap {
 }
 
 function TrackArt({ track, large }: { track: UnlockTrack; large?: boolean }) {
-  const size = large ? 72 : 56;
+  const size = large ? 88 : 64;
+  const radius = large ? 22 : 16;
   return (
     <View
       style={[
@@ -55,20 +56,29 @@ function TrackArt({ track, large }: { track: UnlockTrack; large?: boolean }) {
         {
           width: size,
           height: size,
-          borderRadius: large ? 20 : 16,
+          borderRadius: radius,
           backgroundColor: track.accentSoft,
           borderColor: track.accent,
         },
       ]}
     >
-      <View style={[styles.artOrb, { backgroundColor: track.accent, opacity: 0.55 }]} />
-      <View style={[styles.artOrbSmall, { backgroundColor: track.accent }]} />
-      <Ionicons
-        name={track.locked ? 'sparkles-outline' : kindIcon(track.kind)}
-        size={large ? 22 : 18}
-        color={track.locked ? colors.textMuted : colors.text}
-        style={styles.artIcon}
-      />
+      {track.art ? (
+        <Image
+          source={track.art}
+          style={[styles.artImage, { borderRadius: radius - 1 }]}
+          resizeMode="cover"
+        />
+      ) : (
+        <>
+          <View style={[styles.artOrb, { backgroundColor: track.accent, opacity: 0.55 }]} />
+          <View style={[styles.artOrbSmall, { backgroundColor: track.accent }]} />
+        </>
+      )}
+      {track.locked ? (
+        <View style={styles.artLock}>
+          <Ionicons name="sparkles-outline" size={large ? 16 : 14} color={colors.text} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -336,19 +346,6 @@ export default function LibraryScreen() {
           </Text>
         </View>
 
-        <View style={styles.premiumCard}>
-          <View style={styles.premiumIcon}>
-            <Ionicons name="sparkles-outline" size={20} color={colors.calm} />
-          </View>
-          <View style={styles.premiumBody}>
-            <Text style={styles.premiumTitle}>Coming: human-voiced guides</Text>
-            <Text style={styles.premiumBodyText}>
-              Premium is a guided-voice upgrade. Free guided, healing tones, and ambient
-              stay open to browse — nothing locked behind finishing another track.
-            </Text>
-          </View>
-        </View>
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -465,29 +462,6 @@ const styles = StyleSheet.create({
   heroBlurb: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
   heroFoot: { color: colors.textDim, fontSize: 12, lineHeight: 18 },
   heroPreview: { width: 44, height: 44, borderRadius: 22 },
-  premiumCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.xl,
-    backgroundColor: colors.calmSoft,
-    borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.28)',
-  },
-  premiumIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(61,207,176,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.35)',
-  },
-  premiumBody: { flex: 1, gap: 4 },
-  premiumTitle: { color: colors.calm, fontSize: 16, fontWeight: '700' },
-  premiumBodyText: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   filters: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
@@ -560,6 +534,21 @@ const styles = StyleSheet.create({
     bottom: 8,
     left: 8,
     opacity: 0.7,
+  },
+  artImage: { width: '100%', height: '100%' },
+  artLock: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,15,20,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    zIndex: 2,
   },
   artIcon: { zIndex: 1 },
   cardBody: { flex: 1, gap: 4 },
