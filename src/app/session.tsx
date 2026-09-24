@@ -47,6 +47,7 @@ import {
   loadSitMinutes,
   recordSuccessfulSit,
   type SitMinutes,
+  loadWakeIntention,
 } from '@/lib/storage';
 import {
   armMeditationDeadMan,
@@ -95,6 +96,7 @@ export default function SessionScreen() {
   const durationMs = sitDurationMs(sitMinutes);
   const durationLabel = sitDurationLabel(sitMinutes);
   const [cameraReady, setCameraReady] = useState(false);
+  const [wakeIntention, setWakeIntention] = useState('');
 
   const preferLive = isLivePoseCameraAvailable();
   const cameraRef = useRef<ElementRef<typeof CameraView>>(null);
@@ -123,11 +125,12 @@ export default function SessionScreen() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const minutes = await loadSitMinutes();
+      const [minutes, intention] = await Promise.all([loadSitMinutes(), loadWakeIntention()]);
       if (!alive) return;
       setSitMinutes(minutes);
       setSitLeft(sitDurationMs(minutes));
       setDurationReady(true);
+      setWakeIntention(intention);
     })();
     return () => {
       alive = false;
@@ -438,6 +441,9 @@ export default function SessionScreen() {
       >
         <View style={styles.top}>
           <PoseStatusChip status={pose} />
+          {wakeIntention.length > 0 && phase === 'meditating' && (
+            <Text style={styles.intention}>{wakeIntention}</Text>
+          )}
         </View>
 
         <View style={styles.center}>
@@ -488,6 +494,13 @@ function createStyles(colors: ColorTokens) {
     alignItems: 'center',
     gap: spacing.sm,
     minHeight: 40,
+  },
+  intention: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    opacity: 0.85,
+    paddingTop: spacing.xs,
   },
   center: {
     flex: 1,

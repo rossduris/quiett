@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -13,6 +13,11 @@ import {
   saveEveningReminderPrefs,
   type EveningReminderPrefs,
 } from '@/lib/storage';
+import {
+  requestNotificationPermissions,
+  scheduleEveningReminder,
+  cancelEveningReminder,
+} from '@/lib/notifications';
 import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
@@ -54,9 +59,29 @@ export default function NotificationsScreen() {
   );
 
   const onToggle = async () => {
-    const next = { ...prefs, enabled: !prefs.enabled };
+    const nextEnabled = !prefs.enabled;
+    
+    if (nextEnabled) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        Alert.alert(
+          'Notification Permission Required',
+          'Please enable notifications for Quiett in Settings to receive evening reminders.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+    }
+    
+    const next = { ...prefs, enabled: nextEnabled };
     setPrefs(next);
     await saveEveningReminderPrefs(next);
+    
+    if (nextEnabled) {
+      await scheduleEveningReminder();
+    } else {
+      await cancelEveningReminder();
+    }
   };
 
   const onTimeChange = async (_event: unknown, date?: Date) => {
@@ -65,6 +90,10 @@ export default function NotificationsScreen() {
     const next = { ...prefs, time: toHhMm(date) };
     setPrefs(next);
     await saveEveningReminderPrefs(next);
+    
+    if (prefs.enabled) {
+      await scheduleEveningReminder();
+    }
   };
 
   return (

@@ -14,6 +14,7 @@ import {
   isLivePoseCameraAvailable,
   QuiettPoseCameraView,
 } from 'quiett-pose';
+import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionChrome } from '@/components/SessionChrome';
@@ -41,6 +42,7 @@ import {
   DEFAULT_SIT_MINUTES,
   loadSitMinutes,
   type SitMinutes,
+  saveTestMorningCompleted,
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -198,6 +200,7 @@ export default function TestMorningScreen() {
       void (async () => {
         await stopAllAudio();
         releaseAudio();
+        await saveTestMorningCompleted(true);
         router.replace({
           pathname: '/test-success',
         });

@@ -30,6 +30,7 @@ import {
   loadUnlockTrackId,
   saveSurpriseMe,
   saveUnlockTrackId,
+  markLibraryCategoryUsed,
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 
@@ -175,6 +176,14 @@ export default function LibraryScreen() {
     if (surpriseMe) {
       setSurpriseMe(false);
       await saveSurpriseMe(false);
+    }
+    
+    if (track.kind === 'guided') {
+      await markLibraryCategoryUsed('guided');
+    } else if (track.kind === 'music') {
+      await markLibraryCategoryUsed('healing');
+    } else if (track.kind === 'ambient') {
+      await markLibraryCategoryUsed('ambient');
     }
   };
 

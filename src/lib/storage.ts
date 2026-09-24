@@ -36,6 +36,8 @@ const KEYS = {
   streakDeadlineMinutes: 'quiett.streakDeadlineMinutes',
   earnedBadges: 'quiett.earnedBadges',
   unlockTimestamps: 'quiett.unlockTimestamps',
+  testMorningCompleted: 'quiett.testMorningCompleted',
+  libraryUsage: 'quiett.libraryUsage',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -311,14 +313,41 @@ async function addCompletedDay(key: string): Promise<string[]> {
 export async function recordSuccessfulSit(): Promise<StreakData> {
   const current = await loadStreak();
   const today = dayKey(0);
+  const unlockTime = Date.now();
+  
   await addCompletedDay(today);
   await recordUnlockTimestamp();
   
   if (current.lastCompletedDate === today) return current;
   
   const prefs = await loadAlarmPrefs();
+  const deadlinePrefs = await loadStreakDeadlinePrefs();
   const scheduledDays = new Set(prefs.weekdays);
   const yesterday = dayKey(-1);
+  
+  let countsForStreak = true;
+  
+  if (deadlinePrefs.enabled) {
+    const timestamps = await loadUnlockTimestamps();
+    const todayTimestamp = timestamps.find((t) => t.day === today);
+    
+    if (todayTimestamp) {
+      const nextAlarm = nextAlarmDate(prefs.time, prefs.weekdays, new Date(todayTimestamp.timestamp - 24 * 60 * 60 * 1000));
+      if (nextAlarm) {
+        const deadlineMs = deadlinePrefs.minutes * 60 * 1000;
+        const timeSinceAlarm = todayTimestamp.timestamp - nextAlarm.getTime();
+        
+        if (timeSinceAlarm > deadlineMs) {
+          countsForStreak = false;
+        }
+      }
+    }
+  }
+  
+  if (!countsForStreak) {
+    await checkAndAwardBadges(current.count, await loadCompletedDays());
+    return current;
+  }
   
   if (current.lastCompletedDate === yesterday) {
     const next = current.count + 1;
@@ -363,6 +392,27 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   ]);
   await checkAndAwardBadges(1, await loadCompletedDays());
   return { count: 1, lastCompletedDate: today };
+}
+
+export async function isUnlockLate(): Promise<boolean> {
+  const deadlinePrefs = await loadStreakDeadlinePrefs();
+  if (!deadlinePrefs.enabled) return false;
+  
+  const today = dayKey(0);
+  const timestamps = await loadUnlockTimestamps();
+  const todayTimestamp = timestamps.find((t) => t.day === today);
+  
+  if (!todayTimestamp) return false;
+  
+  const prefs = await loadAlarmPrefs();
+  const nextAlarm = nextAlarmDate(prefs.time, prefs.weekdays, new Date(todayTimestamp.timestamp - 24 * 60 * 60 * 1000));
+  
+  if (!nextAlarm) return false;
+  
+  const deadlineMs = deadlinePrefs.minutes * 60 * 1000;
+  const timeSinceAlarm = todayTimestamp.timestamp - nextAlarm.getTime();
+  
+  return timeSinceAlarm > deadlineMs;
 }
 
 async function checkAndAwardBadges(streakCount: number, completedDays: string[]): Promise<void> {
@@ -617,4 +667,51 @@ export async function recordUnlockTimestamp(): Promise<void> {
   const existing = await loadUnlockTimestamps();
   const withoutToday = existing.filter((t) => t.day !== day);
   await saveUnlockTimestamps([...withoutToday, { day, timestamp }]);
+}
+
+export async function loadTestMorningCompleted(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.testMorningCompleted);
+  return raw === '1';
+}
+
+export async function saveTestMorningCompleted(completed: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.testMorningCompleted, completed ? '1' : '0');
+}
+
+export type LibraryUsage = {
+  guided: boolean;
+  ambient: boolean;
+  healing: boolean;
+};
+
+export async function loadLibraryUsage(): Promise<LibraryUsage> {
+  const raw = await AsyncStorage.getItem(KEYS.libraryUsage);
+  if (!raw) return { guided: false, ambient: false, healing: false };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed === 'object' && parsed !== null) {
+      return {
+        guided: Boolean((parsed as any).guided),
+        ambient: Boolean((parsed as any).ambient),
+        healing: Boolean((parsed as any).healing),
+      };
+    }
+  } catch {}
+  return { guided: false, ambient: false, healing: false };
+}
+
+export async function saveLibraryUsage(usage: LibraryUsage): Promise<void> {
+  await AsyncStorage.setItem(KEYS.libraryUsage, JSON.stringify(usage));
+}
+
+export async function markLibraryCategoryUsed(category: 'guided' | 'ambient' | 'healing'): Promise<void> {
+  const current = await loadLibraryUsage();
+  if (current[category]) return;
+  
+  const next = { ...current, [category]: true };
+  await saveLibraryUsage(next);
+  
+  if (category === 'guided') await awardBadge('tried-guided');
+  if (category === 'ambient') await awardBadge('tried-ambient');
+  if (category === 'healing') await awardBadge('tried-healing');
 }

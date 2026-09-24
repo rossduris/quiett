@@ -1,4 +1,4 @@
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,7 +19,11 @@ export default function ManageSubscriptionScreen() {
   };
 
   const onRestorePurchases = async () => {
-    console.log('[quiett] Restore purchases stub');
+    Alert.alert(
+      'Nothing to restore',
+      'You don\'t have any past purchases to restore yet.',
+      [{ text: 'OK' }],
+    );
   };
 
   return (

@@ -54,8 +54,10 @@ import {
   loadGetStartedDismissed,
   saveGetStartedDismissed,
   loadWakeIntention,
+  loadTestMorningCompleted,
 } from '@/lib/storage';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
+import { syncEveningReminder } from '@/lib/notifications';
 import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
@@ -105,12 +107,13 @@ export default function HomeScreen() {
   const [reliabilityChecked, setReliabilityChecked] = useState(false);
   const [getStartedDismissed, setGetStartedDismissed] = useState(false);
   const [wakeIntention, setWakeIntention] = useState('');
+  const [testMorningDone, setTestMorningDone] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed, reliabilityDone, getStartedDone, intention] = await Promise.all([
+        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed, reliabilityDone, getStartedDone, intention, testDone] = await Promise.all([
           loadAlarmPrefs(),
           loadStreak(),
           loadCompletedDays(),
@@ -123,6 +126,7 @@ export default function HomeScreen() {
           loadReliabilityCheckCompleted(),
           loadGetStartedDismissed(),
           loadWakeIntention(),
+          loadTestMorningCompleted(),
         ]);
         if (!alive) return;
         setAlarm(a);
@@ -137,6 +141,7 @@ export default function HomeScreen() {
         setReliabilityChecked(reliabilityDone);
         setGetStartedDismissed(getStartedDone);
         setWakeIntention(intention);
+        setTestMorningDone(testDone);
 
         let nextUnlock = unlockId;
         if (surprise) {
@@ -177,7 +182,7 @@ export default function HomeScreen() {
   const showDayOpenHero = unlockedToday && !dayOpenDismissed;
 
   const hasSetAlarm = alarm.enabled;
-  const hasTriedTest = false;
+  const hasTriedTest = testMorningDone;
   const hasIntention = wakeIntention.length > 0;
   const getStartedProgress = [hasSetAlarm, reliabilityChecked, hasTriedTest, hasIntention].filter(Boolean).length;
   const showGetStarted = !getStartedDismissed && getStartedProgress < 4;
@@ -201,6 +206,7 @@ export default function HomeScreen() {
       await saveSurpriseMe(false);
     }
     setShowMorningSoundPicker(false);
+    void syncEveningReminder();
   };
 
   const onSelectAlarmSound = async (id: string) => {
@@ -231,6 +237,7 @@ export default function HomeScreen() {
     await clearWakeResolved();
     setWakeResolved(false);
     const result = await syncOsAlarm(next);
+    void syncEveningReminder();
     if (!result.ok && next.enabled) {
       Alert.alert(
         'Alarm permission needed',
