@@ -1,17 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { ScreenHeader, useSafeBack } from '@/components/ScreenHeader';
 import { loadWakeIntention, saveWakeIntention } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 
 export default function WakeIntentionScreen() {
-  const router = useRouter();
+  const goBack = useSafeBack('/');
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -36,23 +36,14 @@ export default function WakeIntentionScreen() {
 
   const onSave = async () => {
     await saveWakeIntention(text);
-    router.back();
+    goBack();
   };
 
   const hasChanges = text !== originalText;
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={28} color={colors.text} />
-        </Pressable>
-      </View>
+    <View style={styles.screen}>
+      <ScreenHeader fallbackHref="/" />
 
       <ScrollView
         style={styles.scroll}
@@ -130,13 +121,6 @@ export default function WakeIntentionScreen() {
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'flex-end',
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.sm,
-    },
     scroll: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,

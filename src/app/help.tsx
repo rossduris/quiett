@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing, typography } from '@/constants/theme';
+import { spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import type { ColorTokens } from '@/constants/themes';
 import { openOsAlarmSettings } from '@/lib/os-alarm';
 
@@ -60,19 +61,8 @@ export default function HelpScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="arrow-back" size={28} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Help</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <View style={styles.screen}>
+      <ScreenHeader title="Help" fallbackHref="/settings" />
 
       <ScrollView
         style={styles.scroll}
@@ -124,17 +114,6 @@ export default function HelpScreen() {
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.md,
-    },
-    headerTitle: {
-      ...typography.title,
-      color: colors.text,
-    },
     scroll: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,

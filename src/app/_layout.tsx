@@ -21,17 +21,14 @@ function RootStack() {
             headerTitleStyle: { fontWeight: '600' },
             headerShadowVisible: false,
             contentStyle: { backgroundColor: colors.bg },
+            // Every pushed screen renders its own <ScreenHeader />; the native header is off
+            // app-wide so no page shows a double header. Pushes slide in from the right.
+            headerShown: false,
+            animation: 'slide_from_right',
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="settings"
-            options={{
-              title: 'Settings',
-              headerBackTitle: 'Back',
-              animation: 'slide_from_right',
-            }}
-          />
+          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen
             name="session"
             options={{

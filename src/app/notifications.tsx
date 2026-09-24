@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing, typography } from '@/constants/theme';
+import { spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import {
   loadEveningReminderPrefs,
   saveEveningReminderPrefs,
@@ -36,7 +36,6 @@ function displayTime(hhmm: string): string {
 }
 
 export default function NotificationsScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -97,19 +96,8 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="arrow-back" size={28} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <View style={styles.screen}>
+      <ScreenHeader title="Notifications" fallbackHref="/settings" />
 
       <ScrollView
         style={styles.scroll}
@@ -216,17 +204,6 @@ export default function NotificationsScreen() {
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.bg },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.md,
-    },
-    headerTitle: {
-      ...typography.title,
-      color: colors.text,
-    },
     scroll: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,

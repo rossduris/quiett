@@ -48,7 +48,7 @@ export function WeekStreakStrip({ completedDays, scheduledWeekdays, todayKey }: 
   });
 
   return (
-    <View style={styles.row} accessibilityRole="summary" accessibilityLabel="Week sit streak">
+    <View style={styles.row} accessibilityRole="summary" accessibilityLabel="This week's mornings">
       {cells.map((cell) => (
         <View key={cell.key} style={styles.col}>
           <View

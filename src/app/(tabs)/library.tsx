@@ -24,7 +24,7 @@ import {
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
-import { previewSoundUrl, stopAllAudio } from '@/lib/audio';
+import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   loadSurpriseMe,
   loadUnlockTrackId,
@@ -99,7 +99,7 @@ function ShelfCard({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={
-                previewing ? `Stop preview of ${track.title}` : `Preview ${track.title}`
+                previewing ? 'Stop preview' : `Preview ${track.title}`
               }
               hitSlop={8}
               onPress={() => onPreview()}
@@ -140,8 +140,8 @@ export default function LibraryScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
+  const { playingId, toggle: togglePreview } = usePreviewPlayer();
+  const isPreviewing = (trackId: string) => playingId === previewIds.track(trackId);
 
   useFocusEffect(
     useCallback(() => {
@@ -154,16 +154,14 @@ export default function LibraryScreen() {
       })();
       return () => {
         alive = false;
-        void stopAllAudio();
-        setPreviewId(null);
-        setPreviewBusy(false);
+        stopPreview();
       };
     }, []),
   );
 
   useEffect(() => {
     return () => {
-      void stopAllAudio();
+      stopPreview();
     };
   }, []);
 
@@ -198,23 +196,11 @@ export default function LibraryScreen() {
     }
   };
 
-  const onPreview = async (track: UnlockTrack) => {
-    if (track.locked || previewBusy) return;
-    if (previewId === track.id) {
-      await stopAllAudio();
-      setPreviewId(null);
-      return;
-    }
-    setPreviewBusy(true);
-    setPreviewId(track.id);
-    try {
-      const sound = meditationSoundById(track.playbackSoundId);
-      if (sound.url == null) return;
-      await previewSoundUrl(sound.url);
-    } finally {
-      setPreviewBusy(false);
-      setPreviewId((cur) => (cur === track.id ? null : cur));
-    }
+  const onPreview = (track: UnlockTrack) => {
+    if (track.locked) return;
+    const sound = meditationSoundById(track.playbackSoundId);
+    if (sound.url == null) return;
+    togglePreview(previewIds.track(track.id), sound.url, 'track');
   };
 
   const sections = useMemo(() => {
@@ -302,19 +288,21 @@ export default function LibraryScreen() {
               {!selectedTrack.locked ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Preview ${selectedTrack.title}`}
-                  onPress={() => void onPreview(selectedTrack)}
+                  accessibilityLabel={
+                    isPreviewing(selectedTrack.id) ? 'Stop preview' : `Preview ${selectedTrack.title}`
+                  }
+                  onPress={() => onPreview(selectedTrack)}
                   style={({ pressed }) => [
                     styles.previewFab,
                     styles.heroPreviewFab,
-                    previewId === selectedTrack.id && styles.previewFabActive,
+                    isPreviewing(selectedTrack.id) && styles.previewFabActive,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Ionicons
-                    name={previewId === selectedTrack.id ? 'stop' : 'play'}
+                    name={isPreviewing(selectedTrack.id) ? 'stop' : 'play'}
                     size={16}
-                    color={previewId === selectedTrack.id ? colors.calm : colors.text}
+                    color={isPreviewing(selectedTrack.id) ? colors.calm : colors.text}
                   />
                 </Pressable>
               ) : null}
@@ -370,10 +358,10 @@ export default function LibraryScreen() {
                     key={track.id}
                     track={track}
                     selected={selectedId === track.id}
-                    previewing={previewId === track.id}
+                    previewing={isPreviewing(track.id)}
                     onPress={() => void onSelectTrack(track)}
                     colors={colors}
-                    onPreview={() => void onPreview(track)}
+                    onPreview={() => onPreview(track)}
                   />
                 ))}
               </ScrollView>

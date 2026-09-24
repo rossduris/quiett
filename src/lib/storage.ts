@@ -30,6 +30,7 @@ const KEYS = {
   reliabilityCheckCompleted: 'quiett.reliabilityCheckCompleted',
   getStartedDismissed: 'quiett.getStartedDismissed',
   wakeIntention: 'quiett.wakeIntention',
+  wakeIntentionByDay: 'quiett.wakeIntentionByDay',
   eveningReminderEnabled: 'quiett.eveningReminderEnabled',
   eveningReminderTime: 'quiett.eveningReminderTime',
   streakDeadlineEnabled: 'quiett.streakDeadlineEnabled',
@@ -54,8 +55,9 @@ export type AccountData = {
   email: string | null;
 };
 
-export const DEFAULT_SIT_MINUTES: SitMinutes = 0.5;
-export const SIT_MINUTE_OPTIONS: readonly SitMinutes[] = [0.5, 2, 3, 5, 10];
+/** Every meditation is a fixed 2 minutes. 30s exists only in dev builds for quick testing. */
+export const DEFAULT_SIT_MINUTES: SitMinutes = 2;
+export const SIT_MINUTE_OPTIONS: readonly SitMinutes[] = __DEV__ ? [0.5, 2] : [2];
 
 const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] };
 
@@ -75,7 +77,8 @@ const STUB_APPLE_ACCOUNT: AccountData = {
 
 function parseSitMinutes(raw: string | null): SitMinutes {
   const n = raw ? parseFloat(raw) : NaN;
-  if (n === 0.5 || n === 2 || n === 3 || n === 5 || n === 10) return n;
+  // Locked to 2 minutes; the 30s quick-test option only applies in dev builds.
+  if (__DEV__ && n === 0.5) return 0.5;
   return DEFAULT_SIT_MINUTES;
 }
 
@@ -273,7 +276,7 @@ export async function saveAlarmPrefs(prefs: AlarmPrefs): Promise<void> {
   ]);
 }
 
-export async function loadStreak(): Promise<StreakData> {
+async function loadStoredStreak(): Promise<StreakData> {
   const [count, last] = await Promise.all([
     AsyncStorage.getItem(KEYS.streak),
     AsyncStorage.getItem(KEYS.lastCompletedDate),
@@ -282,6 +285,69 @@ export async function loadStreak(): Promise<StreakData> {
     count: count ? parseInt(count, 10) || 0 : 0,
     lastCompletedDate: last,
   };
+}
+
+/** Local-midnight Date for a YYYY-MM-DD key (avoids UTC parsing of `new Date('YYYY-MM-DD')`). */
+function dateFromDayKey(key: string): Date | null {
+  const [y, m, d] = key.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+/**
+ * Pure check: has a scheduled morning been fully missed since the last counted morning?
+ * - Any scheduled weekday strictly between lastCompletedDate and today breaks it.
+ * - Today only breaks it when the streak deadline is on and today's window has closed
+ *   without a counted unlock. Without a deadline, today stays open all day
+ *   (a completion any time today still counts in recordSuccessfulSit).
+ * - Unscheduled days never break it.
+ */
+export function isStreakBroken(
+  streak: StreakData,
+  alarm: Pick<AlarmPrefs, 'time' | 'weekdays'>,
+  deadline: StreakDeadlinePrefs,
+  now: Date = new Date(),
+): boolean {
+  if (streak.count <= 0 || !streak.lastCompletedDate) return false;
+  const today = dayKey(0, now);
+  if (streak.lastCompletedDate >= today) return false;
+  const last = dateFromDayKey(streak.lastCompletedDate);
+  if (!last) return false;
+  const scheduled = new Set(alarm.weekdays);
+
+  // Seven consecutive days cover every weekday, so a longer gap needs no further scanning.
+  for (let i = 1; i <= 7; i++) {
+    const day = new Date(last.getFullYear(), last.getMonth(), last.getDate() + i);
+    if (dayKey(0, day) >= today) break;
+    if (scheduled.has(getIsoWeekday(day))) return true;
+  }
+
+  if (deadline.enabled && scheduled.has(getIsoWeekday(now))) {
+    const [h, m] = alarm.time.split(':').map((n) => parseInt(n, 10));
+    const ring = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h || 7, m || 0, 0, 0);
+    if (now.getTime() > ring.getTime() + deadline.minutes * 60_000) return true;
+  }
+  return false;
+}
+
+/**
+ * Single source of truth for the current streak. Validates the stored count against
+ * completed history rules (scheduled weekdays + streak deadline) and persists a reset
+ * when a scheduled morning was missed, so every reader (Home pill, streak sheet,
+ * Profile, Milestones) sees the same corrected value.
+ */
+export async function loadStreak(now: Date = new Date()): Promise<StreakData> {
+  const [stored, alarm, deadline] = await Promise.all([
+    loadStoredStreak(),
+    loadAlarmPrefs(),
+    loadStreakDeadlinePrefs(),
+  ]);
+  if (!isStreakBroken(stored, alarm, deadline, now)) return stored;
+  await Promise.all([
+    AsyncStorage.setItem(KEYS.streak, '0'),
+    AsyncStorage.removeItem(KEYS.lastCompletedDate),
+  ]);
+  return { count: 0, lastCompletedDate: null };
 }
 
 async function loadCompletedDaysRaw(): Promise<string[]> {
@@ -317,13 +383,12 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   
   await addCompletedDay(today);
   await recordUnlockTimestamp();
+  await snapshotWakeIntentionForDay(today);
   
   if (current.lastCompletedDate === today) return current;
   
   const prefs = await loadAlarmPrefs();
   const deadlinePrefs = await loadStreakDeadlinePrefs();
-  const scheduledDays = new Set(prefs.weekdays);
-  const yesterday = dayKey(-1);
   
   let countsForStreak = true;
   
@@ -349,49 +414,16 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
     return current;
   }
   
-  if (current.lastCompletedDate === yesterday) {
-    const next = current.count + 1;
-    await Promise.all([
-      AsyncStorage.setItem(KEYS.streak, String(next)),
-      AsyncStorage.setItem(KEYS.lastCompletedDate, today),
-    ]);
-    await checkAndAwardBadges(next, await loadCompletedDays());
-    return { count: next, lastCompletedDate: today };
-  }
-  
-  const lastDate = current.lastCompletedDate ? new Date(current.lastCompletedDate) : null;
-  if (lastDate) {
-    let consecutiveScheduled = true;
-    const todayDate = new Date(today);
-    let checkDate = new Date(lastDate);
-    checkDate.setDate(checkDate.getDate() + 1);
-    
-    while (checkDate < todayDate) {
-      const isoWeekday = ((checkDate.getDay() + 6) % 7) + 1 as Weekday;
-      if (scheduledDays.has(isoWeekday)) {
-        consecutiveScheduled = false;
-        break;
-      }
-      checkDate.setDate(checkDate.getDate() + 1);
-    }
-    
-    if (consecutiveScheduled) {
-      const next = current.count + 1;
-      await Promise.all([
-        AsyncStorage.setItem(KEYS.streak, String(next)),
-        AsyncStorage.setItem(KEYS.lastCompletedDate, today),
-      ]);
-      await checkAndAwardBadges(next, await loadCompletedDays());
-      return { count: next, lastCompletedDate: today };
-    }
-  }
-  
+  // `current` comes from loadStreak(), which already reset the count if a scheduled
+  // morning was missed since lastCompletedDate. So a surviving lastCompletedDate means
+  // the run is intact and today extends it; otherwise today starts a new run.
+  const next = current.lastCompletedDate && current.count > 0 ? current.count + 1 : 1;
   await Promise.all([
-    AsyncStorage.setItem(KEYS.streak, '1'),
+    AsyncStorage.setItem(KEYS.streak, String(next)),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
-  await checkAndAwardBadges(1, await loadCompletedDays());
-  return { count: 1, lastCompletedDate: today };
+  await checkAndAwardBadges(next, await loadCompletedDays());
+  return { count: next, lastCompletedDate: today };
 }
 
 export async function isUnlockLate(): Promise<boolean> {
@@ -547,6 +579,38 @@ export async function loadWakeIntention(): Promise<string> {
 
 export async function saveWakeIntention(text: string): Promise<void> {
   await AsyncStorage.setItem(KEYS.wakeIntention, text);
+}
+
+/** Per-morning intention history: { 'YYYY-MM-DD': intention }. Only mornings completed after this shipped have entries. */
+export async function loadWakeIntentionsByDay(): Promise<Record<string, string>> {
+  const raw = await AsyncStorage.getItem(KEYS.wakeIntentionByDay);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(key) && typeof value === 'string' && value.trim()) {
+        out[key] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Record the current wake intention against a completed morning (no-op when none is set). */
+async function snapshotWakeIntentionForDay(day: string): Promise<void> {
+  const text = (await loadWakeIntention()).trim();
+  if (!text) return;
+  const existing = await loadWakeIntentionsByDay();
+  existing[day] = text;
+  const keys = Object.keys(existing).sort();
+  const kept = keys.slice(Math.max(0, keys.length - 400));
+  const trimmed: Record<string, string> = {};
+  for (const key of kept) trimmed[key] = existing[key]!;
+  await AsyncStorage.setItem(KEYS.wakeIntentionByDay, JSON.stringify(trimmed));
 }
 
 export type EveningReminderPrefs = {

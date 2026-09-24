@@ -1,8 +1,13 @@
+import { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { meditationSoundById } from '@/constants/sounds';
+import { previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
+import { useThemeColors } from '@/lib/theme-provider';
 import {
   kindLabel,
   kindSectionHint,
@@ -33,15 +38,28 @@ function kindIcon(kind: UnlockTrackKind): keyof typeof Ionicons.glyphMap {
 
 export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Props) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { playingId, toggle } = usePreviewPlayer();
+  useStopPreviewWhenHidden(visible);
+
+  const preview = (track: UnlockTrack) => {
+    if (track.locked) return;
+    const url = meditationSoundById(track.playbackSoundId).url;
+    if (url == null) return;
+    toggle(previewIds.track(track.id), url, 'track');
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={[styles.sheet, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.sheetHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sheetTitle}>Morning sound</Text>
+            <Text style={styles.sheetEyebrow}>Step 2</Text>
+            <Text style={styles.sheetTitle}>Meditation</Text>
             <Text style={styles.sheetLead}>
-              What plays once you stay still. Guided, healing tones, or ambient — pick freely.
+              Your 2-minute meditation, once you're still. Guided, healing tones, or ambient.
+              Tap play to preview.
             </Text>
           </View>
           <Pressable
@@ -73,11 +91,13 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                   {tracks.map((track) => {
                     const selected = track.id === selectedId;
                     const disabled = track.locked;
+                    const playing = playingId === previewIds.track(track.id);
                     return (
                       <Pressable
                         key={track.id}
                         disabled={disabled}
                         accessibilityRole="button"
+                        accessibilityLabel={`Meditation: ${track.title}${disabled ? ', premium' : ''}`}
                         accessibilityState={{ selected, disabled }}
                         onPress={() => {
                           if (!disabled) onSelect(track);
@@ -131,6 +151,26 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             {track.durationLabel} · {track.mood}
                           </Text>
                         </View>
+                        {!disabled ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={playing ? 'Stop preview' : `Preview ${track.title}`}
+                            accessibilityState={{ selected: playing }}
+                            hitSlop={8}
+                            onPress={() => preview(track)}
+                            style={({ pressed }) => [
+                              styles.previewBtn,
+                              playing && styles.previewBtnActive,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <Ionicons
+                              name={playing ? 'stop' : 'play'}
+                              size={14}
+                              color={playing ? colors.calm : colors.text}
+                            />
+                          </Pressable>
+                        ) : null}
                       </Pressable>
                     );
                   })}
@@ -144,7 +184,8 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   sheet: { flex: 1, backgroundColor: colors.bg },
   sheetHeader: {
     flexDirection: 'row',
@@ -152,6 +193,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  sheetEyebrow: {
+    color: colors.calm,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   sheetTitle: { ...typography.title, color: colors.text, fontSize: 24 },
   sheetLead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4 },
@@ -182,8 +231,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowSelected: {
-    borderColor: 'rgba(224,122,85,0.55)',
-    backgroundColor: 'rgba(224,122,85,0.08)',
+    borderColor: colors.calm,
+    backgroundColor: colors.calmSoft,
   },
   rowLocked: { opacity: 0.55 },
   art: {
@@ -225,5 +274,20 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   lockBadgeText: { color: colors.textDim, fontSize: 10, fontWeight: '700' },
+  previewBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewBtnActive: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
+  },
   pressed: { opacity: 0.8 },
-});
+  });
+}
