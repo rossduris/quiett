@@ -18,7 +18,7 @@ import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionChrome } from '@/components/SessionChrome';
-import { colors, spacing, typography } from '@/constants/theme';
+import { spacing, typography } from '@/constants/theme';
 import {
   crossfadeToMeditation,
   playHarshAlarm,
@@ -56,6 +56,8 @@ import {
   rearmOsAlarmAfterBail,
   silenceOsRingForSession,
 } from '@/lib/os-alarm';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 
 const PHASE_TONE: Record<SessionPhase, number> = {
   alarming: 0,
@@ -65,12 +67,12 @@ const PHASE_TONE: Record<SessionPhase, number> = {
   emergency: 0,
 };
 
-function ringColorFor(phase: SessionPhase): string {
+function ringColorFor(phase: SessionPhase, colors: ColorTokens): string {
   switch (phase) {
     case 'alarming':
       return colors.alarm;
     case 'detecting':
-      return colors.accent;
+      return colors.sunrise;
     case 'meditating':
       return colors.calm;
     default:
@@ -79,6 +81,8 @@ function ringColorFor(phase: SessionPhase): string {
 }
 
 export default function SessionScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -137,7 +141,7 @@ export default function SessionScreen() {
       await silenceOsRingForSession();
       // Pre-register custom-sound carriers while foreground (bail backups after lock).
       void prepareBailSoundCarriers();
-      // Slide-to-stop / Sit handoff: always resume Quiett harsh until prop+sit.
+      // Slide-to-stop / Sit handoff: resume user's selected alarm tone until prop+unlock.
       await playHarshAlarm();
     })();
     return () => {
@@ -357,7 +361,7 @@ export default function SessionScreen() {
     const overlay = interpolateColor(
       phaseTone.value,
       [0, 0.45, 1],
-      ['rgba(255,92,92,0.28)', 'rgba(11,15,20,0.42)', 'rgba(11,15,20,0.58)'],
+      ['rgba(255,92,92,0.28)', 'rgba(10,18,32,0.45)', 'rgba(10,18,32,0.55)'],
     );
     return { backgroundColor: overlay };
   });
@@ -366,7 +370,7 @@ export default function SessionScreen() {
     const glow = interpolateColor(
       phaseTone.value,
       [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(91,140,255,0.22)', 'rgba(61,207,176,0.18)'],
+      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(224,122,85,0.18)'],
     );
     return { backgroundColor: glow };
   });
@@ -442,7 +446,7 @@ export default function SessionScreen() {
             confirmProgress={confirmProgress}
             sitProgress={sitProgress}
             timerLabel={timerLabel}
-            ringColor={ringColorFor(phase)}
+            ringColor={ringColorFor(phase, colors)}
           />
         </View>
 
@@ -454,7 +458,8 @@ export default function SessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -507,3 +512,4 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+}

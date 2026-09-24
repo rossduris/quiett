@@ -1,12 +1,17 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { colors, spacing, typography } from '@/constants/theme';
+import { spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
+import type { ColorTokens } from '@/constants/themes';
 
 export default function SuccessScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { streak } = useLocalSearchParams<{ streak?: string }>();
   const count = streak ? parseInt(streak, 10) : 0;
 
@@ -14,13 +19,13 @@ export default function SuccessScreen() {
     <View
       style={[
         styles.screen,
-        { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
+        { backgroundColor: colors.bg, paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
       ]}
     >
-      <Text style={styles.kicker}>Sit complete</Text>
-      <Text style={styles.title}>Morning unlocked</Text>
-      <Text style={styles.body}>
-        You stayed upright and still. The alarm is gone — and the day can start quieter.
+      <Text style={[styles.kicker, { color: colors.textDim }]}>Morning complete</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Morning unlocked</Text>
+      <Text style={[styles.body, { color: colors.textMuted }]}>
+        You held still through the gate. Alarm off — the day can start quieter.
       </Text>
       <View style={styles.streak}>
         <Text style={styles.streakNum}>{Number.isFinite(count) ? count : '—'}</Text>
@@ -35,7 +40,8 @@ export default function SuccessScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -63,3 +69,4 @@ const styles = StyleSheet.create({
   streakLabel: { color: colors.textMuted },
   cta: { marginTop: 'auto', alignSelf: 'stretch' },
 });
+}

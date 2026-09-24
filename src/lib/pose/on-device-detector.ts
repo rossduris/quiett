@@ -197,7 +197,7 @@ export function createOnDevicePoseDetector(
     const handsVisible = handsFromFlag || handsFromBody || (landmarks.handCount ?? 0) > 0;
 
     const still = facePresent ? isStill(motion, now) : false;
-    // Holding only if faceLooking AND zero hands AND still (toPoseStatus enforces).
+    // Holding only if brightEnough AND faceLooking AND zero hands AND still (toPoseStatus enforces).
     const brightEnough =
       landmarks.brightEnough === undefined ? true : landmarks.brightEnough === true;
     const raw = toPoseStatus(

@@ -25,7 +25,7 @@ function labelFor(status: PoseStatus): { label: string; tone: string } {
   }
 }
 
-/** Gates: prop phone → more light → face camera → hands away → hold still. */
+/** Gates: prop phone → more light (softer) → face camera → hands away → hold still. */
 export function PoseStatusChip({ status, confidence, showConfidence }: Props) {
   const { label, tone } = labelFor(status);
 
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: 'rgba(10,18,32,0.62)',
   },
   dot: { width: 7, height: 7, borderRadius: 4 },
   label: {

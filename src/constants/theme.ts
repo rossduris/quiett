@@ -1,18 +1,29 @@
+/**
+ * DEPRECATED: Import from theme-provider instead.
+ *
+ * This export is kept for backwards compatibility during migration.
+ * New code should use `useTheme()` or `useThemeColors()` from '@/lib/theme-provider'.
+ *
+ * @deprecated Use `useThemeColors()` hook instead for dynamic theming
+ */
 export const colors = {
-  bg: '#0B0F14',
-  bgElevated: '#141A22',
-  bgCard: '#1A222D',
-  border: '#2A3544',
-  text: '#E8EEF5',
-  textMuted: '#8B9BB0',
-  textDim: '#5C6B7E',
-  mist: '#A8C5D4',
-  accent: '#5B8CFF',
-  calm: '#3DCFB0',
-  calmSoft: 'rgba(61,207,176,0.14)',
-  alarm: '#FF5C5C',
-  alarmSoft: '#3D1A1A',
-  warning: '#F0B429',
+  bg: '#FFF8F4',
+  bgElevated: '#FFFFFF',
+  bgCard: '#FFF1EA',
+  border: '#F5D5C8',
+  text: '#2A1810',
+  textMuted: '#6B5248',
+  textDim: '#9B8278',
+  mist: '#E8C4B5',
+  accent: '#E89B7A',
+  calm: '#E07A55',
+  calmSoft: 'rgba(224,122,85,0.14)',
+  alarm: '#E8685C',
+  alarmSoft: '#FDE8E6',
+  warning: '#E8A850',
+  sunrise: '#E8A06A',
+  sunriseSoft: 'rgba(232,160,106,0.15)',
+  sunriseDeep: 'rgba(200,120,80,0.20)',
 } as const;
 
 export const spacing = {

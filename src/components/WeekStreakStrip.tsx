@@ -1,12 +1,13 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, spacing } from '@/constants/theme';
-import { dayKey } from '@/lib/storage';
+import { dayKey, getIsoWeekday, type Weekday } from '@/lib/storage';
 
 type DayCell = {
   key: string;
   label: string;
   completed: boolean;
   isToday: boolean;
+  scheduled: boolean;
 };
 
 /** Monday-start week containing today (Calm-style Mon–Sun strip). */
@@ -20,20 +21,26 @@ const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
 
 type Props = {
   completedDays: readonly string[];
-  /** Optional: override “today” for tests */
+  scheduledWeekdays?: readonly Weekday[];
   todayKey?: string;
 };
 
-export function WeekStreakStrip({ completedDays, todayKey }: Props) {
+export function WeekStreakStrip({ completedDays, scheduledWeekdays, todayKey }: Props) {
   const today = todayKey ?? dayKey(0);
   const keys = weekDayKeys();
   const completed = new Set(completedDays);
-  const cells: DayCell[] = keys.map((key, i) => ({
-    key,
-    label: DAY_LABELS[i],
-    completed: completed.has(key),
-    isToday: key === today,
-  }));
+  const scheduled = scheduledWeekdays ? new Set(scheduledWeekdays) : null;
+  
+  const cells: DayCell[] = keys.map((key, i) => {
+    const isoWeekday = ((i + 1) as Weekday);
+    return {
+      key,
+      label: DAY_LABELS[i],
+      completed: completed.has(key),
+      isToday: key === today,
+      scheduled: scheduled === null || scheduled.has(isoWeekday),
+    };
+  });
 
   return (
     <View style={styles.row} accessibilityRole="summary" accessibilityLabel="Week sit streak">
@@ -42,13 +49,20 @@ export function WeekStreakStrip({ completedDays, todayKey }: Props) {
           <View
             style={[
               styles.dot,
+              !cell.scheduled && styles.dotOff,
               cell.completed && styles.dotFilled,
               cell.isToday && styles.dotToday,
             ]}
           >
             {cell.completed ? <Text style={styles.check}>✓</Text> : null}
           </View>
-          <Text style={[styles.label, cell.isToday && styles.labelToday]}>{cell.label}</Text>
+          <Text style={[
+            styles.label, 
+            !cell.scheduled && styles.labelOff,
+            cell.isToday && styles.labelToday
+          ]}>
+            {cell.label}
+          </Text>
         </View>
       ))}
     </View>
@@ -79,9 +93,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dotOff: {
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    opacity: 0.4,
+  },
   dotFilled: {
     backgroundColor: colors.calm,
     borderColor: colors.calm,
+    borderStyle: 'solid',
+    opacity: 1,
   },
   dotToday: {
     borderColor: colors.text,
@@ -98,6 +119,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
+  },
+  labelOff: {
+    opacity: 0.4,
   },
   labelToday: {
     color: colors.textMuted,

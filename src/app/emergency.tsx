@@ -1,24 +1,29 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { colors, spacing, typography } from '@/constants/theme';
+import { spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
+import type { ColorTokens } from '@/constants/themes';
 
 export default function EmergencyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <View
       style={[
         styles.screen,
-        { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
+        { backgroundColor: colors.bg, paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
       ]}
     >
-      <Text style={styles.kicker}>Emergency dismiss</Text>
-      <Text style={styles.title}>Streak broken</Text>
-      <Text style={styles.body}>
-        You skipped the sit. That is allowed when you need it — but the streak resets to zero. No
+      <Text style={[styles.kicker, { color: colors.textDim }]}>Emergency dismiss</Text>
+      <Text style={[styles.title, { color: colors.alarm }]}>Streak broken</Text>
+      <Text style={[styles.body, { color: colors.textMuted }]}>
+        You skipped the morning gate. That is allowed when you need it — but the streak resets to zero. No
         casual snooze next time.
       </Text>
       <PrimaryButton
@@ -30,7 +35,8 @@ export default function EmergencyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -55,3 +61,4 @@ const styles = StyleSheet.create({
   },
   cta: { marginTop: 'auto', alignSelf: 'stretch' },
 });
+}

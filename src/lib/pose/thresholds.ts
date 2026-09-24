@@ -3,10 +3,10 @@
  *
  * Holding requires ALL of:
  * 1) phone propped (accelerometer — not flat on bed/chest)
- * 2) face looking at camera (Vision yaw/pitch + both eyes + mouth/lips)
- * 3) no clear hand in camera view (Vision hand pose; wrists high in frame also fail)
- * 4) still enough (landmark travel below STILLNESS_MAX_MOTION)
- * 5) bright enough (face-region luma ≥ BRIGHTNESS_MIN — chip "more light")
+ * 2) bright enough (face-region luma ≥ BRIGHTNESS_MIN — softer than original 0.20)
+ * 3) face looking at camera (Vision yaw/pitch + both eyes + mouth/lips)
+ * 4) no clear hand in camera view (Vision hand pose; wrists high in frame also fail)
+ * 5) still enough (landmark travel below STILLNESS_MAX_MOTION)
  *
  * Session-machine also needs CONFIRM_HOLD_MS (~2.5s) of published `holding`.
  *
@@ -67,6 +67,13 @@ export const HAND_NEAR_FACE_PAD = 0.22;
 
 /**
  * Min mean face/frame luminance (0–1) from Vision. Below → too_dark / "more light".
- * Match native QuiettPoseVision.brightnessMin. Raise if dark rooms still pass; lower if daylight fails.
+ * Softened from original 0.20 (65% of original) to allow dimmer usable rooms
+ * while still rejecting near-pitch-black / covered-camera cases.
+ * Match native QuiettPoseVision.brightnessMin.
+ * 
+ * Tuning:
+ * - 0.20 (original): Too strict — failed dim-but-usable rooms
+ * - 0.13: Middle ground — rejects covered camera, passes typical dim indoor lighting
+ * - 0.00: Too loose — no lighting gate
  */
-export const BRIGHTNESS_MIN = 0.20;
+export const BRIGHTNESS_MIN = 0.13;
