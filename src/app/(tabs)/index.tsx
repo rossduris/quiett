@@ -6,7 +6,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { WeekStreakStrip } from '@/components/WeekStreakStrip';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { UnlockTrackPicker } from '@/components/UnlockTrackPicker';
@@ -64,19 +65,20 @@ function displayTime(hhmm: string): string {
   return parseTime(hhmm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function chipTone(status: TodayStatus): string {
-  switch (status) {
-    case 'unlocked_today':
-      return colors.calm;
-    case 'missed_morning':
-      return colors.warning;
-    default:
-      return colors.mist;
-  }
-}
-
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+
+  const chipTone = (status: TodayStatus): string => {
+    switch (status) {
+      case 'unlocked_today':
+        return colors.calm;
+      case 'missed_morning':
+        return colors.warning;
+      default:
+        return colors.mist;
+    }
+  };
   const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
   const [completedDays, setCompletedDays] = useState<string[]>([]);

@@ -4,6 +4,7 @@ import {
   DEFAULT_MEDITATION_SOUND_ID,
 } from '@/constants/sounds';
 import { DEFAULT_UNLOCK_TRACK_ID, unlockTrackById } from '@/constants/unlock-tracks';
+import { DEFAULT_THEME_ID, type ThemeId } from '@/constants/themes';
 
 const KEYS = {
   alarmTime: 'quiett.alarmTime',
@@ -24,6 +25,7 @@ const KEYS = {
   bailAlarmId: 'quiett.bailAlarmId',
   bailTimerIds: 'quiett.bailTimerIds',
   bailCarrierIds: 'quiett.bailCarrierIds',
+  themeId: 'quiett.themeId',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -417,4 +419,14 @@ export async function signOut(): Promise<AccountData> {
   const account = { ...SIGNED_OUT_ACCOUNT };
   await saveAccount(account);
   return account;
+}
+
+export async function loadThemeId(): Promise<ThemeId> {
+  const raw = await AsyncStorage.getItem(KEYS.themeId);
+  if (raw === 'peachCream' || raw === 'nightTeal') return raw;
+  return DEFAULT_THEME_ID;
+}
+
+export async function saveThemeId(id: ThemeId): Promise<void> {
+  await AsyncStorage.setItem(KEYS.themeId, id);
 }

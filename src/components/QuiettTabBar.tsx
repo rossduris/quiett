@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing } from '@/constants/theme';
+import { spacing } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -42,13 +43,22 @@ const TAB_META: Record<string, { label: string; icon: IconName; iconFocused: Ico
 /** Calm-style floating pill — real Expo Router tab bar (no stack push / swipe). */
 export function QuiettTabBar({ state, descriptors, navigation }: QuiettTabBarProps) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   return (
     <View
       pointerEvents="box-none"
       style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 10) }]}
     >
-      <View style={styles.pill}>
+      <View
+        style={[
+          styles.pill,
+          {
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+          },
+        ]}
+      >
         {state.routes.map((route, index) => {
           const focused = state.index === index;
           const meta = TAB_META[route.name] ?? {
@@ -77,7 +87,7 @@ export function QuiettTabBar({ state, descriptors, navigation }: QuiettTabBarPro
               onPress={onPress}
               style={({ pressed }) => [
                 styles.item,
-                focused && styles.itemActive,
+                focused && { backgroundColor: colors.calmSoft },
                 pressed && styles.pressed,
               ]}
             >
@@ -111,11 +121,9 @@ const styles = StyleSheet.create({
     gap: 4,
     padding: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(22, 28, 36, 0.94)',
     borderWidth: 1,
-    borderColor: 'rgba(168, 197, 212, 0.18)',
     shadowColor: '#000',
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.22,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 12,
@@ -129,9 +137,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     minWidth: 56,
     justifyContent: 'center',
-  },
-  itemActive: {
-    backgroundColor: 'rgba(168, 197, 212, 0.16)',
   },
   pressed: { opacity: 0.85 },
 });
