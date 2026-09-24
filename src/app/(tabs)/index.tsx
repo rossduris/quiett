@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,6 +50,10 @@ import {
   type SitMinutes,
   loadSurpriseMe,
   saveSurpriseMe,
+  loadReliabilityCheckCompleted,
+  loadGetStartedDismissed,
+  saveGetStartedDismissed,
+  loadWakeIntention,
 } from '@/lib/storage';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 import type { ColorTokens } from '@/constants/themes';
@@ -70,6 +74,7 @@ function displayTime(hhmm: string): string {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -97,12 +102,15 @@ export default function HomeScreen() {
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [surpriseMe, setSurpriseMe] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [reliabilityChecked, setReliabilityChecked] = useState(false);
+  const [getStartedDismissed, setGetStartedDismissed] = useState(false);
+  const [wakeIntention, setWakeIntention] = useState('');
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed] = await Promise.all([
+        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed, reliabilityDone, getStartedDone, intention] = await Promise.all([
           loadAlarmPrefs(),
           loadStreak(),
           loadCompletedDays(),
@@ -112,6 +120,9 @@ export default function HomeScreen() {
           loadSitMinutes(),
           loadSurpriseMe(),
           isDayOpenHeroDismissedToday(),
+          loadReliabilityCheckCompleted(),
+          loadGetStartedDismissed(),
+          loadWakeIntention(),
         ]);
         if (!alive) return;
         setAlarm(a);
@@ -123,6 +134,9 @@ export default function HomeScreen() {
         setSitMinutes(sit);
         setSurpriseMe(surprise);
         setNow(new Date());
+        setReliabilityChecked(reliabilityDone);
+        setGetStartedDismissed(getStartedDone);
+        setWakeIntention(intention);
 
         let nextUnlock = unlockId;
         if (surprise) {
@@ -161,6 +175,18 @@ export default function HomeScreen() {
   const unlockTrack = useMemo(() => unlockTrackById(unlockTrackId), [unlockTrackId]);
   const alarmSound = useMemo(() => alarmSoundById(alarmSoundId), [alarmSoundId]);
   const showDayOpenHero = unlockedToday && !dayOpenDismissed;
+
+  const hasSetAlarm = alarm.enabled;
+  const hasTriedTest = false;
+  const hasIntention = wakeIntention.length > 0;
+  const getStartedProgress = [hasSetAlarm, reliabilityChecked, hasTriedTest, hasIntention].filter(Boolean).length;
+  const showGetStarted = !getStartedDismissed && getStartedProgress < 4;
+  const showReliabilityCard = !reliabilityChecked && !showGetStarted;
+
+  const onDismissGetStarted = async () => {
+    setGetStartedDismissed(true);
+    await saveGetStartedDismissed(true);
+  };
 
   const onDismissDayOpen = async () => {
     setDayOpenDismissed(true);
@@ -280,6 +306,12 @@ export default function HomeScreen() {
             <Text style={styles.dayOpenBody}>
               Your day is open. Alarm prep for tomorrow stays below when you need it.
             </Text>
+            {wakeIntention && (
+              <View style={styles.intentionPill}>
+                <Ionicons name="bulb-outline" size={14} color={colors.calm} />
+                <Text style={styles.intentionText}>{wakeIntention}</Text>
+              </View>
+            )}
             {statusChip ? (
               <View style={[styles.statusChip, { borderColor: chipTone(statusChip.status) }]}>
                 <View style={[styles.statusDot, { backgroundColor: chipTone(statusChip.status) }]} />
@@ -290,6 +322,112 @@ export default function HomeScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {showGetStarted && (
+          <View style={styles.getStartedCard}>
+            <Pressable
+              onPress={() => void onDismissGetStarted()}
+              style={styles.getStartedDismiss}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss get started"
+            >
+              <Ionicons name="close" size={20} color={colors.textDim} />
+            </Pressable>
+            <View style={styles.getStartedTop}>
+              <Ionicons name="flag-outline" size={24} color={colors.calm} />
+              <View style={styles.getStartedTitleRow}>
+                <Text style={styles.getStartedTitle}>Get started</Text>
+                <Text style={styles.getStartedProgress}>{getStartedProgress}/4</Text>
+              </View>
+            </View>
+            <View style={styles.getStartedList}>
+              <Pressable
+                onPress={() => setShowPicker(true)}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasSetAlarm && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasSetAlarm && styles.getStartedCheckDone]}>
+                  {hasSetAlarm && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasSetAlarm && styles.getStartedTextDone]}>
+                  Set your alarm
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/reliability-check')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  reliabilityChecked && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, reliabilityChecked && styles.getStartedCheckDone]}>
+                  {reliabilityChecked && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, reliabilityChecked && styles.getStartedTextDone]}>
+                  Make sure it can wake you
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/test-morning')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasTriedTest && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasTriedTest && styles.getStartedCheckDone]}>
+                  {hasTriedTest && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasTriedTest && styles.getStartedTextDone]}>
+                  Try a test morning
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/wake-intention')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasIntention && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasIntention && styles.getStartedCheckDone]}>
+                  {hasIntention && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasIntention && styles.getStartedTextDone]}>
+                  Set your intention
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {showReliabilityCard && (
+          <Pressable
+            onPress={() => router.push('/reliability-check')}
+            style={({ pressed }) => [styles.reliabilityCard, pressed && styles.pressed]}
+            accessibilityRole="button"
+          >
+            <View style={styles.reliabilityIcon}>
+              <Ionicons name="alarm-outline" size={20} color={colors.calm} />
+            </View>
+            <View style={styles.reliabilityBody}>
+              <Text style={styles.reliabilityTitle}>Check your alarm reliability</Text>
+              <Text style={styles.reliabilityText}>
+                Three iPhone settings that matter for waking up
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+          </Pressable>
+        )}
 
         <View style={[styles.card, styles.heroCard, unlockedToday && styles.cardDimmed]}>
           {!unlockedToday ? (
@@ -548,6 +686,136 @@ function createStyles(colors: ColorTokens) {
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  intentionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.calm,
+    marginTop: spacing.xs,
+  },
+  intentionText: {
+    color: colors.calm,
+    fontSize: 13,
+    fontWeight: '500',
+    fontStyle: 'italic',
+  },
+  getStartedCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+    position: 'relative',
+  },
+  getStartedDismiss: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  getStartedTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  getStartedTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  getStartedTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  getStartedProgress: {
+    color: colors.calm,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  getStartedList: {
+    gap: spacing.sm,
+  },
+  getStartedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  getStartedRowDone: {
+    opacity: 0.6,
+  },
+  getStartedCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  getStartedCheckDone: {
+    backgroundColor: colors.calm,
+    borderColor: colors.calm,
+  },
+  getStartedText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  getStartedTextDone: {
+    color: colors.textMuted,
+  },
+  reliabilityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reliabilityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.calmSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reliabilityBody: {
+    flex: 1,
+    gap: 2,
+  },
+  reliabilityTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  reliabilityText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   card: {
     backgroundColor: colors.bgCard,

@@ -27,6 +27,15 @@ const KEYS = {
   bailCarrierIds: 'quiett.bailCarrierIds',
   themeId: 'quiett.themeId',
   dayOpenHeroDismissedDate: 'quiett.dayOpenHeroDismissedDate',
+  reliabilityCheckCompleted: 'quiett.reliabilityCheckCompleted',
+  getStartedDismissed: 'quiett.getStartedDismissed',
+  wakeIntention: 'quiett.wakeIntention',
+  eveningReminderEnabled: 'quiett.eveningReminderEnabled',
+  eveningReminderTime: 'quiett.eveningReminderTime',
+  streakDeadlineEnabled: 'quiett.streakDeadlineEnabled',
+  streakDeadlineMinutes: 'quiett.streakDeadlineMinutes',
+  earnedBadges: 'quiett.earnedBadges',
+  unlockTimestamps: 'quiett.unlockTimestamps',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -303,6 +312,8 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   const current = await loadStreak();
   const today = dayKey(0);
   await addCompletedDay(today);
+  await recordUnlockTimestamp();
+  
   if (current.lastCompletedDate === today) return current;
   
   const prefs = await loadAlarmPrefs();
@@ -315,6 +326,7 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
       AsyncStorage.setItem(KEYS.streak, String(next)),
       AsyncStorage.setItem(KEYS.lastCompletedDate, today),
     ]);
+    await checkAndAwardBadges(next, await loadCompletedDays());
     return { count: next, lastCompletedDate: today };
   }
   
@@ -340,6 +352,7 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
         AsyncStorage.setItem(KEYS.streak, String(next)),
         AsyncStorage.setItem(KEYS.lastCompletedDate, today),
       ]);
+      await checkAndAwardBadges(next, await loadCompletedDays());
       return { count: next, lastCompletedDate: today };
     }
   }
@@ -348,7 +361,24 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
     AsyncStorage.setItem(KEYS.streak, '1'),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
+  await checkAndAwardBadges(1, await loadCompletedDays());
   return { count: 1, lastCompletedDate: today };
+}
+
+async function checkAndAwardBadges(streakCount: number, completedDays: string[]): Promise<void> {
+  const totalMornings = completedDays.length;
+  
+  if (totalMornings === 1) await awardBadge('first-unlock');
+  if (totalMornings >= 10) await awardBadge('mornings-10');
+  if (totalMornings >= 50) await awardBadge('mornings-50');
+  
+  if (streakCount >= 3) await awardBadge('streak-3');
+  if (streakCount >= 7) await awardBadge('streak-7');
+  if (streakCount >= 14) await awardBadge('streak-14');
+  if (streakCount >= 21) await awardBadge('streak-21');
+  if (streakCount >= 30) await awardBadge('streak-30');
+  if (streakCount >= 60) await awardBadge('streak-60');
+  if (streakCount >= 100) await awardBadge('streak-100');
 }
 
 /** Emergency: reset streak count / last date, keep completed-day history for week strip. */
@@ -440,4 +470,151 @@ export async function loadThemeId(): Promise<ThemeId> {
 
 export async function saveThemeId(id: ThemeId): Promise<void> {
   await AsyncStorage.setItem(KEYS.themeId, id);
+}
+
+export async function loadReliabilityCheckCompleted(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.reliabilityCheckCompleted);
+  return raw === '1';
+}
+
+export async function saveReliabilityCheckCompleted(completed: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.reliabilityCheckCompleted, completed ? '1' : '0');
+}
+
+export async function loadGetStartedDismissed(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.getStartedDismissed);
+  return raw === '1';
+}
+
+export async function saveGetStartedDismissed(dismissed: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.getStartedDismissed, dismissed ? '1' : '0');
+}
+
+export async function loadWakeIntention(): Promise<string> {
+  const raw = await AsyncStorage.getItem(KEYS.wakeIntention);
+  return raw || '';
+}
+
+export async function saveWakeIntention(text: string): Promise<void> {
+  await AsyncStorage.setItem(KEYS.wakeIntention, text);
+}
+
+export type EveningReminderPrefs = {
+  enabled: boolean;
+  time: string;
+};
+
+export async function loadEveningReminderPrefs(): Promise<EveningReminderPrefs> {
+  const [enabled, time] = await Promise.all([
+    AsyncStorage.getItem(KEYS.eveningReminderEnabled),
+    AsyncStorage.getItem(KEYS.eveningReminderTime),
+  ]);
+  return {
+    enabled: enabled === '1',
+    time: time || '20:00',
+  };
+}
+
+export async function saveEveningReminderPrefs(prefs: EveningReminderPrefs): Promise<void> {
+  await Promise.all([
+    AsyncStorage.setItem(KEYS.eveningReminderEnabled, prefs.enabled ? '1' : '0'),
+    AsyncStorage.setItem(KEYS.eveningReminderTime, prefs.time),
+  ]);
+}
+
+export type StreakDeadlinePrefs = {
+  enabled: boolean;
+  minutes: number;
+};
+
+export async function loadStreakDeadlinePrefs(): Promise<StreakDeadlinePrefs> {
+  const [enabled, minutes] = await Promise.all([
+    AsyncStorage.getItem(KEYS.streakDeadlineEnabled),
+    AsyncStorage.getItem(KEYS.streakDeadlineMinutes),
+  ]);
+  return {
+    enabled: enabled === '1',
+    minutes: minutes ? parseInt(minutes, 10) || 30 : 30,
+  };
+}
+
+export async function saveStreakDeadlinePrefs(prefs: StreakDeadlinePrefs): Promise<void> {
+  await Promise.all([
+    AsyncStorage.setItem(KEYS.streakDeadlineEnabled, prefs.enabled ? '1' : '0'),
+    AsyncStorage.setItem(KEYS.streakDeadlineMinutes, String(prefs.minutes)),
+  ]);
+}
+
+export type BadgeId = 
+  | 'first-unlock'
+  | 'streak-3'
+  | 'streak-7'
+  | 'streak-14'
+  | 'streak-21'
+  | 'streak-30'
+  | 'streak-60'
+  | 'streak-100'
+  | 'mornings-10'
+  | 'mornings-50'
+  | 'perfect-week'
+  | 'tried-guided'
+  | 'tried-ambient'
+  | 'tried-healing';
+
+export async function loadEarnedBadges(): Promise<BadgeId[]> {
+  const raw = await AsyncStorage.getItem(KEYS.earnedBadges);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((b): b is BadgeId => typeof b === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveEarnedBadges(badges: BadgeId[]): Promise<void> {
+  await AsyncStorage.setItem(KEYS.earnedBadges, JSON.stringify(badges));
+}
+
+export async function awardBadge(badge: BadgeId): Promise<BadgeId[]> {
+  const current = await loadEarnedBadges();
+  if (current.includes(badge)) return current;
+  const next = [...current, badge];
+  await saveEarnedBadges(next);
+  return next;
+}
+
+export type UnlockTimestamp = {
+  day: string;
+  timestamp: number;
+};
+
+export async function loadUnlockTimestamps(): Promise<UnlockTimestamp[]> {
+  const raw = await AsyncStorage.getItem(KEYS.unlockTimestamps);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((t): t is UnlockTimestamp => 
+      typeof t === 'object' && 
+      t !== null && 
+      typeof (t as any).day === 'string' && 
+      typeof (t as any).timestamp === 'number'
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function saveUnlockTimestamps(timestamps: UnlockTimestamp[]): Promise<void> {
+  const trimmed = timestamps.length > 400 ? timestamps.slice(timestamps.length - 400) : timestamps;
+  await AsyncStorage.setItem(KEYS.unlockTimestamps, JSON.stringify(trimmed));
+}
+
+export async function recordUnlockTimestamp(): Promise<void> {
+  const day = dayKey(0);
+  const timestamp = Date.now();
+  const existing = await loadUnlockTimestamps();
+  const withoutToday = existing.filter((t) => t.day !== day);
+  await saveUnlockTimestamps([...withoutToday, { day, timestamp }]);
 }

@@ -223,6 +223,17 @@ export default function ProfileScreen() {
         <View style={styles.actionsCard}>
           <Pressable
             accessibilityRole="button"
+            onPress={() => router.push('/milestones')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons name="ribbon-outline" size={20} color={colors.text} />
+              <Text style={styles.actionLabel}>Milestones & badges</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             onPress={() => router.push('/settings')}
             style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
           >
