@@ -18,7 +18,7 @@ import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionChrome } from '@/components/SessionChrome';
-import { colors, spacing, typography } from '@/constants/theme';
+import { spacing, typography } from '@/constants/theme';
 import {
   crossfadeToMeditation,
   playHarshAlarm,

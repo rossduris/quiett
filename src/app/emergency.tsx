@@ -9,7 +9,6 @@ export default function EmergencyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const colors = useThemeColors();
 
   return (
     <View
