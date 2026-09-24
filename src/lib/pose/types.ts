@@ -2,14 +2,16 @@
  * Quiett session gates:
  * - absent:       no face in frame (looking away / missing)
  * - not_upright:  phone not propped
+ * - too_dark:     insufficient lighting (softer than original gate)
  * - fidgeting:    face present but moving too much
  * - hands_near:   hand overlapping / near the face
- * - holding:      propped + face looking + both eyes + mouth + no hands near + still
+ * - holding:      propped + bright enough + face looking + both eyes + mouth + no hands near + still
  */
 
 export type PoseStatus =
   | 'absent'
   | 'not_upright'
+  | 'too_dark'
   | 'fidgeting'
   | 'hands_near'
   | 'holding';

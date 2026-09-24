@@ -102,6 +102,7 @@ export function createOnDevicePoseDetector(
   let unsubPropped: (() => void) | null = null;
   let lastPresent = false;
   let lastFaceLooking = false;
+  let lastBrightEnough = true;
   let lastConf = 0;
   const proppedMonitor = createProppedMonitor();
   const hysteresis = createHoldingHysteresis(
@@ -196,7 +197,9 @@ export function createOnDevicePoseDetector(
     const handsVisible = handsFromFlag || handsFromBody || (landmarks.handCount ?? 0) > 0;
 
     const still = facePresent ? isStill(motion, now) : false;
-    // Holding only if faceLooking AND zero hands AND still (toPoseStatus enforces).
+    // Holding only if brightEnough AND faceLooking AND zero hands AND still (toPoseStatus enforces).
+    const brightEnough =
+      landmarks.brightEnough === undefined ? true : landmarks.brightEnough === true;
     const raw = toPoseStatus(
       facePresent,
       classified.upright,
@@ -205,9 +208,11 @@ export function createOnDevicePoseDetector(
       true,
       faceLooking,
       handsVisible,
+      brightEnough,
     );
     lastPresent = facePresent;
     lastFaceLooking = faceLooking;
+    lastBrightEnough = brightEnough;
     lastConf = classified.confidence;
     const published = hysteresis.push(raw);
     emit(published, classified.confidence);
@@ -229,6 +234,7 @@ export function createOnDevicePoseDetector(
       true,
       lastFaceLooking,
       false,
+      lastBrightEnough,
     );
     const published = hysteresis.push(raw);
     emit(published, lastConf);
