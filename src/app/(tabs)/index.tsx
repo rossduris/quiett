@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
+import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { WeekStreakStrip } from '@/components/WeekStreakStrip';
 import { radii, spacing, typography } from '@/constants/theme';
@@ -35,6 +36,8 @@ import {
   type StreakData,
   type Weekday,
   clearWakeResolved,
+  dismissDayOpenHeroToday,
+  isDayOpenHeroDismissedToday,
   isWakeResolvedToday,
   loadUnlockTrackId,
   saveUnlockTrackId,
@@ -49,6 +52,7 @@ import {
   saveSurpriseMe,
 } from '@/lib/storage';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
+import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
   const [h, m] = hhmm.split(':').map((n) => parseInt(n, 10));
@@ -68,6 +72,7 @@ function displayTime(hhmm: string): string {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const chipTone = (status: TodayStatus): string => {
     switch (status) {
@@ -83,6 +88,7 @@ export default function HomeScreen() {
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [wakeResolved, setWakeResolved] = useState(false);
+  const [dayOpenDismissed, setDayOpenDismissed] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showMorningSoundPicker, setShowMorningSoundPicker] = useState(false);
   const [showAlarmSoundPicker, setShowAlarmSoundPicker] = useState(false);
@@ -96,7 +102,7 @@ export default function HomeScreen() {
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [a, s, days, resolved, unlockId, soundId, sit, surprise] = await Promise.all([
+        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed] = await Promise.all([
           loadAlarmPrefs(),
           loadStreak(),
           loadCompletedDays(),
@@ -105,12 +111,14 @@ export default function HomeScreen() {
           loadAlarmSoundId(),
           loadSitMinutes(),
           loadSurpriseMe(),
+          isDayOpenHeroDismissedToday(),
         ]);
         if (!alive) return;
         setAlarm(a);
         setStreak(s);
         setCompletedDays(days);
         setWakeResolved(resolved);
+        setDayOpenDismissed(heroDismissed);
         setAlarmSoundId(soundId);
         setSitMinutes(sit);
         setSurpriseMe(surprise);
@@ -152,6 +160,12 @@ export default function HomeScreen() {
 
   const unlockTrack = useMemo(() => unlockTrackById(unlockTrackId), [unlockTrackId]);
   const alarmSound = useMemo(() => alarmSoundById(alarmSoundId), [alarmSoundId]);
+  const showDayOpenHero = unlockedToday && !dayOpenDismissed;
+
+  const onDismissDayOpen = async () => {
+    setDayOpenDismissed(true);
+    await dismissDayOpenHeroToday();
+  };
 
   const onSelectUnlockTrack = async (track: UnlockTrack) => {
     const id = await saveUnlockTrackId(track.id);
@@ -205,7 +219,8 @@ export default function HomeScreen() {
     }
   };
 
-  const onTimeValueChange = async (_event: unknown, date: Date) => {
+  const onTimeValueChange = async (_event: unknown, date?: Date) => {
+    if (!date) return;
     if (Platform.OS === 'android') setShowPicker(false);
     await persistAlarm({ ...alarm, time: toHhMm(date) });
   };
@@ -249,8 +264,17 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {unlockedToday ? (
+        {showDayOpenHero ? (
           <View style={styles.dayOpenHero}>
+            <Pressable
+              onPress={() => void onDismissDayOpen()}
+              style={styles.dayOpenDismiss}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss morning unlocked"
+            >
+              <Ionicons name="close" size={20} color={colors.textDim} />
+            </Pressable>
             <Ionicons name="sunny-outline" size={28} color={colors.calm} />
             <Text style={styles.dayOpenTitle}>Morning unlocked</Text>
             <Text style={styles.dayOpenBody}>
@@ -323,14 +347,21 @@ export default function HomeScreen() {
 
           {showPicker && (
             <>
-              <DateTimePicker
-                value={parseTime(alarm.time)}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onValueChange={onTimeValueChange}
-                onDismiss={() => setShowPicker(false)}
-                themeVariant="dark"
-              />
+              <View style={styles.timePickerWrap}>
+                <DateTimePicker
+                  value={parseTime(alarm.time)}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'spinner'}
+                  // Morning alarms: always show 12-hour clock with AM/PM.
+                  locale="en_US"
+                  is24Hour={false}
+                  minuteInterval={1}
+                  onValueChange={onTimeValueChange}
+                  onDismiss={() => setShowPicker(false)}
+                  themeVariant={colors.statusBarStyle === 'dark' ? 'light' : 'dark'}
+                  textColor={colors.text}
+                />
+              </View>
               <View style={styles.dayPills}>
                 {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map((label, i) => {
                   const day = (i + 1) as Weekday;
@@ -399,21 +430,12 @@ export default function HomeScreen() {
                 { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
               ]}
             >
-              {unlockTrack.art ? (
-                <Image source={unlockTrack.art} style={styles.unlockArtImage} resizeMode="cover" />
-              ) : (
-                <Ionicons
-                  name={
-                    unlockTrack.kind === 'guided'
-                      ? 'mic-outline'
-                      : unlockTrack.kind === 'music'
-                        ? 'musical-notes-outline'
-                        : 'rainy-outline'
-                  }
-                  size={20}
-                  color={colors.text}
-                />
-              )}
+              <LibraryTrackMark
+                trackId={unlockTrack.id}
+                kind={unlockTrack.kind}
+                color={unlockTrack.accent}
+                size={34}
+              />
             </View>
             <View style={styles.unlockBody}>
               <Text style={styles.unlockTitle} numberOfLines={1}>
@@ -481,7 +503,8 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
     paddingHorizontal: spacing.lg,
@@ -505,7 +528,19 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     backgroundColor: colors.calmSoft,
     borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.28)',
+    borderColor: colors.calm,
+    position: 'relative',
+  },
+  dayOpenDismiss: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   dayOpenTitle: { color: colors.calm, fontSize: 22, fontWeight: '700' },
   dayOpenBody: {
@@ -576,6 +611,17 @@ const styles = StyleSheet.create({
   },
   thumbOn: { alignSelf: 'flex-end' },
   timeHit: { paddingVertical: spacing.sm },
+  timePickerWrap: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    paddingVertical: spacing.sm,
+  },
   time: { ...typography.hero, color: colors.text, fontSize: 72 },
   hint: { color: colors.textMuted, fontSize: 13 },
   dayPills: {
@@ -659,7 +705,7 @@ const styles = StyleSheet.create({
   },
   surprisePillOn: {
     backgroundColor: colors.calmSoft,
-    borderColor: 'rgba(61,207,176,0.45)',
+    borderColor: colors.calm,
   },
   surpriseText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
   surpriseTextOn: { color: colors.calm },
@@ -677,7 +723,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  unlockArtImage: { width: '100%', height: '100%' },
   unlockBody: { flex: 1, gap: 2 },
   unlockTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
   unlockMeta: { color: colors.textMuted, fontSize: 13 },
@@ -715,7 +760,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   streakCardOpen: {
-    borderColor: 'rgba(61,207,176,0.28)',
+    borderColor: colors.calm,
   },
   streakNum: { fontSize: 48, fontWeight: '200', color: colors.calm },
   streakNumOpen: { fontSize: 40 },
@@ -749,3 +794,4 @@ const styles = StyleSheet.create({
   },
   alarmSoundValue: { color: colors.textMuted, fontSize: 13, fontWeight: '600', maxWidth: 140 },
 });
+}

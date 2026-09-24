@@ -76,8 +76,9 @@ export const PEACH_CREAM: Theme = {
     textDim: '#9B8278',
     mist: '#E8C4B5',
     accent: '#E89B7A',
-    calm: '#3DCFB0',
-    calmSoft: 'rgba(61,207,176,0.12)',
+    // Primary action / selected / success — warm peach (not teal)
+    calm: '#E07A55',
+    calmSoft: 'rgba(224,122,85,0.14)',
     alarm: '#E8685C',
     alarmSoft: '#FDE8E6',
     warning: '#E8A850',

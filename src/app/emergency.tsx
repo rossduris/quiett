@@ -1,14 +1,17 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import type { ColorTokens } from '@/constants/themes';
 
 export default function EmergencyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <View
@@ -32,7 +35,8 @@ export default function EmergencyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -57,3 +61,4 @@ const styles = StyleSheet.create({
   },
   cta: { marginTop: 'auto', alignSelf: 'stretch' },
 });
+}

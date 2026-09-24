@@ -52,7 +52,7 @@ export function SessionChrome({
           isAlarm
             ? 'rgba(255,92,92,0.18)'
             : isMeditate
-              ? 'rgba(61,207,176,0.16)'
+              ? 'rgba(224,122,85,0.16)'
               : 'rgba(255,255,255,0.08)'
         }
         concentric={isMeditate}

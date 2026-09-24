@@ -56,6 +56,8 @@ import {
   rearmOsAlarmAfterBail,
   silenceOsRingForSession,
 } from '@/lib/os-alarm';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 
 const PHASE_TONE: Record<SessionPhase, number> = {
   alarming: 0,
@@ -65,7 +67,7 @@ const PHASE_TONE: Record<SessionPhase, number> = {
   emergency: 0,
 };
 
-function ringColorFor(phase: SessionPhase): string {
+function ringColorFor(phase: SessionPhase, colors: ColorTokens): string {
   switch (phase) {
     case 'alarming':
       return colors.alarm;
@@ -79,6 +81,8 @@ function ringColorFor(phase: SessionPhase): string {
 }
 
 export default function SessionScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -366,7 +370,7 @@ export default function SessionScreen() {
     const glow = interpolateColor(
       phaseTone.value,
       [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(61,207,176,0.18)'],
+      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(224,122,85,0.18)'],
     );
     return { backgroundColor: glow };
   });
@@ -442,7 +446,7 @@ export default function SessionScreen() {
             confirmProgress={confirmProgress}
             sitProgress={sitProgress}
             timerLabel={timerLabel}
-            ringColor={ringColorFor(phase)}
+            ringColor={ringColorFor(phase, colors)}
           />
         </View>
 
@@ -454,7 +458,8 @@ export default function SessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -507,3 +512,4 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+}

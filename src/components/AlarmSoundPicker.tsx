@@ -153,8 +153,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rowSelected: {
-    borderColor: 'rgba(61,207,176,0.55)',
-    backgroundColor: 'rgba(61,207,176,0.08)',
+    borderColor: 'rgba(224,122,85,0.55)',
+    backgroundColor: 'rgba(224,122,85,0.08)',
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
   rowTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },

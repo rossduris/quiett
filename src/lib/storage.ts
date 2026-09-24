@@ -26,6 +26,7 @@ const KEYS = {
   bailTimerIds: 'quiett.bailTimerIds',
   bailCarrierIds: 'quiett.bailCarrierIds',
   themeId: 'quiett.themeId',
+  dayOpenHeroDismissedDate: 'quiett.dayOpenHeroDismissedDate',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -205,6 +206,16 @@ export async function isWakeResolvedToday(): Promise<boolean> {
 
 export async function clearWakeResolved(): Promise<void> {
   await AsyncStorage.removeItem(KEYS.wakeResolvedDate);
+}
+
+
+export async function dismissDayOpenHeroToday(): Promise<void> {
+  await AsyncStorage.setItem(KEYS.dayOpenHeroDismissedDate, dayKey(0));
+}
+
+export async function isDayOpenHeroDismissedToday(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.dayOpenHeroDismissedDate);
+  return raw === dayKey(0);
 }
 
 export async function loadNativeAlarmId(): Promise<string | null> {

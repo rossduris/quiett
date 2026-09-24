@@ -1,6 +1,7 @@
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import {
   kindLabel,
@@ -94,13 +95,14 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             { backgroundColor: track.accentSoft, borderColor: track.accent },
                           ]}
                         >
-                          {track.art ? (
-                            <Image source={track.art} style={styles.artImage} resizeMode="cover" />
+                          {disabled ? (
+                            <Ionicons name="lock-closed" size={16} color={colors.textDim} />
                           ) : (
-                            <Ionicons
-                              name={disabled ? 'lock-closed' : kindIcon(kind)}
-                              size={16}
-                              color={disabled ? colors.textDim : colors.text}
+                            <LibraryTrackMark
+                              trackId={track.id}
+                              kind={track.kind}
+                              color={track.accent}
+                              size={28}
                             />
                           )}
                           {disabled ? (
@@ -180,8 +182,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowSelected: {
-    borderColor: 'rgba(61,207,176,0.55)',
-    backgroundColor: 'rgba(61,207,176,0.08)',
+    borderColor: 'rgba(224,122,85,0.55)',
+    backgroundColor: 'rgba(224,122,85,0.08)',
   },
   rowLocked: { opacity: 0.55 },
   art: {
@@ -193,7 +195,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  artImage: { width: '100%', height: '100%' },
   artLock: {
     position: 'absolute',
     right: 4,

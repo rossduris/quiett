@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ImageBackground,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
@@ -31,6 +31,7 @@ import {
   saveSurpriseMe,
   saveUnlockTrackId,
 } from '@/lib/storage';
+import type { ColorTokens } from '@/constants/themes';
 
 type Filter = 'all' | UnlockTrackKind;
 
@@ -62,7 +63,7 @@ function ShelfCard({
   colors: ReturnType<typeof useThemeColors>;
 }) {
   const disabled = track.locked;
-  const art = track.art;
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <Pressable
@@ -80,59 +81,53 @@ function ShelfCard({
         disabled && styles.shelfCardLocked,
       ]}
     >
-      {art ? (
-        <ImageBackground source={art} style={styles.shelfCardBg} imageStyle={styles.shelfCardImage}>
-          <View style={styles.shelfScrim} />
-          <View style={styles.shelfCardTop}>
-            {selected ? (
-              <View style={styles.selectedBadge}>
-                <Text style={styles.selectedBadgeText}>Selected</Text>
-              </View>
-            ) : track.locked ? (
-              <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>Premium</Text>
-              </View>
-            ) : (
-              <View />
-            )}
-            {!disabled && onPreview ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  previewing ? `Stop preview of ${track.title}` : `Preview ${track.title}`
-                }
-                hitSlop={8}
-                onPress={() => onPreview()}
-                style={({ pressed }) => [
-                  styles.previewFab,
-                  previewing && styles.previewFabActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Ionicons
-                  name={previewing ? 'stop' : 'play'}
-                  size={14}
-                  color={previewing ? colors.calm : colors.text}
-                />
-              </Pressable>
-            ) : null}
-          </View>
-          <View style={styles.shelfCardBottom}>
-            <Text style={styles.shelfCardTitle} numberOfLines={2}>
-              {track.title}
-            </Text>
-            <Text style={styles.shelfCardMeta}>
-              {track.durationLabel} · {track.mood}
-            </Text>
-          </View>
-        </ImageBackground>
-      ) : (
-        <View style={[styles.shelfCardBg, { backgroundColor: track.accentSoft }]}>
-          <View style={styles.shelfCardBottom}>
-            <Text style={styles.shelfCardTitle}>{track.title}</Text>
-          </View>
+      <View style={[styles.shelfCardBg, { backgroundColor: track.accentSoft }]}>
+        <View style={styles.shelfCardTop}>
+          {selected ? (
+            <View style={styles.selectedBadge}>
+              <Text style={styles.selectedBadgeText}>Selected</Text>
+            </View>
+          ) : track.locked ? (
+            <View style={styles.premiumBadge}>
+              <Text style={styles.premiumBadgeText}>Premium</Text>
+            </View>
+          ) : (
+            <View />
+          )}
+          {!disabled && onPreview ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                previewing ? `Stop preview of ${track.title}` : `Preview ${track.title}`
+              }
+              hitSlop={8}
+              onPress={() => onPreview()}
+              style={({ pressed }) => [
+                styles.previewFab,
+                previewing && styles.previewFabActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons
+                name={previewing ? 'stop' : 'play'}
+                size={14}
+                color={previewing ? colors.calm : colors.text}
+              />
+            </Pressable>
+          ) : null}
         </View>
-      )}
+        <View style={styles.shelfMarkWrap}>
+          <LibraryTrackMark trackId={track.id} kind={track.kind} color={track.accent} size={72} />
+        </View>
+        <View style={styles.shelfCardBottom}>
+          <Text style={styles.shelfCardTitle} numberOfLines={2}>
+            {track.title}
+          </Text>
+          <Text style={styles.shelfCardMeta}>
+            {track.durationLabel} · {track.mood}
+          </Text>
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -140,6 +135,7 @@ function ShelfCard({
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
@@ -267,44 +263,53 @@ export default function LibraryScreen() {
             }}
             style={({ pressed }) => [styles.heroCard, pressed && styles.pressed]}
           >
-            {selectedTrack.art ? (
-              <ImageBackground
-                source={selectedTrack.art}
-                style={styles.heroBg}
-                imageStyle={styles.heroImage}
-              >
-                <View style={styles.heroScrim} />
-                <View style={styles.heroBody}>
-                  <Text style={styles.heroTitle}>{selectedTrack.title}</Text>
-                  <Text style={styles.heroBlurb} numberOfLines={2}>
-                    {selectedTrack.blurb}
-                  </Text>
-                  <Text style={styles.heroMeta}>
-                    {kindLabel(selectedTrack.kind)} · {selectedTrack.durationLabel}
-                    {surpriseMe ? ' · rotating' : ''}
-                  </Text>
-                </View>
-                {!selectedTrack.locked ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Preview ${selectedTrack.title}`}
-                    onPress={() => void onPreview(selectedTrack)}
-                    style={({ pressed }) => [
-                      styles.previewFab,
-                      styles.heroPreviewFab,
-                      previewId === selectedTrack.id && styles.previewFabActive,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Ionicons
-                      name={previewId === selectedTrack.id ? 'stop' : 'play'}
-                      size={16}
-                      color={previewId === selectedTrack.id ? colors.calm : colors.text}
-                    />
-                  </Pressable>
-                ) : null}
-              </ImageBackground>
-            ) : null}
+            <View
+              style={[
+                styles.heroBg,
+                {
+                  backgroundColor: selectedTrack.accentSoft,
+                  borderColor: selectedTrack.accent,
+                },
+              ]}
+            >
+              <View style={styles.heroMarkWrap}>
+                <LibraryTrackMark
+                  trackId={selectedTrack.id}
+                  kind={selectedTrack.kind}
+                  color={selectedTrack.accent}
+                  size={88}
+                />
+              </View>
+              <View style={styles.heroBody}>
+                <Text style={styles.heroTitle}>{selectedTrack.title}</Text>
+                <Text style={styles.heroBlurb} numberOfLines={2}>
+                  {selectedTrack.blurb}
+                </Text>
+                <Text style={styles.heroMeta}>
+                  {kindLabel(selectedTrack.kind)} · {selectedTrack.durationLabel}
+                  {surpriseMe ? ' · rotating' : ''}
+                </Text>
+              </View>
+              {!selectedTrack.locked ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Preview ${selectedTrack.title}`}
+                  onPress={() => void onPreview(selectedTrack)}
+                  style={({ pressed }) => [
+                    styles.previewFab,
+                    styles.heroPreviewFab,
+                    previewId === selectedTrack.id && styles.previewFabActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={previewId === selectedTrack.id ? 'stop' : 'play'}
+                    size={16}
+                    color={previewId === selectedTrack.id ? colors.calm : colors.text}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
           </Pressable>
         </View>
 
@@ -371,7 +376,8 @@ export default function LibraryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
   content: {
@@ -414,31 +420,37 @@ const styles = StyleSheet.create({
   },
   surprisePillOn: {
     backgroundColor: colors.calmSoft,
-    borderColor: 'rgba(61,207,176,0.45)',
+    borderColor: colors.calm,
   },
   surpriseText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
   surpriseTextOn: { color: colors.calm },
   heroCard: {
     borderRadius: radii.xl,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    height: 168,
+    borderWidth: 0,
   },
-  heroBg: { flex: 1, justifyContent: 'flex-end' },
-  heroImage: { borderRadius: radii.xl },
-  heroScrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(11,15,20,0.42)',
+  heroBg: {
+    minHeight: 168,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    overflow: 'hidden',
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'space-between',
+  },
+  heroMarkWrap: {
+    alignItems: 'flex-start',
+    paddingLeft: spacing.xs,
   },
   heroBody: {
-    padding: spacing.lg,
+    padding: spacing.md,
+    paddingTop: spacing.sm,
     gap: 6,
     zIndex: 1,
   },
   heroTitle: { ...typography.subtitle, color: colors.text, fontSize: 24 },
-  heroBlurb: { color: 'rgba(232,238,245,0.82)', fontSize: 14, lineHeight: 20 },
-  heroMeta: { color: 'rgba(232,238,245,0.65)', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  heroBlurb: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+  heroMeta: { color: colors.textDim, fontSize: 12, fontWeight: '600', marginTop: 2 },
   heroPreviewFab: {
     position: 'absolute',
     top: spacing.md,
@@ -460,7 +472,7 @@ const styles = StyleSheet.create({
   },
   filterChipActive: {
     backgroundColor: colors.calmSoft,
-    borderColor: 'rgba(61,207,176,0.45)',
+    borderColor: colors.calm,
   },
   filterText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   filterTextActive: { color: colors.calm },
@@ -493,14 +505,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   shelfCardSelected: {
-    borderColor: 'rgba(61,207,176,0.65)',
+    borderColor: colors.calm,
   },
   shelfCardLocked: { opacity: 0.72 },
   shelfCardBg: { flex: 1, justifyContent: 'space-between' },
-  shelfCardImage: { borderRadius: radii.lg },
-  shelfScrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(11,15,20,0.38)',
+  shelfMarkWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
   },
   shelfCardTop: {
     flexDirection: 'row',
@@ -520,7 +533,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   shelfCardMeta: {
-    color: 'rgba(232,238,245,0.7)',
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -528,9 +541,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: colors.bgElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.border,
   },
   premiumBadgeText: { color: colors.textDim, fontSize: 10, fontWeight: '700' },
   selectedBadge: {
@@ -546,13 +559,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: colors.bgElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: colors.border,
   },
   previewFabActive: {
     backgroundColor: colors.calmSoft,
-    borderColor: 'rgba(61,207,176,0.45)',
+    borderColor: colors.calm,
   },
   pressed: { opacity: 0.85 },
 });
+}

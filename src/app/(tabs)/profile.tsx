@@ -21,6 +21,7 @@ import {
   type AlarmPrefs,
   type StreakData,
 } from '@/lib/storage';
+import type { ColorTokens } from '@/constants/themes';
 
 function initialFor(account: AccountData): string {
   const name = account.displayName?.trim();
@@ -43,6 +44,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [account, setAccount] = useState<AccountData>({
     signedIn: false,
     provider: null,
@@ -263,7 +265,8 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
     flexDirection: 'row',
@@ -382,7 +385,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: colors.calmSoft,
     borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.28)',
+    borderColor: colors.calm,
   },
   goalText: {
     color: colors.calm,
@@ -398,7 +401,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: colors.calmSoft,
     borderWidth: 1,
-    borderColor: 'rgba(61,207,176,0.35)',
+    borderColor: colors.calm,
   },
   shareBtnText: {
     color: colors.calm,
@@ -540,3 +543,4 @@ const styles = StyleSheet.create({
   tipsNote: { color: colors.warning, fontSize: 12, lineHeight: 18 },
   pressed: { opacity: 0.75 },
 });
+}
