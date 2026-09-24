@@ -5,8 +5,8 @@ import CoreGraphics
 
 /// Shared Vision helpers for stills + live CMSampleBuffer analysis.
 enum QuiettPoseVision {
-  /// Mean luminance (0–1) below this → too dark (chip: more light). Tune on device.
-  static let brightnessMin: Double = 0.20
+  /// Mean luminance (0–1) below this → too dark (chip: more light). Softened from 0.20 to 0.13.
+  static let brightnessMin: Double = 0.13
 
   static let jointMapping: [(VNHumanBodyPoseObservation.JointName, String)] = [
     (.nose, "nose"),
