@@ -10,7 +10,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { meditationSoundById } from '@/constants/sounds';
 import {
@@ -51,12 +52,14 @@ function ShelfCard({
   previewing,
   onPress,
   onPreview,
+  colors,
 }: {
   track: UnlockTrack;
   selected?: boolean;
   previewing?: boolean;
   onPress?: () => void;
   onPreview?: () => void;
+  colors: ReturnType<typeof useThemeColors>;
 }) {
   const disabled = track.locked;
   const art = track.art;
@@ -136,6 +139,7 @@ function ShelfCard({
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
@@ -214,7 +218,7 @@ export default function LibraryScreen() {
   }, [filter]);
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
+    <View style={[styles.screen, { backgroundColor: colors.bg, paddingTop: insets.top + spacing.md }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
@@ -224,8 +228,8 @@ export default function LibraryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.screenTitle}>Library</Text>
-          <Text style={styles.lead}>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Library</Text>
+          <Text style={[styles.lead, { color: colors.textMuted }]}>
             Guided, healing tones, and ambient for tomorrow morning. Swipe each shelf —
             pick freely, nothing locked behind finishing another track.
           </Text>
@@ -234,7 +238,7 @@ export default function LibraryScreen() {
         {/* Now playing next — Hatch-style featured card */}
         <View style={styles.heroWrap}>
           <View style={styles.heroTop}>
-            <Text style={styles.heroEyebrow}>Now playing next</Text>
+            <Text style={[styles.heroEyebrow, { color: colors.textDim }]}>Now playing next</Text>
             <Pressable
               accessibilityRole="switch"
               accessibilityState={{ checked: surpriseMe }}
@@ -354,6 +358,7 @@ export default function LibraryScreen() {
                     selected={selectedId === track.id}
                     previewing={previewId === track.id}
                     onPress={() => void onSelectTrack(track)}
+                    colors={colors}
                     onPreview={() => void onPreview(track)}
                   />
                 ))}

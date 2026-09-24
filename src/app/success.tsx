@@ -2,11 +2,13 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { colors, spacing, typography } from '@/constants/theme';
+import { spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
 
 export default function SuccessScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const { streak } = useLocalSearchParams<{ streak?: string }>();
   const count = streak ? parseInt(streak, 10) : 0;
 
@@ -14,12 +16,12 @@ export default function SuccessScreen() {
     <View
       style={[
         styles.screen,
-        { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
+        { backgroundColor: colors.bg, paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
       ]}
     >
-      <Text style={styles.kicker}>Morning complete</Text>
-      <Text style={styles.title}>Morning unlocked</Text>
-      <Text style={styles.body}>
+      <Text style={[styles.kicker, { color: colors.textDim }]}>Morning complete</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Morning unlocked</Text>
+      <Text style={[styles.body, { color: colors.textMuted }]}>
         You held still through the gate. Alarm off — the day can start quieter.
       </Text>
       <View style={styles.streak}>

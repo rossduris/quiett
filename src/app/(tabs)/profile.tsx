@@ -5,7 +5,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { StreakCalendar } from '@/components/StreakCalendar';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { longestScheduledStreak, morningsInMonth, nextStreakGoal } from '@/lib/streak-calendar';
 import { SETUP_LEAD, SETUP_NOTE, SETUP_TIPS } from '@/constants/setup-tips';
@@ -41,6 +42,7 @@ function formatHistoryDay(key: string): string {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const colors = useThemeColors();
   const [account, setAccount] = useState<AccountData>({
     signedIn: false,
     provider: null,
