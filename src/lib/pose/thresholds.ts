@@ -6,7 +6,6 @@
  * 2) face looking at camera (Vision yaw/pitch + both eyes + mouth/lips)
  * 3) no clear hand in camera view (Vision hand pose; wrists high in frame also fail)
  * 4) still enough (landmark travel below STILLNESS_MAX_MOTION)
- * 5) bright enough (face-region luma ≥ BRIGHTNESS_MIN — chip "more light")
  *
  * Session-machine also needs CONFIRM_HOLD_MS (~2.5s) of published `holding`.
  *
@@ -66,7 +65,8 @@ export const FACE_PITCH_MAX = 0.42;
 export const HAND_NEAR_FACE_PAD = 0.22;
 
 /**
- * Min mean face/frame luminance (0–1) from Vision. Below → too_dark / "more light".
- * Match native QuiettPoseVision.brightnessMin. Raise if dark rooms still pass; lower if daylight fails.
+ * DEPRECATED: Lighting gate removed — darkness no longer blocks session.
+ * Min mean face/frame luminance (0–1) from Vision.
+ * Match native QuiettPoseVision.brightnessMin for historical reference.
  */
 export const BRIGHTNESS_MIN = 0.20;

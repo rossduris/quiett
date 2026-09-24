@@ -137,7 +137,7 @@ export default function SessionScreen() {
       await silenceOsRingForSession();
       // Pre-register custom-sound carriers while foreground (bail backups after lock).
       void prepareBailSoundCarriers();
-      // Slide-to-stop / Sit handoff: always resume Quiett harsh until prop+sit.
+      // Slide-to-stop / Sit handoff: resume user's selected alarm tone until prop+unlock.
       await playHarshAlarm();
     })();
     return () => {

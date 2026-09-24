@@ -10,7 +10,6 @@
 export type PoseStatus =
   | 'absent'
   | 'not_upright'
-  | 'too_dark'
   | 'fidgeting'
   | 'hands_near'
   | 'holding';

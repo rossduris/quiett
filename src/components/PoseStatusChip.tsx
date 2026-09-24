@@ -18,14 +18,12 @@ function labelFor(status: PoseStatus): { label: string; tone: string } {
       return { label: 'hands away', tone: colors.warning };
     case 'not_upright':
       return { label: 'prop phone', tone: colors.warning };
-    case 'too_dark':
-      return { label: 'more light', tone: colors.warning };
     default:
       return { label: 'face camera', tone: colors.alarm };
   }
 }
 
-/** Gates: prop phone → more light → face camera → hands away → hold still. */
+/** Gates: prop phone → face camera → hands away → hold still. */
 export function PoseStatusChip({ status, confidence, showConfidence }: Props) {
   const { label, tone } = labelFor(status);
 

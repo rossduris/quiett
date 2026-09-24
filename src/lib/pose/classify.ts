@@ -154,11 +154,9 @@ export function toPoseStatus(
   phonePropped: boolean = true,
   faceLooking: boolean = false,
   handsNearFace: boolean = false,
-  brightEnough: boolean = true,
 ): PoseStatus {
-  // Gates: propped + bright + face looking + no hands + still.
+  // Gates: propped + face looking + no hands + still.
   if (!phonePropped) return 'not_upright'; // chip: "prop phone"
-  if (!brightEnough) return 'too_dark'; // chip: "more light"
   if (!present || !faceLooking) return 'absent'; // no face / not facing camera
   if (handsNearFace) return 'hands_near'; // chip: "hands away"
   if (!still) return 'fidgeting'; // chip: "hold still"

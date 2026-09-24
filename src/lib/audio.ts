@@ -5,6 +5,7 @@ import {
 } from 'expo-audio';
 import { AppState } from 'react-native';
 import {
+  alarmSoundById,
   meditationSoundById,
   QUIETT_HARSH_SESSION,
 } from '@/constants/sounds';
@@ -34,26 +35,30 @@ async function ensureMode() {
   modeReady = true;
 }
 
-function rebuildHarsh() {
+function rebuildHarsh(alarmId: string) {
   try {
     harsh?.remove();
   } catch {
     /* ignore */
   }
-  harsh = createAudioPlayer(QUIETT_HARSH_SESSION);
+  // Use optimized session version for Quiett harsh; standard assets for others.
+  const asset = alarmId === 'quiett_harsh' 
+    ? QUIETT_HARSH_SESSION 
+    : alarmSoundById(alarmId).url ?? QUIETT_HARSH_SESSION;
+  harsh = createAudioPlayer(asset);
   harsh.loop = true;
   harsh.volume = 1;
-  loadedAlarmId = 'quiett_harsh_session';
+  loadedAlarmId = alarmId;
 }
 
 async function ensurePlayers() {
-  const [, meditationId] = await Promise.all([
+  const [alarmId, meditationId] = await Promise.all([
     loadAlarmSoundId(),
     loadMeditationSoundId(),
   ]);
 
-  if (!harsh || loadedAlarmId !== 'quiett_harsh_session') {
-    rebuildHarsh();
+  if (!harsh || loadedAlarmId !== alarmId) {
+    rebuildHarsh(alarmId);
   }
 
   if (!calm || loadedMeditationId !== meditationId) {
@@ -70,7 +75,8 @@ async function ensurePlayers() {
 }
 
 /**
- * In-app harsh for /session while foreground.
+ * In-app alarm for /session while foreground.
+ * Uses the user's selected alarm sound (same as lock-screen AlarmKit tone).
  * Skip when backgrounded — AlarmKit owns the nag there.
  */
 export async function playHarshAlarm() {
@@ -89,13 +95,14 @@ export async function playHarshAlarm() {
     harsh!.volume = 1;
     harsh!.play();
   } catch (e) {
-    console.warn('[quiett audio] harsh retry', e);
+    console.warn('[quiett audio] alarm retry', e);
     try {
-      rebuildHarsh();
+      const alarmId = await loadAlarmSoundId();
+      rebuildHarsh(alarmId);
       harsh!.volume = 1;
       harsh!.play();
     } catch (e2) {
-      console.warn('[quiett audio] harsh', e2);
+      console.warn('[quiett audio] alarm', e2);
     }
   }
 }
