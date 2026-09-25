@@ -45,7 +45,6 @@ export default function ReliabilityCheckScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
-  const [completed, setCompleted] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -53,7 +52,6 @@ export default function ReliabilityCheckScreen() {
       (async () => {
         const done = await loadReliabilityCheckCompleted();
         if (!alive) return;
-        setCompleted(done);
         if (done) {
           setCheckedItems(new Set(CHECK_ITEMS.map((i) => i.id)));
         }

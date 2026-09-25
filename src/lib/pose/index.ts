@@ -6,7 +6,6 @@ export type {
   PoseSample,
   PoseStatus,
 } from './types';
-export { createMockPoseDetector } from './mock-detector';
 export {
   captureFromCameraRef,
   createOnDevicePoseDetector,

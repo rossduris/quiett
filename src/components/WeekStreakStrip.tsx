@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { spacing } from '@/constants/theme';
-import { dayKey, getIsoWeekday, type Weekday } from '@/lib/storage';
+import { dayKey, type Weekday } from '@/lib/storage';
 import { useThemeColors } from '@/lib/theme-provider';
 import type { ColorTokens } from '@/constants/themes';
 

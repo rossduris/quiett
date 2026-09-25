@@ -179,7 +179,7 @@ export function kindLabel(kind: UnlockTrackKind): string {
 export function kindSectionHint(kind: UnlockTrackKind): string {
   switch (kind) {
     case 'guided':
-      return 'Short morning meditations. Premium voice tracks are available to browse when they ship — nothing is gated by finishing others.';
+      return 'Short morning meditations. Premium tracks open with Quiett Premium — nothing is gated by finishing others.';
     case 'music':
       return 'Healing tones and calm music — no guide voice.';
     case 'ambient':
@@ -191,9 +191,17 @@ export function freeUnlockTracks(): UnlockTrack[] {
   return UNLOCK_TRACKS.filter((t) => !t.locked);
 }
 
-/** Random free track for Surprise me — prefers a different id when possible. */
-export function pickSurpriseTrack(excludeId?: string): UnlockTrack {
-  const free = freeUnlockTracks();
+/** Tracks the user can pick right now: every track with Premium, free tracks otherwise. */
+export function availableUnlockTracks(includePremium = false): UnlockTrack[] {
+  return includePremium ? [...UNLOCK_TRACKS] : freeUnlockTracks();
+}
+
+/**
+ * Random track for Surprise me — prefers a different id when possible. Premium tracks join
+ * the rotation only when `includePremium` is true (Premium active).
+ */
+export function pickSurpriseTrack(excludeId?: string, includePremium = false): UnlockTrack {
+  const free = availableUnlockTracks(includePremium);
   const pool = excludeId ? free.filter((t) => t.id !== excludeId) : free;
   const list = pool.length > 0 ? pool : free;
   const pick = list[Math.floor(Math.random() * list.length)] ?? UNLOCK_TRACKS[0]!;

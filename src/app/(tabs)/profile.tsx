@@ -8,6 +8,7 @@ import { StreakCalendar } from '@/components/StreakCalendar';
 import { StreakSheet } from '@/components/StreakSheet';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { longestScheduledStreak, morningsInMonth } from '@/lib/streak-calendar';
 import { isUnlockedForToday } from '@/lib/home-status';
@@ -54,6 +55,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isPremium } = usePremium();
   const [account, setAccount] = useState<AccountData>({
     signedIn: false,
     provider: null,
@@ -309,6 +311,26 @@ export default function ProfileScreen() {
               <Text style={styles.actionLabel}>Milestones & badges</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isPremium ? 'Quiett Premium, active' : 'Quiett Premium'}
+            onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons
+                name={isPremium ? 'sunny' : 'sunny-outline'}
+                size={20}
+                color={isPremium ? colors.calm : colors.text}
+              />
+              <Text style={styles.actionLabel}>Quiett Premium</Text>
+            </View>
+            {isPremium ? (
+              <Text style={[styles.actionLabel, { color: colors.calm }]}>Active</Text>
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+            )}
           </Pressable>
           <Pressable
             accessibilityRole="button"

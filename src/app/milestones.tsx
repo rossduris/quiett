@@ -98,7 +98,7 @@ const ALL_BADGES: Badge[] = [
     id: 'perfect-week',
     icon: 'checkmark-done',
     label: 'Perfect Week',
-    description: 'Completed all 7 scheduled days',
+    description: 'Completed every scheduled morning in a week (Mon–Sun)',
     category: 'milestone',
   },
   {

@@ -20,11 +20,11 @@ export default function EmergencyScreen() {
         { backgroundColor: colors.bg, paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.lg },
       ]}
     >
-      <Text style={[styles.kicker, { color: colors.textDim }]}>Emergency dismiss</Text>
-      <Text style={[styles.title, { color: colors.alarm }]}>Streak broken</Text>
+      <Text style={[styles.kicker, { color: colors.textDim }]}>Ended early</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Morning ended early</Text>
       <Text style={[styles.body, { color: colors.textMuted }]}>
-        You skipped the morning gate. That is allowed when you need it — but the streak resets to zero. No
-        casual snooze next time.
+        That’s okay — some mornings need it. Your streak starts again from zero, and your next
+        alarm is still set. Tomorrow is a fresh start.
       </Text>
       <PrimaryButton
         label="Back home"
@@ -44,7 +44,7 @@ function createStyles(colors: ColorTokens) {
     alignItems: 'center',
   },
   kicker: {
-    color: colors.alarm,
+    color: colors.textDim,
     fontWeight: '600',
     letterSpacing: 1,
     textTransform: 'uppercase',

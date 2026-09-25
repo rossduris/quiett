@@ -15,6 +15,7 @@ const KEYS = {
   meditationSoundId: 'quiett.meditationSoundId',
   unlockTrackId: 'quiett.unlockTrackId',
   surpriseMe: 'quiett.surpriseMe',
+  surpriseTrackDate: 'quiett.surpriseTrackDate',
   streak: 'quiett.streak',
   lastCompletedDate: 'quiett.lastCompletedDate',
   completedDays: 'quiett.completedDays',
@@ -39,6 +40,7 @@ const KEYS = {
   unlockTimestamps: 'quiett.unlockTimestamps',
   testMorningCompleted: 'quiett.testMorningCompleted',
   libraryUsage: 'quiett.libraryUsage',
+  onboardingComplete: 'quiett.onboardingComplete',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -120,12 +122,48 @@ export async function loadUnlockTrackId(): Promise<string> {
 }
 
 /** Persist next-morning unlock selection and keep session calm audio in sync. */
-export async function saveUnlockTrackId(id: string): Promise<string> {
+/**
+ * Saves the track that plays after the camera check. Premium tracks are only accepted when
+ * the caller passes `{ premium: true }` (from usePremium()); otherwise the current selection
+ * is kept, so a free user can never end up with a premium track.
+ */
+export async function saveUnlockTrackId(
+  id: string,
+  opts?: { premium?: boolean }
+): Promise<string> {
   const track = unlockTrackById(id);
-  if (track.locked) return loadUnlockTrackId();
+  if (track.locked && !opts?.premium) return loadUnlockTrackId();
   await AsyncStorage.setItem(KEYS.unlockTrackId, track.id);
   await saveMeditationSoundId(track.playbackSoundId);
   return track.id;
+}
+
+/**
+ * If Premium is not active (never bought, lapsed, refunded) and a premium track is still
+ * stored, fall back quietly to the default free track. Returns true when it reset something.
+ */
+export async function enforceFreeUnlockTrack(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.unlockTrackId);
+  if (raw == null) return false;
+  const track = unlockTrackById(raw);
+  if (!track.locked) return false;
+  const fallback = unlockTrackById(DEFAULT_UNLOCK_TRACK_ID);
+  await AsyncStorage.setItem(KEYS.unlockTrackId, fallback.id);
+  await saveMeditationSoundId(fallback.playbackSoundId);
+  return true;
+}
+
+const DEV_FORCE_PREMIUM_KEY = 'quiett.devForcePremium';
+
+/** Dev-only preview of the unlocked state. Always false in release builds. */
+export async function loadDevForcePremium(): Promise<boolean> {
+  if (!__DEV__) return false;
+  return (await AsyncStorage.getItem(DEV_FORCE_PREMIUM_KEY)) === '1';
+}
+
+export async function saveDevForcePremium(on: boolean): Promise<void> {
+  if (!__DEV__) return;
+  await AsyncStorage.setItem(DEV_FORCE_PREMIUM_KEY, on ? '1' : '0');
 }
 
 export async function loadSurpriseMe(): Promise<boolean> {
@@ -135,6 +173,16 @@ export async function loadSurpriseMe(): Promise<boolean> {
 
 export async function saveSurpriseMe(on: boolean): Promise<void> {
   await AsyncStorage.setItem(KEYS.surpriseMe, on ? '1' : '0');
+}
+
+/** Local day (YYYY-MM-DD) the Surprise me track was last rolled; null if never. */
+export async function loadSurpriseTrackDate(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.surpriseTrackDate);
+}
+
+/** Mark today's Surprise me pick so Home focus doesn't re-roll it until tomorrow. */
+export async function saveSurpriseTrackDate(day: string = dayKey(0)): Promise<void> {
+  await AsyncStorage.setItem(KEYS.surpriseTrackDate, day);
 }
 
 
@@ -379,8 +427,7 @@ async function addCompletedDay(key: string): Promise<string[]> {
 export async function recordSuccessfulSit(): Promise<StreakData> {
   const current = await loadStreak();
   const today = dayKey(0);
-  const unlockTime = Date.now();
-  
+
   await addCompletedDay(today);
   await recordUnlockTimestamp();
   await snapshotWakeIntentionForDay(today);
@@ -389,7 +436,7 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   
   const prefs = await loadAlarmPrefs();
   const deadlinePrefs = await loadStreakDeadlinePrefs();
-  
+
   let countsForStreak = true;
   
   if (deadlinePrefs.enabled) {
@@ -410,7 +457,7 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
   }
   
   if (!countsForStreak) {
-    await checkAndAwardBadges(current.count, await loadCompletedDays());
+    await checkAndAwardBadges(current.count, await loadCompletedDays(), prefs.weekdays);
     return current;
   }
   
@@ -422,7 +469,7 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
     AsyncStorage.setItem(KEYS.streak, String(next)),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
-  await checkAndAwardBadges(next, await loadCompletedDays());
+  await checkAndAwardBadges(next, await loadCompletedDays(), prefs.weekdays);
   return { count: next, lastCompletedDate: today };
 }
 
@@ -447,8 +494,31 @@ export async function isUnlockLate(): Promise<boolean> {
   return timeSinceAlarm > deadlineMs;
 }
 
-async function checkAndAwardBadges(streakCount: number, completedDays: string[]): Promise<void> {
+/**
+ * Perfect week: every scheduled weekday in the current ISO week (Mon–Sun containing
+ * `from`) has a completed morning. Only true once the week's last scheduled morning is
+ * done, so it's awarded at that completion. Uses the current alarm schedule; an empty
+ * schedule never qualifies. Emergency-dismissed mornings aren't completed days.
+ */
+export function isPerfectWeek(
+  completedDays: readonly string[],
+  scheduledWeekdays: readonly Weekday[],
+  from: Date = new Date(),
+): boolean {
+  if (scheduledWeekdays.length === 0) return false;
+  const done = new Set(completedDays);
+  const mondayOffset = 1 - getIsoWeekday(from);
+  return scheduledWeekdays.every((wd) => done.has(dayKey(mondayOffset + (wd - 1), from)));
+}
+
+async function checkAndAwardBadges(
+  streakCount: number,
+  completedDays: string[],
+  scheduledWeekdays: readonly Weekday[],
+): Promise<void> {
   const totalMornings = completedDays.length;
+
+  if (isPerfectWeek(completedDays, scheduledWeekdays)) await awardBadge('perfect-week');
   
   if (totalMornings === 1) await awardBadge('first-unlock');
   if (totalMornings >= 10) await awardBadge('mornings-10');
@@ -778,4 +848,45 @@ export async function markLibraryCategoryUsed(category: 'guided' | 'ambient' | '
   if (category === 'guided') await awardBadge('tried-guided');
   if (category === 'ambient') await awardBadge('tried-ambient');
   if (category === 'healing') await awardBadge('tried-healing');
+}
+
+// ── First-run onboarding ─────────────────────────────────────────────────────
+// Key states: '1' = done, '0' = explicitly reset (dev replay), null = never decided.
+
+/** Keys whose presence means someone has already used Quiett (so skip onboarding). */
+const EXISTING_USER_SIGNAL_KEYS = [
+  KEYS.alarmTime,
+  KEYS.alarmEnabled,
+  KEYS.alarmWeekdays,
+  KEYS.nativeAlarmId,
+  KEYS.completedDays,
+  KEYS.lastCompletedDate,
+  KEYS.testMorningCompleted,
+  KEYS.reliabilityCheckCompleted,
+  KEYS.wakeIntention,
+  KEYS.getStartedDismissed,
+] as const;
+
+/**
+ * True when onboarding should be skipped. First call on an install that predates onboarding
+ * (alarm saved, history, practice, etc.) auto-marks it complete so existing users are never
+ * forced through it. A dev reset ('0') always shows it again.
+ */
+export async function resolveOnboardingComplete(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(KEYS.onboardingComplete);
+  if (raw === '1') return true;
+  if (raw === '0') return false;
+  const pairs = await AsyncStorage.multiGet([...EXISTING_USER_SIGNAL_KEYS]);
+  const hasPriorData = pairs.some(
+    ([, value]) => value !== null && value !== '' && value !== '0' && value !== '[]',
+  );
+  if (hasPriorData) {
+    await AsyncStorage.setItem(KEYS.onboardingComplete, '1');
+    return true;
+  }
+  return false;
+}
+
+export async function saveOnboardingComplete(done: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.onboardingComplete, done ? '1' : '0');
 }

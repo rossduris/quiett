@@ -1,28 +1,100 @@
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing } from '@/constants/theme';
-import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
+import { spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
-import { useMemo } from 'react';
+import { premiumEntitlement } from '@/lib/purchases';
+import { usePremium } from '@/lib/premium-provider';
+import { useThemeColors } from '@/lib/theme-provider';
+
+function formatDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
 
 export default function ManageSubscriptionScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {
+    available,
+    loading,
+    customerInfo,
+    isPremium,
+    devForcePremium,
+    restore,
+    manageSubscriptions,
+  } = usePremium();
+  const [restoring, setRestoring] = useState(false);
 
-  const onManageInSettings = () => {
-    void Linking.openURL('https://apps.apple.com/account/subscriptions');
+  const entitlement = premiumEntitlement(customerInfo);
+  const renewDate = formatDate(entitlement?.expirationDate ?? null);
+
+  let planName = 'Free';
+  let planNote = available
+    ? 'The alarm, camera check, streaks and free tracks are yours to keep. Premium opens the rest of the guided shelf.'
+    : 'Subscriptions aren\u2019t available in this version yet. Everything free keeps working as usual.';
+  if (entitlement) {
+    planName = 'Premium';
+    if (!entitlement.expirationDate) {
+      planNote = 'Premium is active with no end date.';
+    } else if (entitlement.willRenew) {
+      planNote = renewDate ? `Renews on ${renewDate}.` : 'Renews automatically.';
+    } else {
+      planNote = renewDate
+        ? `Ends on ${renewDate}. It won\u2019t renew unless you turn renewal back on.`
+        : 'Won\u2019t renew at the end of this period.';
+    }
+    if ((entitlement.periodType as string) === 'TRIAL' && renewDate) {
+      planNote = entitlement.willRenew
+        ? `Free trial — your plan starts on ${renewDate}.`
+        : `Free trial ends on ${renewDate}.`;
+    }
+  } else if (isPremium && devForcePremium) {
+    planName = 'Premium (dev preview)';
+    planNote = 'Forced on from Settings → Developer. No purchase is attached.';
+  }
+
+  const onRestore = async () => {
+    if (!available) {
+      Alert.alert(
+        'Subscriptions aren\u2019t available yet',
+        'Restoring will work once Premium launches in this version of Quiett.'
+      );
+      return;
+    }
+    setRestoring(true);
+    const outcome = await restore();
+    setRestoring(false);
+    switch (outcome.status) {
+      case 'restored':
+        Alert.alert('Purchases restored', 'Quiett Premium is active on this device.');
+        return;
+      case 'nothing-found':
+        Alert.alert(
+          'No purchases found',
+          'We couldn\u2019t find a Quiett Premium subscription for this Apple ID.'
+        );
+        return;
+      case 'unavailable':
+        Alert.alert('Subscriptions aren\u2019t available yet', 'Please try again later.');
+        return;
+      case 'error':
+        Alert.alert('Couldn\u2019t restore purchases', outcome.message);
+        return;
+    }
   };
 
-  const onRestorePurchases = async () => {
-    Alert.alert(
-      'Nothing to restore',
-      'You don\'t have any past purchases to restore yet.',
-      [{ text: 'OK' }],
-    );
+  const openUrl = (url: string) => {
+    void Linking.openURL(url).catch(() => {});
   };
 
   return (
@@ -37,45 +109,56 @@ export default function ManageSubscriptionScreen() {
         <View style={styles.planCard}>
           <View style={styles.planHeader}>
             <View style={styles.planIconWrap}>
-              <Ionicons name="pricetag" size={24} color={colors.calm} />
+              <Ionicons
+                name={isPremium ? 'sunny' : 'sunny-outline'}
+                size={24}
+                color={colors.calm}
+              />
             </View>
             <View style={styles.planInfo}>
               <Text style={styles.planLabel}>Current plan</Text>
-              <Text style={styles.planName}>Free</Text>
+              <Text style={styles.planName}>{loading ? '\u2026' : planName}</Text>
             </View>
           </View>
-          <Text style={styles.planNote}>
-            In-app purchases are not yet integrated. This screen shows the UI for subscription
-            management.
-          </Text>
+          {!loading ? <Text style={styles.planNote}>{planNote}</Text> : null}
         </View>
 
         <View style={styles.actionsCard}>
+          {!isPremium ? (
+            <PrimaryButton label="Upgrade to Premium" onPress={() => router.push('/paywall')} />
+          ) : null}
           <PrimaryButton
-            label="Manage in Settings"
+            label="Manage in App Store"
             variant="secondary"
-            onPress={onManageInSettings}
+            onPress={() => void manageSubscriptions()}
           />
           <PrimaryButton
-            label="Restore purchases"
+            label={restoring ? 'Restoring\u2026' : 'Restore purchases'}
             variant="secondary"
-            onPress={() => void onRestorePurchases()}
+            disabled={restoring}
+            onPress={() => void onRestore()}
           />
         </View>
 
         <View style={styles.legalCard}>
-          <Text style={styles.legalText}>
-            Your subscription automatically renews unless auto-renew is turned off at least 24
-            hours before the end of the current period.
-          </Text>
-          <Text style={styles.legalText}>
-            Your account will be charged for renewal within 24 hours before the end of the
-            current period, and the cost of the renewal will be identified.
-          </Text>
-          <Text style={styles.legalText}>
-            Subscriptions and auto-renewal can be managed or cancelled via your Apple ID account
-            settings after purchase.
-          </Text>
+          {SUBSCRIPTION_TERMS.map((line) => (
+            <Text key={line} style={styles.legalText}>
+              {line}
+            </Text>
+          ))}
+          <View style={styles.linksRow}>
+            <Pressable accessibilityRole="link" onPress={() => openUrl(TERMS_OF_USE_URL)} hitSlop={6}>
+              <Text style={styles.link}>Terms of Use</Text>
+            </Pressable>
+            <Text style={styles.legalText}>·</Text>
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => openUrl(PRIVACY_POLICY_URL)}
+              hitSlop={6}
+            >
+              <Text style={styles.link}>Privacy Policy</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -147,6 +230,16 @@ function createStyles(colors: ColorTokens) {
       color: colors.textDim,
       fontSize: 12,
       lineHeight: 18,
+    },
+    linksRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    link: {
+      color: colors.textMuted,
+      fontSize: 13,
+      fontWeight: '500',
     },
   });
 }

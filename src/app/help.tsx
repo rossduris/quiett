@@ -8,7 +8,6 @@ import { spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import type { ColorTokens } from '@/constants/themes';
-import { openOsAlarmSettings } from '@/lib/os-alarm';
 
 type HelpSection = {
   icon: keyof typeof Ionicons.glyphMap;

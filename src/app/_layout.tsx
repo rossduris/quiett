@@ -2,6 +2,7 @@ import { Stack, ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } fro
 import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { ThemeProvider, useTheme } from '@/lib/theme-provider';
+import { PremiumProvider } from '@/lib/premium-provider';
 
 function RootStack() {
   const { colors, theme } = useTheme();
@@ -28,6 +29,10 @@ function RootStack() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="onboarding"
+            options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }}
+          />
           <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen
             name="session"
@@ -45,6 +50,10 @@ function RootStack() {
             }}
           />
           <Stack.Screen
+            name="paywall"
+            options={{ headerShown: false, presentation: 'modal', animation: 'default' }}
+          />
+          <Stack.Screen
             name="emergency"
             options={{
               headerShown: false,
@@ -60,7 +69,10 @@ function RootStack() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootStack />
+      {/* RevenueCat initializes once here; falls back to "unavailable" on builds without it. */}
+      <PremiumProvider>
+        <RootStack />
+      </PremiumProvider>
     </ThemeProvider>
   );
 }

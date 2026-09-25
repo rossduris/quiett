@@ -1,0 +1,145 @@
+[
+  {
+    "imageKey": "03",
+    "image": "assets/track-covers/cover-03.jpg",
+    "title": "First Light",
+    "status": "guided-free",
+    "theme": "Meeting the first light of the day in an open meadow."
+  },
+  {
+    "imageKey": "01",
+    "image": "assets/track-covers/cover-01.jpg",
+    "title": "Still Lake",
+    "status": "guided-free",
+    "renamedFrom": "Open Eyes",
+    "theme": "Letting the mind go as smooth as still water."
+  },
+  {
+    "imageKey": "09",
+    "image": "assets/track-covers/cover-09.jpg",
+    "title": "Still Horizon",
+    "status": "guided-premium",
+    "theme": "One steady line to rest your attention on."
+  },
+  {
+    "imageKey": "10",
+    "image": "assets/track-covers/cover-10.jpg",
+    "title": "Warm Window",
+    "status": "guided-premium",
+    "theme": "Stepping into the warm light of a new room, a new day."
+  },
+  {
+    "imageKey": "11",
+    "image": "assets/track-covers/cover-21.jpg",
+    "title": "Drifting Up",
+    "status": "guided-premium",
+    "renamedFrom": "Quiet Rise",
+    "theme": "Rising gently, letting heaviness fall away."
+  },
+  {
+    "imageKey": "08",
+    "image": "assets/track-covers/cover-08.jpg",
+    "title": "Mountain Bloom",
+    "status": "guided-premium",
+    "renamedFrom": "Clear Morning",
+    "theme": "Strong and grounded like the peaks, soft like the flowers."
+  },
+  {
+    "imageKey": "02",
+    "image": "assets/track-covers/cover-02.jpg",
+    "title": "Above the Mist",
+    "status": "new",
+    "theme": "Watching thoughts settle like fog in the valleys."
+  },
+  {
+    "imageKey": "04",
+    "image": "assets/track-covers/cover-04.jpg",
+    "title": "Among the Pines",
+    "status": "new",
+    "theme": "Grounding: tall, rooted, breathing with the trees."
+  },
+  {
+    "imageKey": "05",
+    "image": "assets/track-covers/cover-05.jpg",
+    "title": "The Forest Doorway",
+    "status": "new",
+    "theme": "Stepping through into the day with intention."
+  },
+  {
+    "imageKey": "06",
+    "image": "assets/track-covers/cover-06.jpg",
+    "title": "Islands of Calm",
+    "status": "new",
+    "theme": "Finding small still places in a busy mind."
+  },
+  {
+    "imageKey": "07",
+    "image": "assets/track-covers/cover-07.jpg",
+    "title": "Pond at Dawn",
+    "status": "new",
+    "theme": "Noticing small things: ripples, reeds, one breath."
+  },
+  {
+    "imageKey": "12",
+    "image": "assets/track-covers/cover-22.jpg",
+    "title": "Steady Light",
+    "status": "new",
+    "theme": "A fixed point to return to, whatever the day brings."
+  },
+  {
+    "imageKey": "13",
+    "image": "assets/track-covers/cover-13.jpg",
+    "title": "Setting Sail",
+    "status": "new",
+    "theme": "Letting the day carry you without forcing it."
+  },
+  {
+    "imageKey": "14",
+    "image": "assets/track-covers/cover-14.jpg",
+    "title": "Warm Sands",
+    "status": "new",
+    "theme": "A body scan: warmth spreading, muscles softening."
+  },
+  {
+    "imageKey": "15",
+    "image": "assets/track-covers/cover-15.jpg",
+    "title": "Morning Fog Walk",
+    "status": "new",
+    "theme": "A slow walk in the mind, one step per breath."
+  },
+  {
+    "imageKey": "16",
+    "image": "assets/track-covers/cover-16.jpg",
+    "title": "The Quiet Garden",
+    "status": "new",
+    "theme": "Tending your attention like a small garden."
+  },
+  {
+    "imageKey": "17",
+    "image": "assets/track-covers/cover-17.jpg",
+    "title": "Carved by Water",
+    "status": "new",
+    "theme": "Patience: small daily habits shaping big change."
+  },
+  {
+    "imageKey": "18",
+    "image": "assets/track-covers/cover-18.jpg",
+    "title": "Wildflower Field",
+    "status": "new",
+    "theme": "Gratitude: noticing what is already blooming."
+  },
+  {
+    "imageKey": "19",
+    "image": "assets/track-covers/cover-23.jpg",
+    "title": "Let It Flow",
+    "status": "new",
+    "theme": "Release: letting what you do not need fall away."
+  },
+  {
+    "imageKey": "20",
+    "image": "assets/track-covers/cover-24.jpg",
+    "title": "Winter Birches",
+    "status": "new",
+    "theme": "Stillness: quiet, bare, and clear."
+  }
+]

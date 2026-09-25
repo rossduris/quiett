@@ -1,12 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { radii, spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
+import { describeUnavailableReason } from '@/lib/purchases';
 import { ThemePicker } from '@/components/ThemePicker';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { COVER_STYLES, setCoverStyle, useCoverStyle } from '@/lib/scene-cover-pref';
 import {
   DEFAULT_SIT_MINUTES,
   loadSitMinutes,
@@ -15,6 +18,7 @@ import {
   type SitMinutes,
   loadStreakDeadlinePrefs,
   saveStreakDeadlinePrefs,
+  saveOnboardingComplete,
   type StreakDeadlinePrefs,
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
@@ -24,6 +28,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const premium = usePremium();
+  const coverStyle = useCoverStyle();
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [deadlinePrefs, setDeadlinePrefs] = useState<StreakDeadlinePrefs>({
     enabled: false,
@@ -186,6 +192,81 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          <Pressable
+            onPress={() => {
+              void (async () => {
+                await saveOnboardingComplete(false);
+                if (router.canDismiss()) router.dismissAll();
+                router.replace('/onboarding');
+              })();
+            }}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="refresh-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Replay onboarding (dev)</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Pressable
+            onPress={() => void premium.setDevForcePremium(!premium.devForcePremium)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: premium.devForcePremium }}
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="sparkles-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Force premium (dev)</Text>
+            </View>
+            <View style={[styles.miniSwitch, premium.devForcePremium && styles.miniSwitchOn]}>
+              <View style={[styles.miniThumb, premium.devForcePremium && styles.miniThumbOn]} />
+            </View>
+          </Pressable>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>Cover style (dev)</Text>
+          <View style={styles.row}>
+            {COVER_STYLES.map((cs) => {
+              const selected = cs === coverStyle;
+              return (
+                <Pressable
+                  key={cs}
+                  onPress={() => void setCoverStyle(cs)}
+                  style={[
+                    styles.pill,
+                    { backgroundColor: colors.bgElevated, borderColor: colors.border },
+                    selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>
+                    {cs === 'art' ? 'Art' : cs === 'scenes' ? 'Scenes' : 'Classic'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable
+            onPress={() => router.push('/cover-gallery' as Href)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="grid-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Cover gallery (dev)</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            RevenueCat:{' '}
+            {premium.available
+              ? premium.offerings
+                ? `ready · offering "${premium.offerings.identifier}" (${premium.offerings.availablePackages.length} packages)`
+                : 'ready · no current offering yet'
+              : premium.unavailableReason
+                ? describeUnavailableReason(premium.unavailableReason)
+                : 'unavailable'}
+          </Text>
         </View>
         ) : null}
 

@@ -30,8 +30,8 @@ export default function TestSuccessScreen() {
         </View>
         <Text style={styles.title}>Practice complete</Text>
         <Text style={styles.body}>
-          Nice! You held the gate and completed a practice session. When the real alarm rings, the
-          flow will be identical (with your chosen unlock length).
+          Nice — you settled in and finished a 30-second practice. On a real morning it works
+          the same way, followed by 2 minutes of quiet.
         </Text>
         <Text style={styles.note}>Practice sessions don't count toward your streak or history.</Text>
       </View>

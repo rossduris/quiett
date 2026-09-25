@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
+import { TrackCover } from '@/components/TrackCover';
+import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { WeekStreakStrip } from '@/components/WeekStreakStrip';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { UnlockTrackPicker } from '@/components/UnlockTrackPicker';
@@ -43,8 +46,11 @@ import {
   saveUnlockTrackId,
   loadAlarmSoundId,
   saveAlarmSoundId,
+  dayKey,
   loadSurpriseMe,
+  loadSurpriseTrackDate,
   saveSurpriseMe,
+  saveSurpriseTrackDate,
   loadReliabilityCheckCompleted,
   loadGetStartedDismissed,
   saveGetStartedDismissed,
@@ -76,6 +82,11 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isPremium, trackResetVersion } = usePremium();
+  const coverStyle = useCoverStyle();
+  // The focus effect below is memoized once; read Premium through a ref so it is never stale.
+  const isPremiumRef = useRef(isPremium);
+  isPremiumRef.current = isPremium;
 
   const chipTone = (status: TodayStatus): string => {
     switch (status) {
@@ -137,10 +148,13 @@ export default function HomeScreen() {
         setWakeIntention(intention);
         setTestMorningDone(testDone);
 
+        // Surprise me rotates once per local day, not on every Home focus.
         let nextUnlock = unlockId;
-        if (surprise) {
-          const picked = pickSurpriseTrack(unlockId);
-          nextUnlock = await saveUnlockTrackId(picked.id);
+        if (surprise && (await loadSurpriseTrackDate()) !== dayKey(0)) {
+          const premium = isPremiumRef.current;
+          const picked = pickSurpriseTrack(unlockId, premium);
+          nextUnlock = await saveUnlockTrackId(picked.id, { premium });
+          await saveSurpriseTrackDate();
         }
         setUnlockTrackId(nextUnlock);
         void syncOsAlarm(a);
@@ -152,6 +166,12 @@ export default function HomeScreen() {
       };
     }, []),
   );
+
+  // Premium lapsed → the provider saved the default free track; reflect it here.
+  useEffect(() => {
+    if (trackResetVersion === 0) return;
+    void loadUnlockTrackId().then(setUnlockTrackId);
+  }, [trackResetVersion]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -215,7 +235,7 @@ export default function HomeScreen() {
   };
 
   const onSelectUnlockTrack = async (track: UnlockTrack) => {
-    const id = await saveUnlockTrackId(track.id);
+    const id = await saveUnlockTrackId(track.id, { premium: isPremium });
     setUnlockTrackId(id);
     if (surpriseMe) {
       setSurpriseMe(false);
@@ -232,7 +252,7 @@ export default function HomeScreen() {
   };
 
   const alarmPreviewUrl = alarmSound.url;
-  const meditationPreviewUrl = unlockTrack.locked
+  const meditationPreviewUrl = unlockTrack.locked && !isPremium
     ? null
     : meditationSoundById(unlockTrack.playbackSoundId).url;
 
@@ -256,8 +276,9 @@ export default function HomeScreen() {
     setSurpriseMe(next);
     await saveSurpriseMe(next);
     if (next) {
-      const picked = pickSurpriseTrack(unlockTrackId);
-      const id = await saveUnlockTrackId(picked.id);
+      const picked = pickSurpriseTrack(unlockTrackId, isPremium);
+      const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
+      await saveSurpriseTrackDate();
       setUnlockTrackId(id);
     }
   };
@@ -637,19 +658,25 @@ export default function HomeScreen() {
               style={({ pressed }) => [styles.stepRow, pressed && styles.pressed]}
             >
               <View style={styles.stepArtWrap}>
-                <View
-                  style={[
-                    styles.stepArt,
-                    { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
-                  ]}
-                >
-                  <LibraryTrackMark
-                    trackId={unlockTrack.id}
-                    kind={unlockTrack.kind}
-                    color={unlockTrack.accent}
-                    size={30}
-                  />
-                </View>
+                {coverStyle !== 'classic' ? (
+                  <View style={[styles.stepArt, { borderColor: colors.border }]}>
+                    <TrackCover trackId={unlockTrack.id} size={46} radius={13} />
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.stepArt,
+                      { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
+                    ]}
+                  >
+                    <LibraryTrackMark
+                      trackId={unlockTrack.id}
+                      kind={unlockTrack.kind}
+                      color={unlockTrack.accent}
+                      size={30}
+                    />
+                  </View>
+                )}
                 <View style={styles.stepBadge}>
                   <Text style={styles.stepBadgeText}>2</Text>
                 </View>

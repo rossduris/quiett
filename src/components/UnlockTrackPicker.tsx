@@ -1,13 +1,17 @@
 import { useMemo } from 'react';
+import { useRouter } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
+import { TrackCover } from '@/components/TrackCover';
+import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById } from '@/constants/sounds';
 import { previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import {
   kindLabel,
   kindSectionHint,
@@ -42,9 +46,18 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { playingId, toggle } = usePreviewPlayer();
   useStopPreviewWhenHidden(visible);
+  const router = useRouter();
+  const { isPremium } = usePremium();
+  const coverStyle = useCoverStyle();
+
+  /** Locked premium row → close this sheet, then open the paywall (RN Modal sits above nav). */
+  const openPaywall = () => {
+    onClose();
+    setTimeout(() => router.push('/paywall'), 450);
+  };
 
   const preview = (track: UnlockTrack) => {
-    if (track.locked) return;
+    if (track.locked && !isPremium) return;
     const url = meditationSoundById(track.playbackSoundId).url;
     if (url == null) return;
     toggle(previewIds.track(track.id), url, 'track');
@@ -90,47 +103,56 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                 <View style={styles.list}>
                   {tracks.map((track) => {
                     const selected = track.id === selectedId;
-                    const disabled = track.locked;
+                    // Premium tracks are locked only for free users; tapping one opens the paywall.
+                    const disabled = track.locked && !isPremium;
                     const playing = playingId === previewIds.track(track.id);
                     return (
                       <Pressable
                         key={track.id}
-                        disabled={disabled}
                         accessibilityRole="button"
-                        accessibilityLabel={`Meditation: ${track.title}${disabled ? ', premium' : ''}`}
-                        accessibilityState={{ selected, disabled }}
+                        accessibilityLabel={`Meditation: ${track.title}${
+                          disabled ? ', premium, opens Quiett Premium' : ''
+                        }`}
+                        accessibilityState={{ selected }}
                         onPress={() => {
-                          if (!disabled) onSelect(track);
+                          if (disabled) openPaywall();
+                          else onSelect(track);
                         }}
                         style={({ pressed }) => [
                           styles.row,
                           selected && styles.rowSelected,
                           disabled && styles.rowLocked,
-                          pressed && !disabled && styles.pressed,
+                          pressed && styles.pressed,
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.art,
-                            { backgroundColor: track.accentSoft, borderColor: track.accent },
-                          ]}
-                        >
-                          {disabled ? (
-                            <Ionicons name="lock-closed" size={16} color={colors.textDim} />
-                          ) : (
-                            <LibraryTrackMark
-                              trackId={track.id}
-                              kind={track.kind}
-                              color={track.accent}
-                              size={28}
-                            />
-                          )}
-                          {disabled ? (
-                            <View style={styles.artLock}>
-                              <Ionicons name="sparkles-outline" size={10} color={colors.text} />
-                            </View>
-                          ) : null}
-                        </View>
+                        {coverStyle !== 'classic' ? (
+                          <View style={[styles.art, styles.artScene]}>
+                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} />
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.art,
+                              { backgroundColor: track.accentSoft, borderColor: track.accent },
+                            ]}
+                          >
+                            {disabled ? (
+                              <Ionicons name="lock-closed" size={16} color={colors.textDim} />
+                            ) : (
+                              <LibraryTrackMark
+                                trackId={track.id}
+                                kind={track.kind}
+                                color={track.accent}
+                                size={28}
+                              />
+                            )}
+                            {disabled ? (
+                              <View style={styles.artLock}>
+                                <Ionicons name="sparkles-outline" size={10} color={colors.text} />
+                              </View>
+                            ) : null}
+                          </View>
+                        )}
                         <View style={styles.rowBody}>
                           <View style={styles.rowTop}>
                             <Text style={styles.rowTitle} numberOfLines={1}>
@@ -244,6 +266,7 @@ function createStyles(colors: ColorTokens) {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  artScene: { borderColor: colors.border },
   artLock: {
     position: 'absolute',
     right: 4,

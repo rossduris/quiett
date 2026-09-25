@@ -30,7 +30,7 @@ import {
   resolveAlarmSoundUri,
 } from '@/lib/harsh-alarm-asset';
 
-const ALARM_TITLE = 'Quiett — sit to begin';
+const ALARM_TITLE = 'Quiett · time to settle in';
 
 /** True after session silenced the OS ring; cleared on sit success / emergency. */
 let osRingHandedToSession = false;
@@ -87,7 +87,7 @@ const bailIosGate = {
 
 const androidGate = {
   alertTitle: ALARM_TITLE,
-  alertBody: 'Sit to begin your morning',
+  alertBody: 'Settle in for a quiet start to your day',
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   launchUri: 'quiett://session',
@@ -189,6 +189,35 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Could not schedule the OS alarm.';
     return { ok: false, reason: 'error', message };
+  }
+}
+
+export type OsAlarmPermissionState = 'authorized' | 'denied' | 'notDetermined' | 'unavailable';
+
+function toPermissionState(p: AlarmPermissionResponse): OsAlarmPermissionState {
+  if (p.canScheduleExactAlarms || p.status === 'authorized') return 'authorized';
+  if (p.status === 'denied') return 'denied';
+  if (p.status === 'unavailable') return 'unavailable';
+  return 'notDetermined';
+}
+
+/** Current alarm (AlarmKit / exact-alarm) permission without prompting. */
+export async function getOsAlarmPermission(): Promise<OsAlarmPermissionState> {
+  if (Platform.OS === 'web') return 'unavailable';
+  try {
+    return toPermissionState(await AlarmScheduler.getPermissionsAsync());
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/** Show the system alarm permission prompt (once; later calls just report status). */
+export async function requestOsAlarmPermission(): Promise<OsAlarmPermissionState> {
+  if (Platform.OS === 'web') return 'unavailable';
+  try {
+    return toPermissionState(await AlarmScheduler.requestPermissionsAsync());
+  } catch {
+    return 'unavailable';
   }
 }
 

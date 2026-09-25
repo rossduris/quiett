@@ -22,6 +22,13 @@ Notifications.setNotificationHandler({
 
 const EVENING_REMINDER_ID = 'quiett-evening-reminder';
 
+/** 'granted' | 'denied' | 'undetermined' without prompting. */
+export async function getNotificationPermissionStatus(): Promise<'granted' | 'denied' | 'undetermined'> {
+  if (Platform.OS === 'web') return 'denied';
+  const { status } = await Notifications.getPermissionsAsync();
+  return status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'undetermined';
+}
+
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   

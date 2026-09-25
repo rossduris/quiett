@@ -1,22 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Animated, {
-  Easing,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
 import {
   isLivePoseCameraAvailable,
   QuiettPoseCameraView,
 } from 'quiett-pose';
-import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
 import {
@@ -34,49 +28,22 @@ import {
   CONFIRM_HOLD_MS,
   formatMmSs,
   reduceSession,
-  sitDurationMs,
   type SessionEvent,
   type SessionPhase,
 } from '@/lib/session-machine';
-import {
-  DEFAULT_SIT_MINUTES,
-  loadSitMinutes,
-  type SitMinutes,
-  saveTestMorningCompleted,
-} from '@/lib/storage';
+import { saveTestMorningCompleted } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { Ionicons } from '@expo/vector-icons';
 
 const PRACTICE_DURATION_SEC = 30;
 
-const PHASE_TONE: Record<SessionPhase, number> = {
-  alarming: 0,
-  detecting: 0.45,
-  meditating: 1,
-  completed: 1,
-  emergency: 0,
-};
-
-function ringColorFor(phase: SessionPhase, colors: ColorTokens): string {
-  switch (phase) {
-    case 'alarming':
-      return colors.alarm;
-    case 'detecting':
-      return colors.sunrise;
-    case 'meditating':
-      return colors.calm;
-    default:
-      return colors.mist;
-  }
-}
-
 export default function TestMorningScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<SessionPhase>('alarming');
   const [pose, setPose] = useState<PoseStatus>('absent');
   const [confirmLeft, setConfirmLeft] = useState(CONFIRM_HOLD_MS);
@@ -89,8 +56,6 @@ export default function TestMorningScreen() {
   const sitStart = useRef<number | null>(null);
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
-
-  const phaseTone = useSharedValue<number>(PHASE_TONE.alarming);
 
   const detector = useMemo(
     () =>
@@ -118,17 +83,20 @@ export default function TestMorningScreen() {
   }, []);
 
   useEffect(() => {
-    phaseTone.value = withTiming(PHASE_TONE[phase], {
-      duration: 480,
-      easing: Easing.inOut(Easing.cubic),
-    });
-  }, [phase, phaseTone]);
-
-  useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
       void requestPermission();
     }
   }, [permission, requestPermission]);
+
+  // Returning from iOS Settings: re-read camera permission.
+  const permissionGranted = permission?.granted ?? false;
+  useEffect(() => {
+    if (permissionGranted) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void getPermission();
+    });
+    return () => sub.remove();
+  }, [permissionGranted, getPermission]);
 
   useEffect(() => {
     if (!permission?.granted || !cameraReady) return;
@@ -208,27 +176,10 @@ export default function TestMorningScreen() {
     }
   }, [phase, router]);
 
-  const timerLabel = phase === 'meditating' ? formatMmSs(sitLeft) : '30s (practice)';
+  const timerLabel = phase === 'meditating' ? formatMmSs(sitLeft) : '30 seconds';
 
   const confirmProgress = 1 - confirmLeft / CONFIRM_HOLD_MS;
   const sitProgress = 1 - sitLeft / (PRACTICE_DURATION_SEC * 1000);
-  const scrimStyle = useAnimatedStyle(() => {
-    const overlay = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.28)', 'rgba(10,18,32,0.45)', 'rgba(10,18,32,0.55)'],
-    );
-    return { backgroundColor: overlay };
-  });
-
-  const glowStyle = useAnimatedStyle(() => {
-    const glow = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(224,122,85,0.18)'],
-    );
-    return { backgroundColor: glow };
-  });
 
   if (!permission) {
     return <View style={styles.screen} />;
@@ -236,51 +187,78 @@ export default function TestMorningScreen() {
 
   if (!permission.granted) {
     return (
-      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permBody}>
-          Quiett uses the front camera to confirm you are in frame. Pose runs on-device with Apple
-          Vision — frames never leave your phone.
-        </Text>
-        <PrimaryButton label="Grant camera" onPress={() => void requestPermission()} />
-        <PrimaryButton label="Cancel" variant="ghost" onPress={() => router.back()} />
+      <View style={styles.screen}>
+        <StatusBar style="light" />
+        <SessionBackdrop />
+        <View
+          style={[
+            styles.permContent,
+            { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.md },
+          ]}
+        >
+          <View style={styles.permCopy}>
+            <Text style={styles.permTitle}>Let Quiett see you</Text>
+            <Text style={styles.permBody}>
+              {permission.canAskAgain
+                ? 'Your front camera gently checks that you\u2019re settled and still. It all happens on your phone \u2014 nothing is sent anywhere.'
+                : 'Camera access is off for Quiett. Turn it on in Settings, then come back to practice. It all happens on your phone \u2014 nothing is sent anywhere.'}
+            </Text>
+            <PrimaryButton
+              label={permission.canAskAgain ? 'Allow camera' : 'Open Settings'}
+              onPress={() => {
+                if (permission.canAskAgain) void requestPermission();
+                else void Linking.openSettings();
+              }}
+              style={styles.permCta}
+            />
+          </View>
+          <View style={styles.bottom}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Not now"
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.endBtn, pressed && styles.endBtnPressed]}
+            >
+              <Text style={styles.endBtnText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     );
   }
 
+  const cameraView = preferLive ? (
+    <QuiettPoseCameraView
+      style={StyleSheet.absoluteFill}
+      isActive={phase !== 'completed'}
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(message) => {
+        console.warn('[quiett] live camera', message);
+        setCameraReady(false);
+      }}
+    />
+  ) : (
+    <CameraView
+      ref={cameraRef}
+      style={StyleSheet.absoluteFill}
+      facing="front"
+      mute
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(e) => {
+        console.warn('[quiett] camera', e);
+        setCameraReady(false);
+      }}
+    />
+  );
+
   return (
     <View style={styles.screen}>
-      <View style={styles.cameraLayer}>
-        {preferLive ? (
-          <QuiettPoseCameraView
-            style={StyleSheet.absoluteFill}
-            isActive={phase !== 'completed'}
-            onCameraReady={() => {
-              setCameraReady(true);
-            }}
-            onMountError={(message) => {
-              console.warn('[quiett] live camera', message);
-              setCameraReady(false);
-            }}
-          />
-        ) : (
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            mute
-            onCameraReady={() => {
-              setCameraReady(true);
-            }}
-            onMountError={(e) => {
-              console.warn('[quiett] camera', e);
-              setCameraReady(false);
-            }}
-          />
-        )}
-        <Animated.View pointerEvents="none" style={[styles.scrim, scrimStyle]} />
-        <Animated.View pointerEvents="none" style={[styles.glowTop, glowStyle]} />
-      </View>
+      <StatusBar style="light" />
+      <SessionBackdrop />
 
       <View
         style={[
@@ -293,8 +271,8 @@ export default function TestMorningScreen() {
       >
         <View style={styles.top}>
           <View style={styles.practiceBadge}>
-            <Ionicons name="flask-outline" size={14} color={colors.calm} />
-            <Text style={styles.practiceBadgeText}>Practice mode</Text>
+            <Ionicons name="leaf-outline" size={13} color={colors.sessionGlow} />
+            <Text style={styles.practiceBadgeText}>Practice run · 30 seconds</Text>
           </View>
           <PoseStatusChip status={pose} />
         </View>
@@ -305,16 +283,19 @@ export default function TestMorningScreen() {
             confirmProgress={confirmProgress}
             sitProgress={sitProgress}
             timerLabel={timerLabel}
-            ringColor={ringColorFor(phase, colors)}
+            camera={cameraView}
           />
         </View>
 
         <View style={styles.bottom}>
-          <PrimaryButton
-            label="End practice"
-            variant="ghost"
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="End practice"
             onPress={() => router.back()}
-          />
+            style={({ pressed }) => [styles.endBtn, pressed && styles.endBtnPressed]}
+          >
+            <Text style={styles.endBtnText}>End practice</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -325,23 +306,20 @@ function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: colors.bg,
+      backgroundColor: colors.sessionBgTop,
     },
-    cameraLayer: {
-      ...StyleSheet.absoluteFill,
-      backgroundColor: colors.bg,
+    permContent: {
+      flex: 1,
+      paddingHorizontal: spacing.lg,
+      justifyContent: 'space-between',
     },
-    scrim: {
-      ...StyleSheet.absoluteFill,
+    permCopy: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: spacing.md,
     },
-    glowTop: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      top: 0,
-      height: '38%',
-      opacity: 0.55,
-    },
+    permCta: { alignSelf: 'stretch', marginTop: spacing.sm },
     ui: {
       flex: 1,
       paddingHorizontal: spacing.lg,
@@ -356,19 +334,31 @@ function createStyles(colors: ColorTokens) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: colors.calmSoft,
-      borderWidth: 1,
-      borderColor: colors.calm,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
     },
     practiceBadgeText: {
-      color: colors.calm,
+      color: colors.sessionGlow,
       fontSize: 12,
-      fontWeight: '700',
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
+      fontWeight: '600',
+      letterSpacing: 0.4,
+    },
+    endBtn: {
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.sessionHairline,
+      backgroundColor: colors.sessionChipBg,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.lg,
+      minWidth: 220,
+      alignItems: 'center',
+    },
+    endBtnPressed: { backgroundColor: colors.sessionGlowSoft },
+    endBtnText: {
+      color: colors.sessionTextMuted,
+      fontSize: 15,
+      fontWeight: '500',
+      letterSpacing: 0.2,
     },
     center: {
       flex: 1,
@@ -379,16 +369,15 @@ function createStyles(colors: ColorTokens) {
       gap: spacing.md,
       alignItems: 'center',
     },
-    centered: {
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: spacing.lg,
-      gap: spacing.md,
+    permTitle: {
+      ...typography.title,
+      fontWeight: '500',
+      color: colors.sessionText,
+      textAlign: 'center',
     },
-    permTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
     permBody: {
       ...typography.body,
-      color: colors.textMuted,
+      color: colors.sessionTextMuted,
       textAlign: 'center',
       lineHeight: 22,
     },
