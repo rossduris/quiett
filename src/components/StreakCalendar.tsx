@@ -1,6 +1,9 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 import { type Weekday } from '@/lib/storage';
 import {
   buildMonthGrid,
@@ -19,7 +22,9 @@ type Props = {
   onChangeMonth: (next: { year: number; month: number }) => void;
 };
 
-function CellView({ cell }: { cell: CalendarCell }) {
+type Styles = ReturnType<typeof createStyles>;
+
+function CellView({ cell, styles }: { cell: CalendarCell; styles: Styles }) {
   return (
     <View
       style={[
@@ -57,6 +62,8 @@ export function StreakCalendar({
   month,
   onChangeMonth,
 }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const grid = buildMonthGrid(year, month, completedDays, scheduledWeekdays);
   const canGoForward = !isCurrentMonth(year, month);
   const prev = shiftMonth(year, month, -1);
@@ -124,7 +131,7 @@ export function StreakCalendar({
         <View key={`w-${wi}`} style={styles.week}>
           {week.map((cell, di) =>
             cell ? (
-              <CellView key={cell.key} cell={cell} />
+              <CellView key={cell.key} cell={cell} styles={styles} />
             ) : (
               <View key={`blank-${wi}-${di}`} style={styles.blank} />
             ),
@@ -152,7 +159,8 @@ export function StreakCalendar({
 
 const CELL = 34;
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   wrap: { gap: spacing.sm },
   header: {
     flexDirection: 'row',
@@ -257,3 +265,4 @@ const styles = StyleSheet.create({
   },
   legendText: { color: colors.textDim, fontSize: 11, fontWeight: '600' },
 });
+}

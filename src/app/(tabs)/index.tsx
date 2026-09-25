@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
+import { TrackCover } from '@/components/TrackCover';
+import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { WeekStreakStrip } from '@/components/WeekStreakStrip';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { UnlockTrackPicker } from '@/components/UnlockTrackPicker';
-import { alarmSoundById, DEFAULT_ALARM_SOUND_ID } from '@/constants/sounds';
+import { StreakSheet } from '@/components/StreakSheet';
+import { alarmSoundById, DEFAULT_ALARM_SOUND_ID, meditationSoundById } from '@/constants/sounds';
 import {
   kindLabel,
   pickSurpriseTrack,
@@ -25,7 +29,6 @@ import {
   isUnlockedForToday,
   type TodayStatus,
 } from '@/lib/home-status';
-import { sitDurationPillLabel } from '@/lib/session-machine';
 import {
   loadAlarmPrefs,
   loadCompletedDays,
@@ -43,15 +46,20 @@ import {
   saveUnlockTrackId,
   loadAlarmSoundId,
   saveAlarmSoundId,
-  DEFAULT_SIT_MINUTES,
-  loadSitMinutes,
-  saveSitMinutes,
-  SIT_MINUTE_OPTIONS,
-  type SitMinutes,
+  dayKey,
   loadSurpriseMe,
+  loadSurpriseTrackDate,
   saveSurpriseMe,
+  saveSurpriseTrackDate,
+  loadReliabilityCheckCompleted,
+  loadGetStartedDismissed,
+  saveGetStartedDismissed,
+  loadWakeIntention,
+  loadTestMorningCompleted,
 } from '@/lib/storage';
+import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
+import { syncEveningReminder } from '@/lib/notifications';
 import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
@@ -70,9 +78,15 @@ function displayTime(hhmm: string): string {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isPremium, trackResetVersion } = usePremium();
+  const coverStyle = useCoverStyle();
+  // The focus effect below is memoized once; read Premium through a ref so it is never stale.
+  const isPremiumRef = useRef(isPremium);
+  isPremiumRef.current = isPremium;
 
   const chipTone = (status: TodayStatus): string => {
     switch (status) {
@@ -90,28 +104,35 @@ export default function HomeScreen() {
   const [wakeResolved, setWakeResolved] = useState(false);
   const [dayOpenDismissed, setDayOpenDismissed] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const [showMorningSoundPicker, setShowMorningSoundPicker] = useState(false);
+  const [showMeditationPicker, setShowMeditationPicker] = useState(false);
   const [showAlarmSoundPicker, setShowAlarmSoundPicker] = useState(false);
+  const [showStreakSheet, setShowStreakSheet] = useState(false);
   const [alarmSoundId, setAlarmSoundId] = useState(DEFAULT_ALARM_SOUND_ID);
   const [unlockTrackId, setUnlockTrackId] = useState(() => unlockTrackById('guided:first-light').id);
-  const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [surpriseMe, setSurpriseMe] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [reliabilityChecked, setReliabilityChecked] = useState(false);
+  const [getStartedDismissed, setGetStartedDismissed] = useState(false);
+  const [wakeIntention, setWakeIntention] = useState('');
+  const [testMorningDone, setTestMorningDone] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [a, s, days, resolved, unlockId, soundId, sit, surprise, heroDismissed] = await Promise.all([
+        const [a, s, days, resolved, unlockId, soundId, surprise, heroDismissed, reliabilityDone, getStartedDone, intention, testDone] = await Promise.all([
           loadAlarmPrefs(),
           loadStreak(),
           loadCompletedDays(),
           isWakeResolvedToday(),
           loadUnlockTrackId(),
           loadAlarmSoundId(),
-          loadSitMinutes(),
           loadSurpriseMe(),
           isDayOpenHeroDismissedToday(),
+          loadReliabilityCheckCompleted(),
+          loadGetStartedDismissed(),
+          loadWakeIntention(),
+          loadTestMorningCompleted(),
         ]);
         if (!alive) return;
         setAlarm(a);
@@ -120,27 +141,61 @@ export default function HomeScreen() {
         setWakeResolved(resolved);
         setDayOpenDismissed(heroDismissed);
         setAlarmSoundId(soundId);
-        setSitMinutes(sit);
         setSurpriseMe(surprise);
         setNow(new Date());
+        setReliabilityChecked(reliabilityDone);
+        setGetStartedDismissed(getStartedDone);
+        setWakeIntention(intention);
+        setTestMorningDone(testDone);
 
+        // Surprise me rotates once per local day, not on every Home focus.
         let nextUnlock = unlockId;
-        if (surprise) {
-          const picked = pickSurpriseTrack(unlockId);
-          nextUnlock = await saveUnlockTrackId(picked.id);
+        if (surprise && (await loadSurpriseTrackDate()) !== dayKey(0)) {
+          const premium = isPremiumRef.current;
+          const picked = pickSurpriseTrack(unlockId, premium);
+          nextUnlock = await saveUnlockTrackId(picked.id, { premium });
+          await saveSurpriseTrackDate();
         }
         setUnlockTrackId(nextUnlock);
         void syncOsAlarm(a);
       })();
       return () => {
         alive = false;
+        // Leaving Home (tab switch, Settings, session) ends any preview.
+        stopPreview();
       };
     }, []),
   );
 
+  // Premium lapsed → the provider saved the default free track; reflect it here.
+  useEffect(() => {
+    if (trackResetVersion === 0) return;
+    void loadUnlockTrackId().then(setUnlockTrackId);
+  }, [trackResetVersion]);
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Re-derive the streak when the app returns to the foreground (e.g. the next day),
+  // so a missed scheduled morning resets the pill without needing a tab switch.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void (async () => {
+        const [s, days, resolved] = await Promise.all([
+          loadStreak(),
+          loadCompletedDays(),
+          isWakeResolvedToday(),
+        ]);
+        setStreak(s);
+        setCompletedDays(days);
+        setWakeResolved(resolved);
+        setNow(new Date());
+      })();
+    });
+    return () => sub.remove();
   }, []);
 
   const unlockedToday = useMemo(
@@ -162,19 +217,32 @@ export default function HomeScreen() {
   const alarmSound = useMemo(() => alarmSoundById(alarmSoundId), [alarmSoundId]);
   const showDayOpenHero = unlockedToday && !dayOpenDismissed;
 
+  const hasSetAlarm = alarm.enabled;
+  const hasTriedTest = testMorningDone;
+  const hasIntention = wakeIntention.length > 0;
+  const getStartedProgress = [hasSetAlarm, reliabilityChecked, hasTriedTest, hasIntention].filter(Boolean).length;
+  const showGetStarted = !getStartedDismissed && getStartedProgress < 4;
+  const showReliabilityCard = !reliabilityChecked && !showGetStarted;
+
+  const onDismissGetStarted = async () => {
+    setGetStartedDismissed(true);
+    await saveGetStartedDismissed(true);
+  };
+
   const onDismissDayOpen = async () => {
     setDayOpenDismissed(true);
     await dismissDayOpenHeroToday();
   };
 
   const onSelectUnlockTrack = async (track: UnlockTrack) => {
-    const id = await saveUnlockTrackId(track.id);
+    const id = await saveUnlockTrackId(track.id, { premium: isPremium });
     setUnlockTrackId(id);
     if (surpriseMe) {
       setSurpriseMe(false);
       await saveSurpriseMe(false);
     }
-    setShowMorningSoundPicker(false);
+    setShowMeditationPicker(false);
+    void syncEveningReminder();
   };
 
   const onSelectAlarmSound = async (id: string) => {
@@ -183,9 +251,24 @@ export default function HomeScreen() {
     void syncOsAlarm(alarm);
   };
 
-  const onSelectSit = async (minutes: SitMinutes) => {
-    setSitMinutes(minutes);
-    await saveSitMinutes(minutes);
+  const alarmPreviewUrl = alarmSound.url;
+  const meditationPreviewUrl = unlockTrack.locked && !isPremium
+    ? null
+    : meditationSoundById(unlockTrack.playbackSoundId).url;
+
+  const preview = usePreviewPlayer();
+  const alarmPreviewId = previewIds.alarm(alarmSound.id);
+  const meditationPreviewId = previewIds.track(unlockTrack.id);
+  const alarmPlaying = preview.playingId === alarmPreviewId;
+  const meditationPlaying = preview.playingId === meditationPreviewId;
+
+  /** Play/stop toggle for either step (one preview at a time, app-wide). */
+  const onPreview = (which: 'alarm' | 'meditation') => {
+    if (which === 'alarm') {
+      if (alarmPreviewUrl != null) preview.toggle(alarmPreviewId, alarmPreviewUrl, 'alarm');
+    } else if (meditationPreviewUrl != null) {
+      preview.toggle(meditationPreviewId, meditationPreviewUrl, 'track');
+    }
   };
 
   const onToggleSurprise = async () => {
@@ -193,8 +276,9 @@ export default function HomeScreen() {
     setSurpriseMe(next);
     await saveSurpriseMe(next);
     if (next) {
-      const picked = pickSurpriseTrack(unlockTrackId);
-      const id = await saveUnlockTrackId(picked.id);
+      const picked = pickSurpriseTrack(unlockTrackId, isPremium);
+      const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
+      await saveSurpriseTrackDate();
       setUnlockTrackId(id);
     }
   };
@@ -205,6 +289,7 @@ export default function HomeScreen() {
     await clearWakeResolved();
     setWakeResolved(false);
     const result = await syncOsAlarm(next);
+    void syncEveningReminder();
     if (!result.ok && next.enabled) {
       Alert.alert(
         'Alarm permission needed',
@@ -254,6 +339,26 @@ export default function HomeScreen() {
           <Text style={styles.brand}>Quiett</Text>
           <Text style={[styles.tagline, unlockedToday && styles.taglineOpen]}>{tagline}</Text>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Streak, ${streak.count} ${streak.count === 1 ? 'day' : 'days'}. Opens streak details`}
+          hitSlop={8}
+          onPress={() => setShowStreakSheet(true)}
+          style={({ pressed }) => [
+            styles.streakPill,
+            streak.count === 0 && styles.streakPillEmpty,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={streak.count > 0 ? 'flame' : 'flame-outline'}
+            size={18}
+            color={streak.count > 0 ? colors.calm : colors.textDim}
+          />
+          <Text style={[styles.streakPillText, streak.count === 0 && styles.streakPillTextEmpty]}>
+            {streak.count}
+          </Text>
+        </Pressable>
       </View>
 
       <ScrollView
@@ -280,6 +385,12 @@ export default function HomeScreen() {
             <Text style={styles.dayOpenBody}>
               Your day is open. Alarm prep for tomorrow stays below when you need it.
             </Text>
+            {wakeIntention && (
+              <View style={styles.intentionPill}>
+                <Ionicons name="bulb-outline" size={14} color={colors.calm} />
+                <Text style={styles.intentionText}>{wakeIntention}</Text>
+              </View>
+            )}
             {statusChip ? (
               <View style={[styles.statusChip, { borderColor: chipTone(statusChip.status) }]}>
                 <View style={[styles.statusDot, { backgroundColor: chipTone(statusChip.status) }]} />
@@ -290,6 +401,112 @@ export default function HomeScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {showGetStarted && (
+          <View style={styles.getStartedCard}>
+            <Pressable
+              onPress={() => void onDismissGetStarted()}
+              style={styles.getStartedDismiss}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss get started"
+            >
+              <Ionicons name="close" size={20} color={colors.textDim} />
+            </Pressable>
+            <View style={styles.getStartedTop}>
+              <Ionicons name="flag-outline" size={24} color={colors.calm} />
+              <View style={styles.getStartedTitleRow}>
+                <Text style={styles.getStartedTitle}>Get started</Text>
+                <Text style={styles.getStartedProgress}>{getStartedProgress}/4</Text>
+              </View>
+            </View>
+            <View style={styles.getStartedList}>
+              <Pressable
+                onPress={() => setShowPicker(true)}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasSetAlarm && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasSetAlarm && styles.getStartedCheckDone]}>
+                  {hasSetAlarm && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasSetAlarm && styles.getStartedTextDone]}>
+                  Set your alarm
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/reliability-check')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  reliabilityChecked && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, reliabilityChecked && styles.getStartedCheckDone]}>
+                  {reliabilityChecked && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, reliabilityChecked && styles.getStartedTextDone]}>
+                  Make sure it can wake you
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/test-morning')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasTriedTest && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasTriedTest && styles.getStartedCheckDone]}>
+                  {hasTriedTest && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasTriedTest && styles.getStartedTextDone]}>
+                  Try a test morning
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/wake-intention')}
+                style={({ pressed }) => [
+                  styles.getStartedRow,
+                  hasIntention && styles.getStartedRowDone,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.getStartedCheck, hasIntention && styles.getStartedCheckDone]}>
+                  {hasIntention && <Ionicons name="checkmark" size={14} color={colors.bg} />}
+                </View>
+                <Text style={[styles.getStartedText, hasIntention && styles.getStartedTextDone]}>
+                  Set your intention
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {showReliabilityCard && (
+          <Pressable
+            onPress={() => router.push('/reliability-check')}
+            style={({ pressed }) => [styles.reliabilityCard, pressed && styles.pressed]}
+            accessibilityRole="button"
+          >
+            <View style={styles.reliabilityIcon}>
+              <Ionicons name="alarm-outline" size={20} color={colors.calm} />
+            </View>
+            <View style={styles.reliabilityBody}>
+              <Text style={styles.reliabilityTitle}>Check your alarm reliability</Text>
+              <Text style={styles.reliabilityText}>
+                Three iPhone settings that matter for waking up
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+          </Pressable>
+        )}
 
         <View style={[styles.card, styles.heroCard, unlockedToday && styles.cardDimmed]}>
           {!unlockedToday ? (
@@ -326,24 +543,6 @@ export default function HomeScreen() {
           ) : null}
 
           <Text style={styles.hint}>Tap time to change · {formatWeekdayHint(alarm.weekdays)}</Text>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Alarm sound, ${alarmSound.label}`}
-            onPress={() => setShowAlarmSoundPicker(true)}
-            style={({ pressed }) => [styles.alarmSoundRow, pressed && styles.pressed]}
-          >
-            <View style={styles.alarmSoundLeft}>
-              <Ionicons name="volume-medium-outline" size={16} color={colors.textDim} />
-              <Text style={styles.alarmSoundLabel}>Alarm sound</Text>
-            </View>
-            <View style={styles.alarmSoundRight}>
-              <Text style={styles.alarmSoundValue} numberOfLines={1}>
-                {alarmSound.label}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
-            </View>
-          </Pressable>
 
           {showPicker && (
             <>
@@ -399,10 +598,129 @@ export default function HomeScreen() {
         </View>
 
         <View style={[styles.morningCard, unlockedToday && styles.cardDimmed]}>
-          <View style={styles.morningCardTop}>
-            <Text style={styles.cardLabel}>Morning sound</Text>
+          <Text style={styles.cardLabel}>Your morning</Text>
+
+          <View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Step 1, wake-up alarm: ${alarmSound.label}. Rings until you're still.`}
+              accessibilityHint="Choose your wake-up alarm"
+              onPress={() => setShowAlarmSoundPicker(true)}
+              style={({ pressed }) => [styles.stepRow, pressed && styles.pressed]}
+            >
+              <View style={styles.stepArtWrap}>
+                <View style={[styles.stepArt, styles.stepArtAlarm]}>
+                  <Ionicons name="alarm-outline" size={24} color={colors.sunrise} />
+                </View>
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>1</Text>
+                </View>
+              </View>
+              <View style={styles.stepBody}>
+                <Text style={styles.stepEyebrow}>Wake-up alarm</Text>
+                <Text style={styles.stepTitle} numberOfLines={1}>
+                  {alarmSound.label}
+                </Text>
+                <Text style={styles.stepMeta} numberOfLines={1}>
+                  Rings until you're still
+                </Text>
+              </View>
+              {alarmPreviewUrl != null ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={alarmPlaying ? 'Stop preview' : `Preview ${alarmSound.label}`}
+                  accessibilityState={{ selected: alarmPlaying }}
+                  hitSlop={8}
+                  onPress={() => onPreview('alarm')}
+                  style={({ pressed }) => [
+                    styles.previewBtn,
+                    alarmPlaying && styles.previewBtnActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={alarmPlaying ? 'stop' : 'play'}
+                    size={14}
+                    color={alarmPlaying ? colors.calm : colors.text}
+                  />
+                </Pressable>
+              ) : null}
+              <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+            </Pressable>
+
+            <View style={styles.stepConnector} />
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Step 2, meditation: ${unlockTrack.title}. ${kindLabel(unlockTrack.kind)}, 2 minutes${surpriseMe ? ', rotating' : ''}.`}
+              accessibilityHint="Choose your meditation"
+              onPress={() => setShowMeditationPicker(true)}
+              style={({ pressed }) => [styles.stepRow, pressed && styles.pressed]}
+            >
+              <View style={styles.stepArtWrap}>
+                {coverStyle !== 'classic' ? (
+                  <View style={[styles.stepArt, { borderColor: colors.border }]}>
+                    <TrackCover trackId={unlockTrack.id} size={46} radius={13} />
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.stepArt,
+                      { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
+                    ]}
+                  >
+                    <LibraryTrackMark
+                      trackId={unlockTrack.id}
+                      kind={unlockTrack.kind}
+                      color={unlockTrack.accent}
+                      size={30}
+                    />
+                  </View>
+                )}
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>2</Text>
+                </View>
+              </View>
+              <View style={styles.stepBody}>
+                <Text style={styles.stepEyebrow}>Meditation</Text>
+                <Text style={styles.stepTitle} numberOfLines={1}>
+                  {unlockTrack.title}
+                </Text>
+                <Text style={styles.stepMeta} numberOfLines={1}>
+                  {kindLabel(unlockTrack.kind)}
+                  {surpriseMe ? ' · rotating' : ''}
+                  {' · 2 min'}
+                </Text>
+              </View>
+              {meditationPreviewUrl != null ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={meditationPlaying ? 'Stop preview' : `Preview ${unlockTrack.title}`}
+                  accessibilityState={{ selected: meditationPlaying }}
+                  hitSlop={8}
+                  onPress={() => onPreview('meditation')}
+                  style={({ pressed }) => [
+                    styles.previewBtn,
+                    meditationPlaying && styles.previewBtnActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={meditationPlaying ? 'stop' : 'play'}
+                    size={14}
+                    color={meditationPlaying ? colors.calm : colors.text}
+                  />
+                </Pressable>
+              ) : null}
+              <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+            </Pressable>
+          </View>
+
+          <View style={styles.surpriseRow}>
             <Pressable
               accessibilityRole="switch"
+              accessibilityLabel="Surprise me"
+              accessibilityHint="Picks a different meditation each morning"
               accessibilityState={{ checked: surpriseMe }}
               onPress={() => void onToggleSurprise()}
               style={({ pressed }) => [styles.surprisePill, surpriseMe && styles.surprisePillOn, pressed && styles.pressed]}
@@ -417,79 +735,31 @@ export default function HomeScreen() {
               </Text>
             </Pressable>
           </View>
+        </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Choose morning sound"
-            onPress={() => setShowMorningSoundPicker(true)}
-            style={({ pressed }) => [styles.unlockRow, pressed && styles.pressed]}
-          >
-            <View
-              style={[
-                styles.unlockArt,
-                { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent },
-              ]}
-            >
-              <LibraryTrackMark
-                trackId={unlockTrack.id}
-                kind={unlockTrack.kind}
-                color={unlockTrack.accent}
-                size={34}
-              />
-            </View>
-            <View style={styles.unlockBody}>
-              <Text style={styles.unlockTitle} numberOfLines={1}>
-                {unlockTrack.title}
-              </Text>
-              <Text style={styles.unlockMeta}>
-                {kindLabel(unlockTrack.kind)}
-                {surpriseMe ? ' · rotating' : ''}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
-          </Pressable>
-
-          <Text style={styles.lengthLabel}>Unlock length</Text>
-          <View style={styles.lengthRow}>
-            {SIT_MINUTE_OPTIONS.map((m) => {
-              const selected = m === sitMinutes;
-              return (
-                <Pressable
-                  key={String(m)}
-                  onPress={() => void onSelectSit(m)}
-                  style={[styles.lengthPill, selected && styles.lengthPillSelected]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.lengthPillText, selected && styles.lengthPillTextSelected]}>
-                    {sitDurationPillLabel(m)}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="This week's mornings"
+          accessibilityHint="Opens streak details"
+          onPress={() => setShowStreakSheet(true)}
+          style={({ pressed }) => [
+            styles.streakCard,
+            unlockedToday && styles.streakCardOpen,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.streakCardTop}>
+            <Text style={styles.cardLabel}>This week</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
           </View>
-        </View>
-
-        <View style={[styles.streakCard, unlockedToday && styles.streakCardOpen]}>
-          <Text style={[styles.streakNum, unlockedToday && styles.streakNumOpen]}>
-            {streak.count}
-          </Text>
-          <Text style={styles.streakLabel}>day streak</Text>
-          <Text style={styles.streakSub}>
-            {unlockedToday
-              ? 'Morning complete'
-              : streak.count > 0
-                ? 'Complete this morning to keep it'
-                : 'Finish a morning meditation to start your streak'}
-          </Text>
           <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
-        </View>
+        </Pressable>
       </ScrollView>
 
       <UnlockTrackPicker
-        visible={showMorningSoundPicker}
+        visible={showMeditationPicker}
         selectedId={unlockTrackId}
-        onClose={() => setShowMorningSoundPicker(false)}
+        onClose={() => setShowMeditationPicker(false)}
         onSelect={(track) => void onSelectUnlockTrack(track)}
       />
 
@@ -499,6 +769,20 @@ export default function HomeScreen() {
         onClose={() => setShowAlarmSoundPicker(false)}
         onSelect={(id) => void onSelectAlarmSound(id)}
       />
+
+      <StreakSheet
+        visible={showStreakSheet}
+        onClose={() => setShowStreakSheet(false)}
+        onSeeHistory={() => {
+          setShowStreakSheet(false);
+          router.push('/profile');
+        }}
+        streak={streak}
+        completedDays={completedDays}
+        alarm={alarm}
+        unlockedToday={unlockedToday}
+        now={now}
+      />
     </View>
   );
 }
@@ -507,10 +791,26 @@ function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-  header: { gap: spacing.xs },
+  header: { flex: 1, gap: spacing.xs },
+  streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.calmSoft,
+    marginTop: 4,
+  },
+  streakPillEmpty: { backgroundColor: colors.bgCard },
+  streakPillText: { color: colors.calm, fontSize: 16, fontWeight: '700' },
+  streakPillTextEmpty: { color: colors.textDim },
   brand: { ...typography.title, color: colors.text },
   tagline: { ...typography.body, color: colors.textMuted },
   taglineOpen: { color: colors.calm, fontWeight: '600' },
@@ -548,6 +848,136 @@ function createStyles(colors: ColorTokens) {
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  intentionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.calm,
+    marginTop: spacing.xs,
+  },
+  intentionText: {
+    color: colors.calm,
+    fontSize: 13,
+    fontWeight: '500',
+    fontStyle: 'italic',
+  },
+  getStartedCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+    position: 'relative',
+  },
+  getStartedDismiss: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  getStartedTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  getStartedTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  getStartedTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  getStartedProgress: {
+    color: colors.calm,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  getStartedList: {
+    gap: spacing.sm,
+  },
+  getStartedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  getStartedRowDone: {
+    opacity: 0.6,
+  },
+  getStartedCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  getStartedCheckDone: {
+    backgroundColor: colors.calm,
+    borderColor: colors.calm,
+  },
+  getStartedText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  getStartedTextDone: {
+    color: colors.textMuted,
+  },
+  reliabilityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reliabilityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.calmSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reliabilityBody: {
+    flex: 1,
+    gap: 2,
+  },
+  reliabilityTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  reliabilityText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   card: {
     backgroundColor: colors.bgCard,
@@ -687,10 +1117,74 @@ function createStyles(colors: ColorTokens) {
     borderColor: colors.border,
     gap: spacing.md,
   },
-  morningCardTop: {
+  stepRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  stepArtWrap: { width: 48, height: 48 },
+  stepArt: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  stepArtAlarm: {
+    backgroundColor: colors.sunriseSoft,
+    borderColor: colors.sunrise,
+  },
+  stepBadge: {
+    position: 'absolute',
+    left: -6,
+    bottom: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.calm,
+    borderWidth: 2,
+    borderColor: colors.bgCard,
+  },
+  stepBadgeText: { color: colors.bg, fontSize: 11, fontWeight: '800' },
+  stepBody: { flex: 1, gap: 1 },
+  stepEyebrow: {
+    color: colors.textDim,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  stepTitle: { color: colors.text, fontSize: 17, fontWeight: '600' },
+  stepMeta: { color: colors.textMuted, fontSize: 13 },
+  stepConnector: {
+    width: 2,
+    height: 18,
+    borderRadius: 1,
+    marginLeft: 23,
+    marginVertical: 6,
+    backgroundColor: colors.border,
+  },
+  previewBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewBtnActive: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
+  },
+  surpriseRow: {
+    flexDirection: 'row',
+    paddingLeft: 48 + spacing.md,
   },
   surprisePill: {
     flexDirection: 'row',
@@ -709,89 +1203,21 @@ function createStyles(colors: ColorTokens) {
   },
   surpriseText: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
   surpriseTextOn: { color: colors.calm },
-  unlockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  unlockArt: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  unlockBody: { flex: 1, gap: 2 },
-  unlockTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
-  unlockMeta: { color: colors.textMuted, fontSize: 13 },
-  lengthLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  lengthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  lengthPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 48,
-    alignItems: 'center',
-  },
-  lengthPillSelected: {
-    backgroundColor: colors.calm,
-    borderColor: colors.calm,
-  },
-  lengthPillText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
-  lengthPillTextSelected: { color: colors.bg },
   streakCard: {
-    alignItems: 'center',
     backgroundColor: colors.bgCard,
     borderRadius: radii.xl,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: spacing.xs,
+    gap: spacing.md,
   },
   streakCardOpen: {
     borderColor: colors.calm,
   },
-  streakNum: { fontSize: 48, fontWeight: '200', color: colors.calm },
-  streakNumOpen: { fontSize: 40 },
-  streakLabel: { color: colors.textMuted, fontSize: 15 },
-  streakSub: {
-    color: colors.textDim,
-    fontSize: 13,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  alarmSoundRow: {
-    marginTop: spacing.xs,
+  streakCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  alarmSoundLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  alarmSoundLabel: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
-  alarmSoundRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexShrink: 1,
-  },
-  alarmSoundValue: { color: colors.textMuted, fontSize: 13, fontWeight: '600', maxWidth: 140 },
 });
 }

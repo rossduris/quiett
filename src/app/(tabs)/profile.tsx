@@ -1,20 +1,26 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { StreakCalendar } from '@/components/StreakCalendar';
+import { StreakSheet } from '@/components/StreakSheet';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
-import { longestScheduledStreak, morningsInMonth, nextStreakGoal } from '@/lib/streak-calendar';
+import { longestScheduledStreak, morningsInMonth } from '@/lib/streak-calendar';
+import { isUnlockedForToday } from '@/lib/home-status';
 import { SETUP_LEAD, SETUP_NOTE, SETUP_TIPS } from '@/constants/setup-tips';
 import {
   loadAccount,
   loadAlarmPrefs,
   loadCompletedDays,
   loadStreak,
+  loadUnlockTimestamps,
+  loadWakeIntentionsByDay,
+  isWakeResolvedToday,
   signInWithAppleStub,
   signOut,
   type AccountData,
@@ -40,11 +46,16 @@ function formatHistoryDay(key: string): string {
   });
 }
 
+function formatHistoryTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { isPremium } = usePremium();
   const [account, setAccount] = useState<AccountData>({
     signedIn: false,
     provider: null,
@@ -55,32 +66,54 @@ export default function ProfileScreen() {
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [alarm, setAlarm] = useState<AlarmPrefs>({ time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] });
   const [tipsExpanded, setTipsExpanded] = useState(false);
+  const [unlockTimes, setUnlockTimes] = useState<Record<string, number>>({});
+  const [intentionsByDay, setIntentionsByDay] = useState<Record<string, string>>({});
+  const [wakeResolved, setWakeResolved] = useState(false);
+  const [showStreakSheet, setShowStreakSheet] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() };
   });
 
+  const load = useCallback(async (isAlive: () => boolean = () => true) => {
+    const [acct, strk, days, alrm, stamps, intentions, resolved] = await Promise.all([
+      loadAccount(),
+      loadStreak(),
+      loadCompletedDays(),
+      loadAlarmPrefs(),
+      loadUnlockTimestamps(),
+      loadWakeIntentionsByDay(),
+      isWakeResolvedToday(),
+    ]);
+    if (!isAlive()) return;
+    setAccount(acct);
+    setStreak(strk);
+    setCompletedDays(days);
+    setAlarm(alrm);
+    setUnlockTimes(Object.fromEntries(stamps.map((t) => [t.day, t.timestamp])));
+    setIntentionsByDay(intentions);
+    setWakeResolved(resolved);
+    setNow(new Date());
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      (async () => {
-        const [acct, strk, days, alrm] = await Promise.all([
-          loadAccount(),
-          loadStreak(),
-          loadCompletedDays(),
-          loadAlarmPrefs(),
-        ]);
-        if (!alive) return;
-        setAccount(acct);
-        setStreak(strk);
-        setCompletedDays(days);
-        setAlarm(alrm);
-      })();
+      void load(() => alive);
       return () => {
         alive = false;
       };
-    }, []),
+    }, [load]),
   );
+
+  // Foregrounding on a new day re-derives the streak (missed scheduled mornings reset it).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void load();
+    });
+    return () => sub.remove();
+  }, [load]);
 
   const onSignIn = async () => {
     setAccount(await signInWithAppleStub());
@@ -91,13 +124,13 @@ export default function ProfileScreen() {
   };
 
   const totalMornings = completedDays.length;
-  const bestStreak = longestScheduledStreak(completedDays, alarm.weekdays);
+  const bestStreak = Math.max(longestScheduledStreak(completedDays, alarm.weekdays), streak.count);
+  const unlockedToday = isUnlockedForToday(streak, completedDays, wakeResolved, now);
   const monthMornings = morningsInMonth(
     calendarMonth.year,
     calendarMonth.month,
     completedDays,
   );
-  const nextGoal = nextStreakGoal(streak.count);
 
   const recentDays = useMemo(
     () => [...completedDays].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)).slice(0, 10),
@@ -120,6 +153,24 @@ export default function ProfileScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Profile</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Share streak"
+          hitSlop={12}
+          onPress={() => void onShareStreak()}
+          style={({ pressed }) => [styles.gearBtn, pressed && styles.pressed]}
+        >
+          <Ionicons name="share-outline" size={24} color={colors.text} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+          hitSlop={12}
+          onPress={() => router.push('/settings')}
+          style={({ pressed }) => [styles.gearBtn, pressed && styles.pressed]}
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.text} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -150,56 +201,51 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <View style={styles.statsCard}>
-          <View style={styles.statsHero}>
-            <Text style={styles.statsBig}>{streak.count}</Text>
-            <Text style={styles.statsBigLabel}>day streak</Text>
-          </View>
-          <View style={styles.statsSecondary}>
-            <View style={styles.statCol}>
-              <Text style={styles.statsSmallNum}>{totalMornings}</Text>
-              <Text style={styles.statsSmallLabel}>Total mornings</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCol}>
-              <Text style={styles.statsSmallNum}>{bestStreak}</Text>
-              <Text style={styles.statsSmallLabel}>Best streak</Text>
-            </View>
-          </View>
-          {nextGoal ? (
-            <View style={styles.goalPill}>
-              <Ionicons name="flag-outline" size={15} color={colors.calm} />
-              <Text style={styles.goalText}>{nextGoal.label}</Text>
-            </View>
-          ) : null}
+        <View style={styles.totalsRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Share streak"
-            onPress={() => void onShareStreak()}
-            style={({ pressed }) => [styles.shareBtn, pressed && styles.pressed]}
+            accessibilityLabel={`Current streak, ${streak.count} ${streak.count === 1 ? 'day' : 'days'}. Opens streak details`}
+            onPress={() => setShowStreakSheet(true)}
+            style={({ pressed }) => [
+              styles.totalChip,
+              streak.count > 0 && styles.totalChipLit,
+              pressed && styles.pressed,
+            ]}
           >
-            <Ionicons name="share-outline" size={18} color={colors.calm} />
-            <Text style={styles.shareBtnText}>Share streak</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.historyCard}>
-          <Text style={styles.historyTitle}>Recent mornings</Text>
-          {recentDays.length === 0 ? (
-            <Text style={styles.historyEmpty}>
-              No mornings yet — unlock one to start history.
-            </Text>
-          ) : (
-            <View style={styles.historyList}>
-              {recentDays.map((key) => (
-                <View key={key} style={styles.historyRow}>
-                  <View style={styles.historyDot} />
-                  <Text style={styles.historyDate}>{formatHistoryDay(key)}</Text>
-                  <Text style={styles.historyTag}>Unlocked</Text>
-                </View>
-              ))}
+            <View style={styles.totalValueRow}>
+              <Ionicons
+                name={streak.count > 0 ? 'flame' : 'flame-outline'}
+                size={16}
+                color={streak.count > 0 ? colors.calm : colors.textDim}
+              />
+              <Text style={[styles.totalNum, streak.count > 0 && styles.totalNumLit]}>
+                {streak.count}
+              </Text>
             </View>
-          )}
+            <Text style={styles.totalLabel}>Current</Text>
+          </Pressable>
+          <View
+            style={styles.totalChip}
+            accessible
+            accessibilityLabel={`Best streak, ${bestStreak} ${bestStreak === 1 ? 'day' : 'days'}`}
+          >
+            <View style={styles.totalValueRow}>
+              <Ionicons name="trophy-outline" size={16} color={colors.textDim} />
+              <Text style={styles.totalNum}>{bestStreak}</Text>
+            </View>
+            <Text style={styles.totalLabel}>Best</Text>
+          </View>
+          <View
+            style={styles.totalChip}
+            accessible
+            accessibilityLabel={`Total mornings, ${totalMornings}`}
+          >
+            <View style={styles.totalValueRow}>
+              <Ionicons name="sunny-outline" size={16} color={colors.textDim} />
+              <Text style={styles.totalNum}>{totalMornings}</Text>
+            </View>
+            <Text style={styles.totalLabel}>Mornings</Text>
+          </View>
         </View>
 
         <View style={styles.calendarCard}>
@@ -220,7 +266,72 @@ export default function ProfileScreen() {
           />
         </View>
 
+        <View style={styles.historyCard}>
+          <Text style={styles.historyTitle}>Recent mornings</Text>
+          {recentDays.length === 0 ? (
+            <Text style={styles.historyEmpty}>
+              No mornings yet — unlock one to start history.
+            </Text>
+          ) : (
+            <View style={styles.historyList}>
+              {recentDays.map((key) => {
+                const stamp = unlockTimes[key];
+                const intention = intentionsByDay[key];
+                return (
+                  <View key={key} style={styles.historyRow}>
+                    <View style={styles.historyDot} />
+                    <View style={styles.historyBody}>
+                      <View style={styles.historyTop}>
+                        <Text style={styles.historyDate}>{formatHistoryDay(key)}</Text>
+                        <Text style={styles.historyTag}>
+                          {stamp != null ? `Unlocked ${formatHistoryTime(stamp)}` : 'Unlocked'}
+                        </Text>
+                      </View>
+                      {intention ? (
+                        <Text style={styles.historyIntention} numberOfLines={2}>
+                          {`\u201C${intention}\u201D`}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
         <View style={styles.actionsCard}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/milestones')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons name="ribbon-outline" size={20} color={colors.text} />
+              <Text style={styles.actionLabel}>Milestones & badges</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isPremium ? 'Quiett Premium, active' : 'Quiett Premium'}
+            onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={styles.actionLeft}>
+              <Ionicons
+                name={isPremium ? 'sunny' : 'sunny-outline'}
+                size={20}
+                color={isPremium ? colors.calm : colors.text}
+              />
+              <Text style={styles.actionLabel}>Quiett Premium</Text>
+            </View>
+            {isPremium ? (
+              <Text style={[styles.actionLabel, { color: colors.calm }]}>Active</Text>
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+            )}
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             onPress={() => router.push('/settings')}
@@ -261,6 +372,16 @@ export default function ProfileScreen() {
           ) : null}
         </View>
       </ScrollView>
+
+      <StreakSheet
+        visible={showStreakSheet}
+        onClose={() => setShowStreakSheet(false)}
+        streak={streak}
+        completedDays={completedDays}
+        alarm={alarm}
+        unlockedToday={unlockedToday}
+        now={now}
+      />
     </View>
   );
 }
@@ -271,13 +392,16 @@ function createStyles(colors: ColorTokens) {
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
   screenTitle: {
     ...typography.title,
     color: colors.text,
+    flex: 1,
   },
+  gearBtn: { padding: 4 },
   scroll: { flex: 1 },
   content: {
     paddingHorizontal: spacing.lg,
@@ -323,90 +447,34 @@ function createStyles(colors: ColorTokens) {
     borderColor: colors.border,
   },
   signOutText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  statsCard: {
-    backgroundColor: colors.bgCard,
+  totalsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  totalChip: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.md - 4,
+    paddingHorizontal: spacing.sm,
     borderRadius: radii.lg,
-    padding: spacing.xl,
+    backgroundColor: colors.bgCard,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: spacing.lg,
   },
-  statsHero: {
-    alignItems: 'center',
-    gap: spacing.xs,
+  totalChipLit: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
   },
-  statsBig: {
-    fontSize: 72,
-    fontWeight: '200',
-    color: colors.calm,
-    letterSpacing: -2,
-  },
-  statsBigLabel: {
-    color: colors.textMuted,
-    fontSize: 18,
-    fontWeight: '500',
-  },
-  statsSecondary: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xl,
-    paddingVertical: spacing.sm,
-  },
-  statCol: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    flex: 1,
-  },
-  statDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: colors.border,
-  },
-  statsSmallNum: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: colors.text,
-    letterSpacing: -0.5,
-  },
-  statsSmallLabel: {
+  totalValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  totalNum: { color: colors.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  totalNumLit: { color: colors.calm },
+  totalLabel: {
     color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  goalPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.full,
-    backgroundColor: colors.calmSoft,
-    borderWidth: 1,
-    borderColor: colors.calm,
-  },
-  goalText: {
-    color: colors.calm,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  shareBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md - 2,
-    borderRadius: radii.full,
-    backgroundColor: colors.calmSoft,
-    borderWidth: 1,
-    borderColor: colors.calm,
-  },
-  shareBtnText: {
-    color: colors.calm,
-    fontSize: 15,
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   historyCard: {
     backgroundColor: colors.bgCard,
@@ -429,7 +497,7 @@ function createStyles(colors: ColorTokens) {
   historyList: { gap: spacing.sm },
   historyRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.sm,
     paddingVertical: 6,
   },
@@ -437,7 +505,16 @@ function createStyles(colors: ColorTokens) {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginTop: 7,
     backgroundColor: colors.calm,
+  },
+  historyBody: { flex: 1, gap: 2 },
+  historyTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  historyIntention: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
   historyDate: {
     flex: 1,

@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import { AppState, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
+import { AppState, Linking, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Animated, {
-  Easing,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
 import {
   isLivePoseCameraAvailable,
   QuiettPoseCameraView,
@@ -17,6 +11,7 @@ import {
 import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
 import {
@@ -34,7 +29,6 @@ import {
   CONFIRM_HOLD_MS,
   formatMmSs,
   reduceSession,
-  sitDurationLabel,
   sitDurationMs,
   type SessionEvent,
   type SessionPhase,
@@ -47,6 +41,7 @@ import {
   loadSitMinutes,
   recordSuccessfulSit,
   type SitMinutes,
+  loadWakeIntention,
 } from '@/lib/storage';
 import {
   armMeditationDeadMan,
@@ -59,25 +54,10 @@ import {
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 
-const PHASE_TONE: Record<SessionPhase, number> = {
-  alarming: 0,
-  detecting: 0.45,
-  meditating: 1,
-  completed: 1,
-  emergency: 0,
-};
-
-function ringColorFor(phase: SessionPhase, colors: ColorTokens): string {
-  switch (phase) {
-    case 'alarming':
-      return colors.alarm;
-    case 'detecting':
-      return colors.sunrise;
-    case 'meditating':
-      return colors.calm;
-    default:
-      return colors.mist;
-  }
+/** Friendly duration for the pre-lock copy ("Then 2 minutes of quiet"). */
+function friendlyDuration(minutes: SitMinutes): string {
+  if (minutes === 0.5) return '30 seconds';
+  return `${minutes} minutes`;
 }
 
 export default function SessionScreen() {
@@ -85,7 +65,7 @@ export default function SessionScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<SessionPhase>('alarming');
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [durationReady, setDurationReady] = useState(false);
@@ -93,8 +73,8 @@ export default function SessionScreen() {
   const [confirmLeft, setConfirmLeft] = useState(CONFIRM_HOLD_MS);
   const [sitLeft, setSitLeft] = useState(() => sitDurationMs(DEFAULT_SIT_MINUTES));
   const durationMs = sitDurationMs(sitMinutes);
-  const durationLabel = sitDurationLabel(sitMinutes);
   const [cameraReady, setCameraReady] = useState(false);
+  const [wakeIntention, setWakeIntention] = useState('');
 
   const preferLive = isLivePoseCameraAvailable();
   const cameraRef = useRef<ElementRef<typeof CameraView>>(null);
@@ -102,8 +82,6 @@ export default function SessionScreen() {
   const sitStart = useRef<number | null>(null);
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
-
-  const phaseTone = useSharedValue<number>(PHASE_TONE.alarming);
 
   const detector = useMemo(
     () =>
@@ -123,11 +101,12 @@ export default function SessionScreen() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const minutes = await loadSitMinutes();
+      const [minutes, intention] = await Promise.all([loadSitMinutes(), loadWakeIntention()]);
       if (!alive) return;
       setSitMinutes(minutes);
       setSitLeft(sitDurationMs(minutes));
       setDurationReady(true);
+      setWakeIntention(intention);
     })();
     return () => {
       alive = false;
@@ -233,17 +212,20 @@ export default function SessionScreen() {
   }, [phase]);
 
   useEffect(() => {
-    phaseTone.value = withTiming(PHASE_TONE[phase], {
-      duration: 480,
-      easing: Easing.inOut(Easing.cubic),
-    });
-  }, [phase, phaseTone]);
-
-  useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
       void requestPermission();
     }
   }, [permission, requestPermission]);
+
+  // Returning from iOS Settings: re-read camera permission so the session continues.
+  const permissionGranted = permission?.granted ?? false;
+  useEffect(() => {
+    if (permissionGranted) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void getPermission();
+    });
+    return () => sub.remove();
+  }, [permissionGranted, getPermission]);
 
   useEffect(() => {
     if (!permission?.granted || !cameraReady) return;
@@ -324,7 +306,10 @@ export default function SessionScreen() {
         releaseAudio();
         router.replace({
           pathname: '/success',
-          params: { streak: String(streak.count) },
+          params: {
+            streak: String(streak.count),
+            ...(wakeIntention.trim() ? { intention: wakeIntention.trim() } : {}),
+          },
         });
       })();
     }
@@ -350,30 +335,10 @@ export default function SessionScreen() {
     [],
   );
 
-  const timerLabel =
-    phase === 'meditating'
-      ? formatMmSs(sitLeft)
-      : durationLabel.replace(' (dev)', '');
+  const timerLabel = phase === 'meditating' ? formatMmSs(sitLeft) : friendlyDuration(sitMinutes);
 
   const confirmProgress = 1 - confirmLeft / CONFIRM_HOLD_MS;
   const sitProgress = durationMs > 0 ? 1 - sitLeft / durationMs : 0;
-  const scrimStyle = useAnimatedStyle(() => {
-    const overlay = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.28)', 'rgba(10,18,32,0.45)', 'rgba(10,18,32,0.55)'],
-    );
-    return { backgroundColor: overlay };
-  });
-
-  const glowStyle = useAnimatedStyle(() => {
-    const glow = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(224,122,85,0.18)'],
-    );
-    return { backgroundColor: glow };
-  });
 
   if (!permission) {
     return <View style={styles.screen} />;
@@ -381,51 +346,71 @@ export default function SessionScreen() {
 
   if (!permission.granted) {
     return (
-      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permBody}>
-          Quiett uses the front camera to confirm you are in frame. Pose runs on-device with Apple
-          Vision — frames never leave your phone.
-        </Text>
-        <PrimaryButton label="Grant camera" onPress={() => void requestPermission()} />
-        <PrimaryButton label="Cancel" variant="ghost" onPress={() => router.back()} />
+      <View style={styles.screen}>
+        <StatusBar style="light" />
+        <SessionBackdrop />
+        <View
+          style={[
+            styles.permContent,
+            { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.md },
+          ]}
+        >
+          <View style={styles.permCopy}>
+            <Text style={styles.permTitle}>Let Quiett see you</Text>
+            <Text style={styles.permBody}>
+              {permission.canAskAgain
+                ? 'Your front camera gently checks that you\u2019re settled and still. It all happens on your phone \u2014 nothing is sent anywhere.'
+                : 'Camera access is off for Quiett. Turn it on in Settings, then come back to settle in. It all happens on your phone \u2014 nothing is sent anywhere.'}
+            </Text>
+            <PrimaryButton
+              label={permission.canAskAgain ? 'Allow camera' : 'Open Settings'}
+              onPress={() => {
+                if (permission.canAskAgain) void requestPermission();
+                else void Linking.openSettings();
+              }}
+              style={styles.permCta}
+            />
+          </View>
+          {/* No casual "Not now" during a real alarm: the only way out is the same
+              emergency hold as the session (resets streak, reschedules, stops audio). */}
+          <EmergencyHoldButton onConfirm={() => dispatch({ type: 'EMERGENCY_DISMISS' })} />
+        </View>
       </View>
     );
   }
 
+  const cameraView = preferLive ? (
+    <QuiettPoseCameraView
+      style={StyleSheet.absoluteFill}
+      isActive={phase !== 'completed' && phase !== 'emergency'}
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(message) => {
+        console.warn('[quiett] live camera', message);
+        setCameraReady(false);
+      }}
+    />
+  ) : (
+    <CameraView
+      ref={cameraRef}
+      style={StyleSheet.absoluteFill}
+      facing="front"
+      mute
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(e) => {
+        console.warn('[quiett] camera', e);
+        setCameraReady(false);
+      }}
+    />
+  );
+
   return (
     <View style={styles.screen}>
-      <View style={styles.cameraLayer}>
-        {preferLive ? (
-          <QuiettPoseCameraView
-            style={StyleSheet.absoluteFill}
-            isActive={phase !== 'completed' && phase !== 'emergency'}
-            onCameraReady={() => {
-              setCameraReady(true);
-                          }}
-            onMountError={(message) => {
-              console.warn('[quiett] live camera', message);
-              setCameraReady(false);
-                          }}
-          />
-        ) : (
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            mute
-            onCameraReady={() => {
-              setCameraReady(true);
-                          }}
-            onMountError={(e) => {
-              console.warn('[quiett] camera', e);
-              setCameraReady(false);
-                          }}
-          />
-        )}
-        <Animated.View pointerEvents="none" style={[styles.scrim, scrimStyle]} />
-        <Animated.View pointerEvents="none" style={[styles.glowTop, glowStyle]} />
-      </View>
+      <StatusBar style="light" />
+      <SessionBackdrop />
 
       <View
         style={[
@@ -438,6 +423,9 @@ export default function SessionScreen() {
       >
         <View style={styles.top}>
           <PoseStatusChip status={pose} />
+          {wakeIntention.length > 0 && phase === 'meditating' && (
+            <Text style={styles.intention}>{wakeIntention}</Text>
+          )}
         </View>
 
         <View style={styles.center}>
@@ -446,7 +434,7 @@ export default function SessionScreen() {
             confirmProgress={confirmProgress}
             sitProgress={sitProgress}
             timerLabel={timerLabel}
-            ringColor={ringColorFor(phase, colors)}
+            camera={cameraView}
           />
         </View>
 
@@ -462,23 +450,20 @@ function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.sessionBgTop,
   },
-  cameraLayer: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: colors.bg,
+  permContent: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'space-between',
   },
-  scrim: {
-    ...StyleSheet.absoluteFill,
+  permCopy: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  glowTop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: '38%',
-    opacity: 0.55,
-  },
+  permCta: { alignSelf: 'stretch', marginTop: spacing.sm },
   ui: {
     flex: 1,
     paddingHorizontal: spacing.lg,
@@ -489,6 +474,14 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.sm,
     minHeight: 40,
   },
+  intention: {
+    ...typography.body,
+    fontStyle: 'italic',
+    color: colors.sessionTextMuted,
+    textAlign: 'center',
+    paddingTop: spacing.xs,
+    paddingHorizontal: spacing.lg,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -498,16 +491,10 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.md,
     alignItems: 'center',
   },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  permTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
+  permTitle: { ...typography.title, fontWeight: '500', color: colors.sessionText, textAlign: 'center' },
   permBody: {
     ...typography.body,
-    color: colors.textMuted,
+    color: colors.sessionTextMuted,
     textAlign: 'center',
     lineHeight: 22,
   },

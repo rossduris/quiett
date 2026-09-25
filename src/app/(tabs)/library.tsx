@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { LayoutChangeEvent } from 'react-native';
 import {
   Pressable,
   ScrollView,
@@ -7,11 +8,14 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
+import { TrackCover } from '@/components/TrackCover';
+import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { meditationSoundById } from '@/constants/sounds';
 import {
@@ -24,12 +28,14 @@ import {
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
-import { previewSoundUrl, stopAllAudio } from '@/lib/audio';
+import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   loadSurpriseMe,
   loadUnlockTrackId,
   saveSurpriseMe,
+  saveSurpriseTrackDate,
   saveUnlockTrackId,
+  markLibraryCategoryUsed,
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 
@@ -46,9 +52,13 @@ const SECTION_ORDER: UnlockTrackKind[] = ['guided', 'music', 'ambient'];
 
 const CARD_W = 156;
 const CARD_H = 196;
+/** Scene-cover art height inside a shelf card (card border is 1pt). */
+const SCENE_ART_H = 108;
+const HERO_ART_H = 132;
 
 function ShelfCard({
   track,
+  locked,
   selected,
   previewing,
   onPress,
@@ -56,65 +66,89 @@ function ShelfCard({
   colors,
 }: {
   track: UnlockTrack;
+  /** Premium track and the user is not Premium: tapping opens the paywall, no preview. */
+  locked: boolean;
   selected?: boolean;
   previewing?: boolean;
   onPress?: () => void;
   onPreview?: () => void;
   colors: ReturnType<typeof useThemeColors>;
 }) {
-  const disabled = track.locked;
+  const disabled = locked;
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const artCovers = useCoverStyle() !== 'classic';
+
+  const topRow = (
+    <>
+      {selected ? (
+        <View style={styles.selectedBadge}>
+          <Text style={styles.selectedBadgeText}>Selected</Text>
+        </View>
+      ) : locked ? (
+        <View style={styles.premiumBadge}>
+          <Text style={styles.premiumBadgeText}>Premium</Text>
+        </View>
+      ) : (
+        <View />
+      )}
+      {!disabled && onPreview ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            previewing ? 'Stop preview' : `Preview ${track.title}`
+          }
+          hitSlop={8}
+          onPress={() => onPreview()}
+          style={({ pressed }) => [
+            styles.previewFab,
+            previewing && styles.previewFabActive,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={previewing ? 'stop' : 'play'}
+            size={14}
+            color={previewing ? colors.calm : colors.text}
+          />
+        </Pressable>
+      ) : null}
+    </>
+  );
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: !!selected, disabled }}
+      accessibilityState={{ selected: !!selected }}
       accessibilityLabel={`${track.title}, ${track.durationLabel}, ${kindLabel(track.kind)}${
-        track.locked ? ', premium coming soon' : selected ? ', selected for next morning' : ''
+        locked ? ', premium, opens Quiett Premium' : selected ? ', selected for next morning' : ''
       }`}
-      disabled={disabled}
-      onPress={onPress && !disabled ? onPress : undefined}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.shelfCard,
         selected && styles.shelfCardSelected,
-        pressed && !disabled && styles.pressed,
-        disabled && styles.shelfCardLocked,
+        pressed && styles.pressed,
+        disabled && (artCovers ? styles.shelfCardLockedScene : styles.shelfCardLocked),
       ]}
     >
+      {artCovers ? (
+        <View style={styles.shelfSceneCard}>
+          <View style={styles.shelfArt}>
+            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} />
+            <View style={[styles.shelfCardTop, styles.shelfArtOverlay]}>{topRow}</View>
+          </View>
+          <View style={styles.shelfSceneBottom}>
+            <Text style={styles.shelfCardTitle} numberOfLines={2}>
+              {track.title}
+            </Text>
+            <Text style={styles.shelfCardMeta}>
+              {track.durationLabel} · {track.mood}
+            </Text>
+          </View>
+        </View>
+      ) : (
       <View style={[styles.shelfCardBg, { backgroundColor: track.accentSoft }]}>
         <View style={styles.shelfCardTop}>
-          {selected ? (
-            <View style={styles.selectedBadge}>
-              <Text style={styles.selectedBadgeText}>Selected</Text>
-            </View>
-          ) : track.locked ? (
-            <View style={styles.premiumBadge}>
-              <Text style={styles.premiumBadgeText}>Premium</Text>
-            </View>
-          ) : (
-            <View />
-          )}
-          {!disabled && onPreview ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                previewing ? `Stop preview of ${track.title}` : `Preview ${track.title}`
-              }
-              hitSlop={8}
-              onPress={() => onPreview()}
-              style={({ pressed }) => [
-                styles.previewFab,
-                previewing && styles.previewFabActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name={previewing ? 'stop' : 'play'}
-                size={14}
-                color={previewing ? colors.calm : colors.text}
-              />
-            </Pressable>
-          ) : null}
+          {topRow}
         </View>
         <View style={styles.shelfMarkWrap}>
           <LibraryTrackMark trackId={track.id} kind={track.kind} color={track.accent} size={72} />
@@ -128,6 +162,7 @@ function ShelfCard({
           </Text>
         </View>
       </View>
+      )}
     </Pressable>
   );
 }
@@ -136,11 +171,19 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const router = useRouter();
+  const { isPremium, trackResetVersion } = usePremium();
+  const artCovers = useCoverStyle() !== 'classic';
+  const [heroW, setHeroW] = useState(0);
+  const onHeroLayout = useCallback((e: LayoutChangeEvent) => {
+    setHeroW(Math.round(e.nativeEvent.layout.width));
+  }, []);
+  const lockedForUser = (track: UnlockTrack) => track.locked && !isPremium;
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
+  const { playingId, toggle: togglePreview } = usePreviewPlayer();
+  const isPreviewing = (trackId: string) => playingId === previewIds.track(trackId);
 
   useFocusEffect(
     useCallback(() => {
@@ -153,28 +196,44 @@ export default function LibraryScreen() {
       })();
       return () => {
         alive = false;
-        void stopAllAudio();
-        setPreviewId(null);
-        setPreviewBusy(false);
+        stopPreview();
       };
     }, []),
   );
 
+  // Premium lapsed while this tab was open → show the free fallback the provider saved.
+  useEffect(() => {
+    if (trackResetVersion === 0) return;
+    void loadUnlockTrackId().then(setSelectedId);
+  }, [trackResetVersion]);
+
   useEffect(() => {
     return () => {
-      void stopAllAudio();
+      stopPreview();
     };
   }, []);
 
   const selectedTrack = useMemo(() => unlockTrackById(selectedId), [selectedId]);
 
   const onSelectTrack = async (track: UnlockTrack) => {
-    if (track.locked) return;
-    const saved = await saveUnlockTrackId(track.id);
+    if (lockedForUser(track)) {
+      stopPreview();
+      router.push('/paywall');
+      return;
+    }
+    const saved = await saveUnlockTrackId(track.id, { premium: isPremium });
     setSelectedId(saved);
     if (surpriseMe) {
       setSurpriseMe(false);
       await saveSurpriseMe(false);
+    }
+    
+    if (track.kind === 'guided') {
+      await markLibraryCategoryUsed('guided');
+    } else if (track.kind === 'music') {
+      await markLibraryCategoryUsed('healing');
+    } else if (track.kind === 'ambient') {
+      await markLibraryCategoryUsed('ambient');
     }
   };
 
@@ -183,29 +242,18 @@ export default function LibraryScreen() {
     setSurpriseMe(next);
     await saveSurpriseMe(next);
     if (next) {
-      const picked = pickSurpriseTrack(selectedId);
-      const id = await saveUnlockTrackId(picked.id);
+      const picked = pickSurpriseTrack(selectedId, isPremium);
+      const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
+      await saveSurpriseTrackDate();
       setSelectedId(id);
     }
   };
 
-  const onPreview = async (track: UnlockTrack) => {
-    if (track.locked || previewBusy) return;
-    if (previewId === track.id) {
-      await stopAllAudio();
-      setPreviewId(null);
-      return;
-    }
-    setPreviewBusy(true);
-    setPreviewId(track.id);
-    try {
-      const sound = meditationSoundById(track.playbackSoundId);
-      if (sound.url == null) return;
-      await previewSoundUrl(sound.url);
-    } finally {
-      setPreviewBusy(false);
-      setPreviewId((cur) => (cur === track.id ? null : cur));
-    }
+  const onPreview = (track: UnlockTrack) => {
+    if (lockedForUser(track)) return;
+    const sound = meditationSoundById(track.playbackSoundId);
+    if (sound.url == null) return;
+    togglePreview(previewIds.track(track.id), sound.url, 'track');
   };
 
   const sections = useMemo(() => {
@@ -224,7 +272,24 @@ export default function LibraryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>Library</Text>
+          <View style={styles.headerRow}>
+            <Text style={[styles.screenTitle, { color: colors.text }]}>Library</Text>
+            {!isPremium ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Quiett Premium"
+                onPress={() => {
+                  stopPreview();
+                  router.push('/paywall');
+                }}
+                hitSlop={6}
+                style={({ pressed }) => [styles.premiumPill, pressed && styles.pressed]}
+              >
+                <Ionicons name="sparkles-outline" size={13} color={colors.calm} />
+                <Text style={styles.premiumPillText}>Premium</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <Text style={[styles.lead, { color: colors.textMuted }]}>
             Guided, healing tones, and ambient for tomorrow morning. Swipe each shelf —
             pick freely, nothing locked behind finishing another track.
@@ -259,27 +324,38 @@ export default function LibraryScreen() {
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              if (!selectedTrack.locked) setFilter(selectedTrack.kind);
+              if (!lockedForUser(selectedTrack)) setFilter(selectedTrack.kind);
             }}
             style={({ pressed }) => [styles.heroCard, pressed && styles.pressed]}
           >
             <View
+              onLayout={artCovers ? onHeroLayout : undefined}
               style={[
                 styles.heroBg,
-                {
-                  backgroundColor: selectedTrack.accentSoft,
-                  borderColor: selectedTrack.accent,
-                },
+                artCovers
+                  ? styles.heroBgScene
+                  : {
+                      backgroundColor: selectedTrack.accentSoft,
+                      borderColor: selectedTrack.accent,
+                    },
               ]}
             >
-              <View style={styles.heroMarkWrap}>
-                <LibraryTrackMark
-                  trackId={selectedTrack.id}
-                  kind={selectedTrack.kind}
-                  color={selectedTrack.accent}
-                  size={88}
-                />
-              </View>
+              {artCovers ? (
+                <View style={styles.heroArt}>
+                  {heroW > 0 ? (
+                    <TrackCover trackId={selectedTrack.id} size={heroW - 2} height={HERO_ART_H} />
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.heroMarkWrap}>
+                  <LibraryTrackMark
+                    trackId={selectedTrack.id}
+                    kind={selectedTrack.kind}
+                    color={selectedTrack.accent}
+                    size={88}
+                  />
+                </View>
+              )}
               <View style={styles.heroBody}>
                 <Text style={styles.heroTitle}>{selectedTrack.title}</Text>
                 <Text style={styles.heroBlurb} numberOfLines={2}>
@@ -290,22 +366,24 @@ export default function LibraryScreen() {
                   {surpriseMe ? ' · rotating' : ''}
                 </Text>
               </View>
-              {!selectedTrack.locked ? (
+              {!lockedForUser(selectedTrack) ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Preview ${selectedTrack.title}`}
-                  onPress={() => void onPreview(selectedTrack)}
+                  accessibilityLabel={
+                    isPreviewing(selectedTrack.id) ? 'Stop preview' : `Preview ${selectedTrack.title}`
+                  }
+                  onPress={() => onPreview(selectedTrack)}
                   style={({ pressed }) => [
                     styles.previewFab,
                     styles.heroPreviewFab,
-                    previewId === selectedTrack.id && styles.previewFabActive,
+                    isPreviewing(selectedTrack.id) && styles.previewFabActive,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Ionicons
-                    name={previewId === selectedTrack.id ? 'stop' : 'play'}
+                    name={isPreviewing(selectedTrack.id) ? 'stop' : 'play'}
                     size={16}
-                    color={previewId === selectedTrack.id ? colors.calm : colors.text}
+                    color={isPreviewing(selectedTrack.id) ? colors.calm : colors.text}
                   />
                 </Pressable>
               ) : null}
@@ -360,11 +438,12 @@ export default function LibraryScreen() {
                   <ShelfCard
                     key={track.id}
                     track={track}
+                    locked={lockedForUser(track)}
                     selected={selectedId === track.id}
-                    previewing={previewId === track.id}
+                    previewing={isPreviewing(track.id)}
                     onPress={() => void onSelectTrack(track)}
                     colors={colors}
-                    onPreview={() => void onPreview(track)}
+                    onPreview={() => onPreview(track)}
                   />
                 ))}
               </ScrollView>
@@ -389,6 +468,22 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.sm,
     marginBottom: spacing.xs,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  premiumPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: colors.calmSoft,
+  },
+  premiumPillText: { color: colors.calm, fontSize: 12, fontWeight: '700' },
   screenTitle: { ...typography.title, color: colors.text },
   lead: { ...typography.body, color: colors.textMuted, lineHeight: 24 },
   heroWrap: {
@@ -438,6 +533,13 @@ function createStyles(colors: ColorTokens) {
     paddingHorizontal: spacing.md,
     justifyContent: 'space-between',
   },
+  heroBgScene: {
+    paddingTop: 0,
+    paddingHorizontal: 0,
+    backgroundColor: colors.bgCard,
+    borderColor: colors.border,
+  },
+  heroArt: { height: HERO_ART_H, overflow: 'hidden' },
   heroMarkWrap: {
     alignItems: 'flex-start',
     paddingLeft: spacing.xs,
@@ -508,6 +610,17 @@ function createStyles(colors: ColorTokens) {
     borderColor: colors.calm,
   },
   shelfCardLocked: { opacity: 0.72 },
+  shelfCardLockedScene: { opacity: 0.94 },
+  shelfSceneCard: { flex: 1, backgroundColor: colors.bgCard },
+  shelfArt: { height: SCENE_ART_H, overflow: 'hidden' },
+  shelfArtOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
+  shelfSceneBottom: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+    justifyContent: 'center',
+  },
   shelfCardBg: { flex: 1, justifyContent: 'space-between' },
   shelfMarkWrap: {
     flex: 1,

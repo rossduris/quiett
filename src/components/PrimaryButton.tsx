@@ -1,5 +1,8 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radii, spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 
 type Props = {
   label: string;
@@ -16,6 +19,8 @@ export function PrimaryButton({
   style,
   disabled,
 }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <Pressable
       accessibilityRole="button"
@@ -37,7 +42,8 @@ export function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   base: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
@@ -60,3 +66,4 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   label: { color: colors.text, fontSize: 16, fontWeight: '600' },
 });
+}

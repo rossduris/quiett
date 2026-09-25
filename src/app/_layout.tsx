@@ -2,6 +2,7 @@ import { Stack, ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } fro
 import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { ThemeProvider, useTheme } from '@/lib/theme-provider';
+import { PremiumProvider } from '@/lib/premium-provider';
 
 function RootStack() {
   const { colors, theme } = useTheme();
@@ -21,17 +22,18 @@ function RootStack() {
             headerTitleStyle: { fontWeight: '600' },
             headerShadowVisible: false,
             contentStyle: { backgroundColor: colors.bg },
+            // Every pushed screen renders its own <ScreenHeader />; the native header is off
+            // app-wide so no page shows a double header. Pushes slide in from the right.
+            headerShown: false,
+            animation: 'slide_from_right',
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
-            name="settings"
-            options={{
-              title: 'Settings',
-              headerBackTitle: 'Back',
-              animation: 'slide_from_right',
-            }}
+            name="onboarding"
+            options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }}
           />
+          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen
             name="session"
             options={{
@@ -46,6 +48,10 @@ function RootStack() {
               headerShown: false,
               animation: 'fade',
             }}
+          />
+          <Stack.Screen
+            name="paywall"
+            options={{ headerShown: false, presentation: 'modal', animation: 'default' }}
           />
           <Stack.Screen
             name="emergency"
@@ -63,7 +69,10 @@ function RootStack() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootStack />
+      {/* RevenueCat initializes once here; falls back to "unavailable" on builds without it. */}
+      <PremiumProvider>
+        <RootStack />
+      </PremiumProvider>
     </ThemeProvider>
   );
 }

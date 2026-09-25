@@ -6,15 +6,15 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "quiett",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.rossduris.quiett",
       "infoPlist": {
-        "NSCameraUsageDescription": "Quiett uses the front camera to confirm you are sitting upright during your morning sit.",
+        "NSCameraUsageDescription": "Quiett uses the front camera to check that you’re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSAlarmKitUsageDescription": "Quiett schedules a morning alarm that only ends after you sit. Allow alarms so it can wake you even when the phone is locked."
+        "NSAlarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment."
       },
       "appleTeamId": "EY7Z8634G7"
     },
@@ -53,7 +53,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Quiett to use the front camera to confirm your morning sit.",
+          "cameraPermission": "Quiett uses the front camera to check that you’re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -70,7 +70,7 @@
       [
         "./plugins/withQuiettAlarmScheduler.js",
         {
-          "alarmKitUsageDescription": "Quiett schedules a morning alarm that only ends after you sit. Allow alarms so it can wake you even when the phone is locked.",
+          "alarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment.",
           "iosAlarmSounds": [
             "./assets/audio/quiett-harsh.caf",
             "./assets/audio/alarms/rise-and-shine.caf",
@@ -88,7 +88,8 @@
           ]
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "./plugins/withoutPushEntitlement.js"
     ],
     "experiments": {
       "typedRoutes": true,
