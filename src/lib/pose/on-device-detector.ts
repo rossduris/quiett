@@ -11,21 +11,28 @@ import {
   classifyPresenceAndUpright,
   createHoldingHysteresis,
   isStill,
+  stillnessTravel,
   toPoseStatus,
   type MotionSample,
 } from './classify';
 import {
+  BRIGHTNESS_MIN,
   CAPTURE_INTERVAL_MS,
   CAPTURE_QUALITY,
   ENTER_HOLDING_FRAMES,
   FACE_PITCH_MAX,
   FACE_YAW_MAX,
   LEAVE_HOLDING_FRAMES,
+  MIN_JOINT_CONFIDENCE,
+  STILLNESS_MAX_MOTION,
 } from './thresholds';
 import { createProppedMonitor } from './device-propped';
 import type {
+  PoseCheck,
   PoseDetector,
   PoseDetectorListener,
+  PoseDetectorMode,
+  PoseDiagnostics,
   PoseLandmarks,
   PoseSample,
   PoseStatus,
@@ -41,6 +48,13 @@ export type LivePoseDetectorOptions = {
    */
   subscribeToNativeEvents?: (listener: PoseFrameListener) => () => void;
   forceMock?: boolean;
+  /**
+   * Which gate logic to use. Must match the `detectorMode` prop given to
+   * QuiettPoseCameraView (native runs the matching Vision requests). Default 'legacy'.
+   * If a body mode is requested but the native frame has no `detector` block
+   * (old native build), frames are classified with legacy logic.
+   */
+  detector?: PoseDetectorMode;
 };
 
 export type CapturePoseDetectorOptions = {
@@ -57,7 +71,47 @@ export type OnDevicePoseDetector = PoseDetector & {
   clearSimulate: () => void;
   usingNative: boolean;
   mode: 'live' | 'capture';
+  detector: PoseDetectorMode;
 };
+
+const CHECK_WEIGHTS: Record<string, number> = {
+  lighting: 1,
+  facing: 1.5,
+  shoulderLevel: 1,
+  headCentered: 1,
+  torsoUpright: 1,
+  handsLow: 1.5,
+  handsAway: 1.5,
+  stillness: 1.5,
+};
+
+function softScore(c: PoseCheck): number {
+  if (c.pass) return 1;
+  if (c.value == null || !Number.isFinite(c.value) || c.limit <= 0) return 0;
+  if (c.kind === 'max') return Math.max(0, Math.min(1, 1 - (c.value - c.limit) / c.limit)) * 0.8;
+  if (c.kind === 'min') return Math.max(0, Math.min(1, c.value / c.limit)) * 0.8;
+  return 0;
+}
+
+/** Weighted 0–100 score over available checks (mirrors native QuiettPoseBody.summarize). */
+function scoreChecks(checks: PoseCheck[], personFound: boolean): number {
+  let total = 0;
+  let weight = 0;
+  for (const c of checks) {
+    if (!c.available) continue;
+    const w = CHECK_WEIGHTS[c.name] ?? 1;
+    total += softScore(c) * w;
+    weight += w;
+  }
+  const score = weight > 0 ? Math.round((total / weight) * 100) : 0;
+  return personFound ? score : Math.min(score, 20);
+}
+
+function detectedJointNames(joints: PoseLandmarks['joints']): string[] {
+  return Object.keys(joints)
+    .filter((k) => (joints[k]?.confidence ?? 0) >= MIN_JOINT_CONFIDENCE)
+    .sort();
+}
 
 function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
   const r = raw as NativePoseResult & {
@@ -76,6 +130,13 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
     handCount: r.handCount,
     faceYaw: r.faceYaw,
     facePitch: r.facePitch,
+    detectorMode: r.detectorMode,
+    detector: r.detector as PoseLandmarks['detector'],
+    processingMs: r.processingMs,
+    imageWidth: r.imageWidth,
+    imageHeight: r.imageHeight,
+    orientation: r.orientation,
+    targetFps: r.targetFps,
     brightness: r.brightness,
     // Missing flag (old native binary) → fail open until rebuild.
     brightEnough: r.brightEnough === undefined ? true : r.brightEnough === true,
@@ -83,7 +144,7 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
 }
 
 /**
- * On-device sit / in-frame detector (iOS Apple Vision via QuiettPose).
+ * On-device meditation-pose / in-frame detector (iOS Apple Vision via QuiettPose).
  *
  * Gate: propped + face looking at camera + still → holding. Live Vision preferred; capture fallback.
  */
@@ -112,17 +173,104 @@ export function createOnDevicePoseDetector(
 
   const mode: 'live' | 'capture' =
     options.mode === 'live' ? 'live' : 'capture';
+  // Stills (capture) only run the legacy native analyzer.
+  const detector: PoseDetectorMode =
+    mode === 'live' ? ((options as LivePoseDetectorOptions).detector ?? 'legacy') : 'legacy';
   const usingNative = !options.forceMock && isNativePoseAvailable();
 
-  const emit = (status: PoseStatus, confidence: number) => {
+  let lastDiagnostics: PoseDiagnostics | undefined;
+
+  const emit = (status: PoseStatus, confidence: number, diagnostics?: PoseDiagnostics) => {
     lastStatus = status;
     lastConfidence = confidence;
-    const sample: PoseSample = { status, confidence, timestamp: Date.now() };
+    if (diagnostics) lastDiagnostics = diagnostics;
+    const sample: PoseSample = {
+      status,
+      confidence,
+      timestamp: Date.now(),
+      diagnostics: diagnostics ?? lastDiagnostics,
+    };
     listeners.forEach((l) => l(sample));
+  };
+
+  const baseDiagnostics = (
+    landmarks: PoseLandmarks,
+    phonePropped: boolean,
+  ): Pick<
+    PoseDiagnostics,
+    | 'mode'
+    | 'phonePropped'
+    | 'joints'
+    | 'processingMs'
+    | 'imageWidth'
+    | 'imageHeight'
+    | 'orientation'
+    | 'targetFps'
+    | 'timestamp'
+  > => ({
+    mode: detector,
+    phonePropped,
+    joints: landmarks.joints ?? {},
+    processingMs: landmarks.processingMs,
+    imageWidth: landmarks.imageWidth,
+    imageHeight: landmarks.imageHeight,
+    orientation: landmarks.orientation,
+    targetFps: landmarks.targetFps,
+    timestamp: Date.now(),
+  });
+
+  /** body2d / body3d: native computed the checks; JS maps them to a status. */
+  const processBody = (
+    landmarks: PoseLandmarks,
+    det: NonNullable<PoseLandmarks['detector']>,
+    phonePropped: boolean,
+  ) => {
+    const order = det.checkOrder ?? Object.keys(det.checks ?? {});
+    const checks: PoseCheck[] = order
+      .map((k) => det.checks?.[k])
+      .filter((c): c is PoseCheck => !!c);
+    const byName = (n: string) => checks.find((c) => c.name === n);
+    const fails = (n: string) => {
+      const c = byName(n);
+      return !!c && c.available && !c.pass;
+    };
+    let raw: PoseStatus;
+    if (!phonePropped) raw = 'not_upright';
+    else if (fails('lighting')) raw = 'too_dark';
+    else if (!det.personFound || fails('facing')) raw = 'absent';
+    else if (fails('handsLow')) raw = 'hands_near';
+    else if (fails('shoulderLevel') || fails('headCentered') || fails('torsoUpright'))
+      raw = 'posture';
+    else if (fails('stillness')) raw = 'fidgeting';
+    else raw = 'holding';
+
+    const diagnostics: PoseDiagnostics = {
+      ...baseDiagnostics(landmarks, phonePropped),
+      modeUsed: det.modeUsed ?? detector,
+      fallback: det.fallback,
+      pass: raw === 'holding',
+      score: phonePropped ? Math.round(det.score) : Math.min(Math.round(det.score), 20),
+      rawStatus: raw,
+      checks,
+      jointsDetected: det.jointsDetected ?? [],
+      processingMs: det.processingMs ?? landmarks.processingMs,
+    };
+    lastPresent = det.personFound;
+    lastFaceLooking = !fails('facing');
+    lastBrightEnough = !fails('lighting');
+    lastConf = det.score / 100;
+    const published = hysteresis.push(raw);
+    emit(published, det.score / 100, diagnostics);
   };
 
   const processLandmarks = (landmarks: PoseLandmarks) => {
     const phonePropped = proppedMonitor.isPropped();
+
+    if (detector !== 'legacy' && landmarks.available && landmarks.detector) {
+      motion = [];
+      processBody(landmarks, landmarks.detector, phonePropped);
+      return;
+    }
 
     if (!phonePropped) {
       motion = [];
@@ -196,6 +344,7 @@ export function createOnDevicePoseDetector(
       wristOrElbow('leftWrist') || wristOrElbow('rightWrist');
     const handsVisible = handsFromFlag || handsFromBody || (landmarks.handCount ?? 0) > 0;
 
+    const travel = facePresent ? stillnessTravel(motion, now) : undefined;
     const still = facePresent ? isStill(motion, now) : false;
     // Holding only if brightEnough AND faceLooking AND zero hands AND still (toPoseStatus enforces).
     const brightEnough =
@@ -214,8 +363,60 @@ export function createOnDevicePoseDetector(
     lastFaceLooking = faceLooking;
     lastBrightEnough = brightEnough;
     lastConf = classified.confidence;
+
+    const legacyChecks: PoseCheck[] = [
+      {
+        name: 'lighting',
+        value: landmarks.brightness,
+        limit: BRIGHTNESS_MIN,
+        pass: brightEnough,
+        available: landmarks.brightness != null,
+        unit: 'luma',
+        kind: 'min',
+      },
+      {
+        name: 'facing',
+        value: yaw != null ? Math.abs(yaw) * (180 / Math.PI) : undefined,
+        limit: FACE_YAW_MAX * (180 / Math.PI),
+        pass: faceLooking,
+        available: true,
+        unit: '° yaw',
+        kind: 'bool',
+        note: facePresent ? undefined : 'no face',
+      },
+      {
+        name: 'handsAway',
+        value: landmarks.handCount ?? (handsVisible ? 1 : 0),
+        limit: 0,
+        pass: !handsVisible,
+        available: true,
+        unit: 'hands',
+        kind: 'bool',
+      },
+      {
+        name: 'stillness',
+        value: travel !== undefined && !Number.isNaN(travel) ? travel : undefined,
+        limit: STILLNESS_MAX_MOTION,
+        pass: still,
+        available: facePresent && travel !== undefined && !Number.isNaN(travel),
+        unit: 'travel',
+        kind: 'max',
+        note: travel === undefined ? 'warming up' : undefined,
+      },
+    ];
+    const diagnostics: PoseDiagnostics = {
+      ...baseDiagnostics(landmarks, phonePropped),
+      modeUsed: 'legacy',
+      fallback:
+        detector !== 'legacy' ? 'native frame had no body-pose result (rebuild native?)' : undefined,
+      pass: raw === 'holding',
+      score: scoreChecks(legacyChecks, facePresent),
+      rawStatus: raw,
+      checks: legacyChecks,
+      jointsDetected: detectedJointNames(landmarks.joints),
+    };
     const published = hysteresis.push(raw);
-    emit(published, classified.confidence);
+    emit(published, classified.confidence, diagnostics);
   };
 
   const onProppedChange = () => {
@@ -281,11 +482,13 @@ export function createOnDevicePoseDetector(
   return {
     usingNative,
     mode,
+    detector,
     start() {
       if (!stopped && (timer || unsubLive)) return;
       stopped = false;
       hysteresis.reset();
       motion = [];
+      lastDiagnostics = undefined;
       proppedMonitor.start();
       unsubPropped = proppedMonitor.subscribe(() => onProppedChange());
 
@@ -336,6 +539,7 @@ export function createOnDevicePoseDetector(
         status: lastStatus,
         confidence: simulated != null ? 1 : lastConfidence,
         timestamp: Date.now(),
+        diagnostics: lastDiagnostics,
       });
       return () => {
         listeners.delete(listener);

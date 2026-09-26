@@ -3,6 +3,9 @@ export type {
   PoseDetectorListener,
   PoseJoint,
   PoseLandmarks,
+  PoseCheck,
+  PoseDetectorMode,
+  PoseDiagnostics,
   PoseSample,
   PoseStatus,
 } from './types';
@@ -19,6 +22,7 @@ export {
   classifyPresenceAndUpright,
   createHoldingHysteresis,
   isStill,
+  stillnessTravel,
   toPoseStatus,
 } from './classify';
 export * from './thresholds';

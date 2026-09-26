@@ -18,6 +18,7 @@ import {
   type GradStop,
   type SceneMode,
   type SceneSpec,
+  type SceneTokens,
   type SvgDef,
   type SvgNode,
 } from '@/lib/scene-gen';
@@ -40,6 +41,11 @@ type Props = {
 /** Theme → palette family: light UI (peachCream) = warm light scenes, dark UI = night palette. */
 export function sceneModeFor(colors: ColorTokens): SceneMode {
   return colors.statusBarStyle === 'dark' ? 'light' : 'dark';
+}
+
+/** Theme tokens the scene generator uses for motif colours (balloons, flowers, brass, felt, night sky depth). */
+export function sceneTokensFor(colors: ColorTokens): SceneTokens {
+  return { accent: colors.accent, calm: colors.calm, sunrise: colors.sunrise, warning: colors.warning, bg: colors.bg };
 }
 
 function stops(list: GradStop[]) {
@@ -123,14 +129,16 @@ function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, style }: P
   // Quantise aspect so similar tiles share a cached model.
   const aspect = Math.round((h / size) * 20) / 20;
 
+  const tokens = useMemo(() => sceneTokensFor(colors), [colors]);
+
   const content = useMemo(() => {
-    const model = buildSceneCached(scene, { mode: sceneMode, aspect, lod: level, accent: colors.accent });
+    const model = buildSceneCached(scene, { mode: sceneMode, aspect, lod: level, accent: colors.accent, tokens });
     return {
       vb: `0 0 ${model.w} ${model.h}`,
       defs: model.defs.map(renderDef),
       nodes: model.nodes.map((n, i) => renderNode(n, i)),
     };
-  }, [scene, sceneMode, aspect, level, colors.accent]);
+  }, [scene, sceneMode, aspect, level, colors.accent, tokens]);
 
   const frame = useMemo(
     () => [styles.frame, { width: size, height: h, borderRadius: radius }, style],

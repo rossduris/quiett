@@ -55,10 +55,12 @@ export const TRACK_COVER_MAP: Record<string, TrackCoverKey> = {
   'ambient:calm_waves': '27',
   'ambient:morning_birds': '28',
   'ambient:soft_rain': '26',
+  'ambient:morning_pond': '07',
   // Meditation sounds (raw playback ids)
   'sound:calm_waves': '27',
   'sound:morning_birds': '28',
   'sound:soft_rain': '26',
+  'sound:morning_pond': '07',
   // Alarm sounds
   'alarm:quiett_harsh': '17',
   'alarm:rise_and_shine': '12',

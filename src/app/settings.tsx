@@ -10,6 +10,15 @@ import { describeUnavailableReason } from '@/lib/purchases';
 import { ThemePicker } from '@/components/ThemePicker';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { COVER_STYLES, setCoverStyle, useCoverStyle } from '@/lib/scene-cover-pref';
+import { isBody3DPoseAvailable } from 'quiett-pose';
+import {
+  POSE_DETECTOR_LABELS,
+  POSE_DETECTOR_MODES,
+  setPoseDebugOverlay,
+  setPoseDetectorMode,
+  usePoseDebugOverlay,
+  usePoseDetectorMode,
+} from '@/lib/pose-dev-pref';
 import {
   DEFAULT_SIT_MINUTES,
   loadSitMinutes,
@@ -30,6 +39,9 @@ export default function SettingsScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const premium = usePremium();
   const coverStyle = useCoverStyle();
+  const poseDetectorMode = usePoseDetectorMode();
+  const poseDebugOverlay = usePoseDebugOverlay();
+  const body3DAvailable = useMemo(() => isBody3DPoseAvailable(), []);
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [deadlinePrefs, setDeadlinePrefs] = useState<StreakDeadlinePrefs>({
     enabled: false,
@@ -256,6 +268,48 @@ export default function SettingsScreen() {
               <Text style={[styles.linkText, { color: colors.text }]}>Cover gallery (dev)</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
+          </Pressable>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>Pose detector (dev)</Text>
+          <View style={styles.row}>
+            {POSE_DETECTOR_MODES.map((m) => {
+              const selected = m === poseDetectorMode;
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => void setPoseDetectorMode(m)}
+                  style={[
+                    styles.pill,
+                    { backgroundColor: colors.bgElevated, borderColor: colors.border },
+                    selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>
+                    {POSE_DETECTOR_LABELS[m]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {poseDetectorMode === 'body3d' && !body3DAvailable ? (
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              3D body pose needs iOS 17 and a native rebuild — falls back to 2D body.
+            </Text>
+          ) : null}
+          <Pressable
+            onPress={() => void setPoseDebugOverlay(!poseDebugOverlay)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: poseDebugOverlay }}
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="body-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Pose debug overlay</Text>
+            </View>
+            <View style={[styles.miniSwitch, poseDebugOverlay && styles.miniSwitchOn]}>
+              <View style={[styles.miniThumb, poseDebugOverlay && styles.miniThumbOn]} />
+            </View>
           </Pressable>
           <Text style={[styles.hint, { color: colors.textMuted }]}>
             RevenueCat:{' '}

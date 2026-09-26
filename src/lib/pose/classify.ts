@@ -7,6 +7,7 @@ import {
   MIN_SHOULDER_ABOVE_HIP,
   STILLNESS_MAX_MOTION,
   STILLNESS_WINDOW_MS,
+  LEAVE_HOLDING_GRACE_MS,
 } from './thresholds';
 
 function joint(landmarks: PoseLandmarks, name: string): PoseJoint | null {
@@ -122,9 +123,20 @@ export function classifyPresenceAndUpright(landmarks: PoseLandmarks): ClassifyRe
 
 /** Multi-point stillness: average travel across mid-shoulders (+ nose). */
 export function isStill(history: MotionSample[], now: number): boolean {
+  const travel = stillnessTravel(history, now);
+  if (travel === undefined) return true;
+  if (Number.isNaN(travel)) return false;
+  return travel <= STILLNESS_MAX_MOTION;
+}
+
+/**
+ * Average per-step travel (normalized) in the stillness window.
+ * undefined = too few samples (warming up, treated as still); NaN = no comparable steps.
+ */
+export function stillnessTravel(history: MotionSample[], now: number): number | undefined {
   const windowed = history.filter((h) => now - h.timestamp <= STILLNESS_WINDOW_MS);
   // Not enough samples yet — treat as still so we can ENTER holding (was stuck fidgeting).
-  if (windowed.length < 3) return true;
+  if (windowed.length < 3) return undefined;
 
   let totalTravel = 0;
   let steps = 0;
@@ -142,8 +154,8 @@ export function isStill(history: MotionSample[], now: number): boolean {
     totalTravel += frameTravel / n;
     steps += 1;
   }
-  if (steps === 0) return false;
-  return totalTravel / steps <= STILLNESS_MAX_MOTION;
+  if (steps === 0) return NaN;
+  return totalTravel / steps;
 }
 
 export function toPoseStatus(
@@ -155,12 +167,14 @@ export function toPoseStatus(
   faceLooking: boolean = false,
   handsNearFace: boolean = false,
   brightEnough: boolean = true,
+  postureOk: boolean = true,
 ): PoseStatus {
   // Gates: propped + bright enough + face looking + no hands + still.
   if (!phonePropped) return 'not_upright'; // chip: "prop phone"
   if (!brightEnough) return 'too_dark'; // chip: "more light" (softer threshold than original)
   if (!present || !faceLooking) return 'absent'; // no face / not facing camera
   if (handsNearFace) return 'hands_near'; // chip: "hands away"
+  if (!postureOk) return 'posture'; // body modes only
   if (!still) return 'fidgeting'; // chip: "hold still"
   return 'holding';
 }
@@ -168,29 +182,43 @@ export function toPoseStatus(
 /**
  * Holding hysteresis:
  * - Harder to ENTER holding (need `enterNeeds` consecutive raw holding)
- * - Easier to LEAVE holding (need `leaveNeeds` consecutive non-holding)
+ * - LEAVE needs `leaveNeeds` consecutive non-holding frames AND the non-holding run
+ *   must have lasted `leaveGraceMs` (default LEAVE_HOLDING_GRACE_MS) — so a brief
+ *   flicker doesn't reset the 2.5 s hold. `not_upright` (phone flat) leaves immediately.
  */
 export function createHoldingHysteresis(
   enterNeeds: number,
   leaveNeeds: number,
+  leaveGraceMs: number = LEAVE_HOLDING_GRACE_MS,
 ): {
-  push: (raw: PoseStatus) => PoseStatus;
+  push: (raw: PoseStatus, now?: number) => PoseStatus;
   reset: () => void;
   published: () => PoseStatus;
 } {
   let published: PoseStatus = 'absent';
   let enterStreak = 0;
   let leaveStreak = 0;
+  let leaveStartedAt: number | null = null;
 
   return {
-    push(raw: PoseStatus) {
+    push(raw: PoseStatus, now: number = Date.now()) {
       if (published === 'holding') {
         if (raw === 'holding') {
           leaveStreak = 0;
+          leaveStartedAt = null;
+          return published;
+        }
+        if (raw === 'not_upright') {
+          published = raw;
+          leaveStreak = 0;
+          enterStreak = 0;
+          leaveStartedAt = null;
           return published;
         }
         leaveStreak += 1;
-        if (leaveStreak >= leaveNeeds) {
+        if (leaveStartedAt == null) leaveStartedAt = now;
+        if (leaveStreak >= leaveNeeds && now - leaveStartedAt >= leaveGraceMs) {
+          leaveStartedAt = null;
           published = raw;
           leaveStreak = 0;
           enterStreak = 0;
@@ -219,6 +247,7 @@ export function createHoldingHysteresis(
       published = 'absent';
       enterStreak = 0;
       leaveStreak = 0;
+      leaveStartedAt = null;
     },
     published: () => published,
   };

@@ -27,12 +27,14 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
       return { label: 'Prop your phone up, facing you', inFrame: false };
     case 'too_dark':
       return { label: 'A little more light helps', inFrame: false };
+    case 'posture':
+      return { label: 'Lengthen your spine, soften your shoulders', inFrame: false };
     default:
       return { label: 'Bring your face into the circle', inFrame: false };
   }
 }
 
-/** Gates: prop phone → more light (softer) → face in circle → hands resting → stillness. */
+/** Gates: prop phone → more light (softer) → face in circle → hands resting → posture (body modes) → stillness. */
 export function PoseStatusChip({ status, confidence, showConfidence }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);

@@ -14,12 +14,57 @@ export type PoseStatus =
   | 'too_dark'
   | 'fidgeting'
   | 'hands_near'
+  /** Body modes: shoulders / head / torso alignment off. */
+  | 'posture'
   | 'holding';
+
+export type PoseDetectorMode = 'legacy' | 'body2d' | 'body3d';
+
+/** One check in the common detector result (all modes). */
+export type PoseCheck = {
+  name: string;
+  value?: number;
+  limit: number;
+  pass: boolean;
+  /** False when not measurable this frame — does not block. */
+  available: boolean;
+  unit: string;
+  kind?: 'max' | 'min' | 'bool';
+  note?: string;
+};
+
+/** Common per-frame detector result — same shape for legacy / body2d / body3d. */
+export type PoseDiagnostics = {
+  /** Requested mode. */
+  mode: PoseDetectorMode;
+  /** Mode that actually ran (body3d → body2d fallback). */
+  modeUsed: PoseDetectorMode;
+  fallback?: string;
+  /** Raw (pre-hysteresis) pass for this frame. */
+  pass: boolean;
+  /** 0–100 */
+  score: number;
+  /** Raw status for this frame (before hysteresis). */
+  rawStatus: PoseStatus;
+  phonePropped: boolean;
+  checks: PoseCheck[];
+  jointsDetected: string[];
+  /** Normalized joints (Vision coords, origin bottom-left) for the debug overlay. */
+  joints: Record<string, PoseJoint>;
+  processingMs?: number;
+  imageWidth?: number;
+  imageHeight?: number;
+  orientation?: string;
+  targetFps?: number;
+  timestamp: number;
+};
 
 export type PoseSample = {
   status: PoseStatus;
   confidence: number;
   timestamp: number;
+  /** Present on live native frames (debug overlay / dev readout). */
+  diagnostics?: PoseDiagnostics;
 };
 
 export type PoseDetectorListener = (sample: PoseSample) => void;
@@ -56,4 +101,24 @@ export type PoseLandmarks = {
   handCount?: number;
   faceYaw?: number;
   facePitch?: number;
+  detectorMode?: PoseDetectorMode;
+  /** Native body-mode result (body2d / body3d). */
+  detector?: {
+    mode: PoseDetectorMode;
+    modeUsed: PoseDetectorMode;
+    fallback?: string;
+    pass: boolean;
+    score: number;
+    personFound: boolean;
+    checks: Record<string, PoseCheck>;
+    checkOrder?: string[];
+    jointsDetected: string[];
+    jointCount: number;
+    processingMs?: number;
+  };
+  processingMs?: number;
+  imageWidth?: number;
+  imageHeight?: number;
+  orientation?: string;
+  targetFps?: number;
 };

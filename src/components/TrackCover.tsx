@@ -16,21 +16,21 @@ type Props = {
   radius?: number;
   /** Premium and not unlocked: shows a small frosted lock badge. */
   locked?: boolean;
-  /** Force a variant; defaults to the dev cover-style setting ('classic' renders as art). */
+  /** Force a variant; defaults to the dev cover-style setting ('classic' renders as scenes). */
   variant?: 'art' | 'scenes';
   style?: StyleProp<ViewStyle>;
 };
 
 /**
- * Track cover: illustrated art (primary) or the generative scene fallback.
- * In the dark theme the warm art gets a faint night wash so it sits into the UI.
+ * Track cover: generative scene (primary, recolours with the theme) or the illustrated art
+ * (dev option). In the dark theme the warm art gets a faint night wash so it sits into the UI.
  */
 function TrackCoverBase({ trackId, size, height, radius = 0, locked, variant, style }: Props) {
   const colors = useThemeColors();
   const pref = useCoverStyle();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const h = height ?? size;
-  const mode = variant ?? (pref === 'scenes' ? 'scenes' : 'art');
+  const mode = variant ?? (pref === 'art' ? 'art' : 'scenes');
   const badge = Math.max(18, Math.min(26, Math.round(Math.min(size, h) * 0.38)));
   const inset = Math.max(3, Math.round(Math.min(size, h) * 0.06));
 

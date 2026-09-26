@@ -100,8 +100,8 @@ const AMBIENT_META: Record<
   { title: string; blurb: string; accent: string; accentSoft: string; mood: string }
 > = {
   calm_waves: {
-    title: 'Ocean',
-    blurb: 'Soft waves in the background.',
+    title: 'Shoreline',
+    blurb: 'Gentle waves on the shore — calm noise, no guide.',
     accent: '#A8C5D4',
     accentSoft: 'rgba(168,197,212,0.20)',
     mood: 'Ambient',
@@ -115,9 +115,30 @@ const AMBIENT_META: Record<
   },
   soft_rain: {
     title: 'Rain',
-    blurb: 'Rain on a roof — calm noise, no guide.',
+    blurb: 'Soft, steady rain — calm noise, no guide.',
     accent: '#5B8CFF',
     accentSoft: 'rgba(91,140,255,0.16)',
+    mood: 'Ambient',
+  },
+  wind_in_trees: {
+    title: 'Wind in the trees',
+    blurb: 'A soft breeze moving through leaves.',
+    accent: '#8FB996',
+    accentSoft: 'rgba(143,185,150,0.18)',
+    mood: 'Ambient',
+  },
+  morning_pond: {
+    title: 'Morning pond',
+    blurb: 'Still water, distant frogs and a few birds.',
+    accent: '#7FB8C4',
+    accentSoft: 'rgba(127,184,196,0.18)',
+    mood: 'Ambient',
+  },
+  campfire: {
+    title: 'Campfire',
+    blurb: 'A small fire crackling — warm and steady.',
+    accent: '#F0B429',
+    accentSoft: 'rgba(240,180,41,0.16)',
     mood: 'Ambient',
   },
 };
@@ -183,7 +204,7 @@ export function kindSectionHint(kind: UnlockTrackKind): string {
     case 'music':
       return 'Healing tones and calm music — no guide voice.';
     case 'ambient':
-      return 'Rain, ocean, birds — simple background sound.';
+      return 'Rain, ocean, birds, wind, fire — simple background sound.';
   }
 }
 

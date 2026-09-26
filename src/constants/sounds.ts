@@ -158,20 +158,38 @@ export const ALARM_SOUND_SECTIONS: {
 export const MEDITATION_SOUNDS: readonly SoundOption[] = [
   {
     id: 'calm_waves',
-    label: 'Calm waves',
-    url: 'https://actions.google.com/sounds/v1/ambiences/calm_waves.ogg',
+    label: 'Shoreline',
+    url: require('../../assets/audio/ambient/calm-waves.m4a'),
     section: 'laid_back',
   },
   {
     id: 'morning_birds',
     label: 'Morning birds',
-    url: 'https://actions.google.com/sounds/v1/ambiences/birds_in_forest.ogg',
+    url: require('../../assets/audio/ambient/morning-birds.m4a'),
     section: 'laid_back',
   },
   {
     id: 'soft_rain',
     label: 'Soft rain',
-    url: 'https://actions.google.com/sounds/v1/weather/rain_on_roof.ogg',
+    url: require('../../assets/audio/ambient/soft-rain.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'wind_in_trees',
+    label: 'Wind in the trees',
+    url: require('../../assets/audio/ambient/wind-in-trees.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'morning_pond',
+    label: 'Morning pond',
+    url: require('../../assets/audio/ambient/morning-pond.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'campfire',
+    label: 'Campfire',
+    url: require('../../assets/audio/ambient/campfire.m4a'),
     section: 'laid_back',
   },
 ] as const;

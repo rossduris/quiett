@@ -20,9 +20,33 @@ export type SceneType =
   | 'clouds'
   | 'window'
   | 'forest'
-  | 'rain';
+  | 'rain'
+  // Motif scenes — literal pictures of a track's title or sound source.
+  | 'balloons'
+  | 'bowl'
+  | 'piano'
+  | 'strings'
+  | 'waves'
+  | 'branch'
+  | 'raincloud'
+  | 'meadow'
+  | 'haze'
+  | 'coast'
+  | 'sunburst'
+  | 'beams'
+  | 'river'
+  | 'cairn'
+  | 'dandelion'
+  | 'puffs'
+  | 'windtree'
+  | 'pond'
+  | 'campfire'
+  | 'forestbirds'
+  | 'softrain'
+  | 'shoreline';
 
-export const SCENE_TYPES: readonly SceneType[] = [
+/** Landscape types — used for hash-derived fallback specs. */
+export const LANDSCAPE_TYPES: readonly SceneType[] = [
   'hills',
   'ocean',
   'lake',
@@ -33,6 +57,33 @@ export const SCENE_TYPES: readonly SceneType[] = [
   'forest',
   'rain',
 ];
+
+export const MOTIF_TYPES: readonly SceneType[] = [
+  'balloons',
+  'bowl',
+  'piano',
+  'strings',
+  'waves',
+  'branch',
+  'raincloud',
+  'meadow',
+  'haze',
+  'coast',
+  'sunburst',
+  'beams',
+  'river',
+  'cairn',
+  'dandelion',
+  'puffs',
+  'windtree',
+  'pond',
+  'campfire',
+  'forestbirds',
+  'softrain',
+  'shoreline',
+];
+
+export const SCENE_TYPES: readonly SceneType[] = [...LANDSCAPE_TYPES, ...MOTIF_TYPES];
 
 export type TimeOfDay = 'predawn' | 'dawn' | 'sunrise' | 'morning' | 'golden' | 'dusk' | 'night';
 
@@ -57,6 +108,10 @@ export type SceneDetail =
   | 'peak'
   | 'waves'
   | 'plant'
+  /** Furrow rows on the nearest hill. */
+  | 'rows'
+  /** Curling breeze strokes in the sky. */
+  | 'breeze'
   | 'noSun'
   | 'noGrain';
 
@@ -75,6 +130,16 @@ export type SceneSpec = {
 
 export type SceneMode = 'light' | 'dark';
 
+/** Subset of the app's ColorTokens the generator needs (kept structural so this file has no RN imports). */
+export type SceneTokens = {
+  accent: string;
+  calm: string;
+  sunrise: string;
+  warning: string;
+  /** Screen background — dark scenes sink toward it so they sit in the UI. */
+  bg: string;
+};
+
 export type SceneOptions = {
   /** light = peachCream family, dark = nightTeal family. */
   mode: SceneMode;
@@ -84,6 +149,8 @@ export type SceneOptions = {
   lod?: 'full' | 'lite';
   /** Theme accent — lightly harmonises the palette. */
   accent?: string;
+  /** Theme colour tokens — motif accents (balloons, flowers, brass, felt…) come from these. */
+  tokens?: SceneTokens;
   /** Override the id prefix (defaults to a hash of spec + options). */
   idPrefix?: string;
 };
@@ -448,6 +515,7 @@ type Ctx = {
   idp: string;
   n: number;
   has: (d: SceneDetail) => boolean;
+  tok: SceneTokens;
 };
 
 function newId(ctx: Ctx, name: string) {
@@ -745,6 +813,7 @@ function buildHills(ctx: Ctx) {
     if (i === 1 && ctx.has('mist')) drawMist(ctx, base + amp * 0.8, 0.8);
     if (i === n - 1) nearPts = pts;
   }
+  if (ctx.has('rows')) drawRows(ctx, nearPts, layerColor(ctx, n - 1, n));
   if (ctx.has('tree')) {
     // Place a lone tree on the highest point of the nearest ridge (within frame).
     const inFrame = nearPts.filter((p) => p[0] > 12 && p[0] < W - 12);
@@ -964,6 +1033,7 @@ function buildDunes(ctx: Ctx) {
     ctx.nodes.push({ t: 'path', d: shadows.join(''), fill: mix(color, pal.land, 0.45), opacity: (ctx.mode === 'dark' ? 0.25 : 0.32) + 0.2 * t });
     if (i === 0) drawMist(ctx, base + amp * 0.4, 0.5);
   }
+  if (ctx.has('breeze')) drawBreeze(ctx, ctx.lite ? 2 : 3, H * 0.14, H * 0.5, mix(pal.sun, '#FFFFFF', 0.25));
   if (ctx.has('birds')) drawBirds(ctx, W * 0.7, H * 0.3, pal.land);
 }
 
@@ -1287,6 +1357,1300 @@ function buildWindow(ctx: Ctx) {
   }
 }
 
+// ─── Motif helpers ───────────────────────────────────────────────────────────
+
+/** Ellipse as a path fragment. */
+const ell = (cx: number, cy: number, rx: number, ry: number) =>
+  `M${f(cx - rx)} ${f(cy)}a${f(rx)} ${f(ry)} 0 1 0 ${f(2 * rx)} 0a${f(rx)} ${f(ry)} 0 1 0 ${f(-2 * rx)} 0Z`;
+
+/** Stroke width that stays legible in lite (thumbnail) renders. */
+const sw = (ctx: Ctx, full: number, lite = full * 1.7) => f(ctx.lite ? lite : full);
+
+/** Soft sky + sun + a couple of hazy distant ridges — backdrop for object motifs. */
+function backdrop(ctx: Ctx, hy: number, opts: { layers?: number; sun?: boolean; clouds?: number; amp?: number } = {}) {
+  const { W, H, rng } = ctx;
+  skyAndSun(ctx, hy, { sun: opts.sun, cloudCount: opts.clouds });
+  const n = opts.layers ?? 2;
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : i / (n - 1);
+    const pts = sample(rollingRidge(rng, W, hy + H * 0.05 * t, H * (opts.amp ?? 0.04) * (1 + t)), -6, W + 6, 10);
+    ridgeLayer(ctx, pts, layerColor(ctx, i, n + 2), (i + 1) / (n + 2));
+    drawMist(ctx, hy + H * (0.02 + 0.05 * t), 0.7);
+  }
+}
+
+/** Filled, tapering stroke along a polyline (branches, stems). */
+function taper(pts: Pt[], w0: number, w1: number): string {
+  const L: Pt[] = [];
+  const R: Pt[] = [];
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)]!;
+    const b = pts[Math.min(pts.length - 1, i + 1)]!;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const w = (w0 + (w1 - w0) * (i / (pts.length - 1))) / 2;
+    L.push([p[0] - (dy / len) * w, p[1] + (dx / len) * w]);
+    R.push([p[0] + (dy / len) * w, p[1] - (dx / len) * w]);
+  });
+  const back = R.reverse();
+  return `${smoothLine(L)}L${f(back[0]![0])} ${f(back[0]![1])}${smoothLine(back).replace(/^M[^C]*/, '')}Z`;
+}
+
+/** Cumulus puff (union of circles on a flat base). Returns top y. */
+function cloudPuff(
+  ctx: Ctx,
+  cx: number,
+  baseY: number,
+  w: number,
+  lit: string,
+  shade: string,
+  opts: { opacity?: number; lumps?: number; target?: SvgNode[]; tall?: number } = {},
+): number {
+  const { rng } = ctx;
+  const k = opts.lumps ?? 5;
+  const tall = opts.tall ?? 1;
+  let d = '';
+  let minY = baseY;
+  for (let i = 0; i < k; i++) {
+    const u = (i + 0.5) / k;
+    const r = w * (0.11 + 0.13 * Math.sin(Math.PI * u) * tall) * range(rng, 0.85, 1.15);
+    const x = cx - w / 2 + w * u + range(rng, -0.03, 0.03) * w;
+    const y = baseY - r * 0.55;
+    d += dot(x, y, r);
+    minY = Math.min(minY, y - r);
+  }
+  const bh = w * 0.1;
+  // Same winding as the circle arcs so the union has no holes (nonzero fill).
+  d += `M${f(cx - w * 0.44)} ${f(baseY - bh)}L${f(cx - w * 0.44)} ${f(baseY)}L${f(cx + w * 0.44)} ${f(baseY)}L${f(cx + w * 0.44)} ${f(baseY - bh)}Z`;
+  const fill = linear(ctx, 0, minY, 0, baseY, [
+    { o: 0, c: lit },
+    { o: 0.55, c: mix(lit, shade, 0.4) },
+    { o: 1, c: shade },
+  ]);
+  (opts.target ?? ctx.nodes).push({ t: 'path', d, fill, opacity: opts.opacity });
+  return minY;
+}
+
+/** Curling breeze strokes. */
+function drawBreeze(ctx: Ctx, count: number, y0: number, y1: number, color: string) {
+  const { rng, W } = ctx;
+  let d = '';
+  for (let i = 0; i < count; i++) {
+    const y = y0 + ((y1 - y0) * (i + 0.5)) / count + range(rng, -1.5, 1.5);
+    const x = range(rng, -4, W * 0.35);
+    const len = range(rng, 30, 48);
+    const c = range(rng, 1.8, 3);
+    d += `M${f(x)} ${f(y)}C${f(x + len * 0.35)} ${f(y - 2.5)} ${f(x + len * 0.65)} ${f(y + 2.5)} ${f(x + len)} ${f(y)}`;
+    d += `a${f(c)} ${f(c)} 0 1 0 ${f(-c)} ${f(-c)}`;
+  }
+  ctx.nodes.push({ t: 'path', d, stroke: color, sw: sw(ctx, 0.6, 1.1), fill: 'none', opacity: 0.7 });
+}
+
+/** Five-petal flower head. */
+function flowerHead(x: number, y: number, r: number): string {
+  let d = '';
+  for (let p = 0; p < 5; p++) {
+    const a = (p / 5) * Math.PI * 2 - Math.PI / 2;
+    d += dot(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62, r * 0.5);
+  }
+  return d;
+}
+
+// ─── Motif scenes ────────────────────────────────────────────────────────────
+
+function drawBalloon(ctx: Ctx, cx: number, cy: number, r: number, color: string, depth: number) {
+  const { pal } = ctx;
+  const [sx] = sunPos(ctx);
+  const base = mix(pal.haze, color, 0.3 + 0.7 * depth);
+  const lx = sx < cx ? -0.4 : 0.4;
+  const fill = radial(ctx, cx + lx * r, cy - 0.35 * r, r * 1.9, [
+    { o: 0, c: mix(base, pal.sun, 0.45) },
+    { o: 0.45, c: base },
+    { o: 1, c: mix(base, pal.land, 0.5) },
+  ]);
+  const P = (x: number, y: number) => `${f(cx + x * r)} ${f(cy + y * r)}`;
+  const env = `M${P(-0.2, 1.32)}C${P(-0.72, 0.95)} ${P(-1, 0.5)} ${P(-1, 0)}A${f(r)} ${f(r)} 0 0 1 ${P(1, 0)}C${P(1, 0.5)} ${P(0.72, 0.95)} ${P(0.2, 1.32)}Z`;
+  ctx.nodes.push({ t: 'path', d: env, fill });
+  const lineC = mix(base, pal.land, 0.45);
+  const gores = ctx.lite && r < 8
+    ? `M${P(0, -1)}L${P(0, 1.32)}`
+    : `M${P(0, -1)}C${P(-0.62, -0.6)} ${P(-0.62, 0.7)} ${P(-0.2, 1.32)}M${P(0, -1)}C${P(0.62, -0.6)} ${P(0.62, 0.7)} ${P(0.2, 1.32)}M${P(0, -1)}L${P(0, 1.32)}`;
+  ctx.nodes.push({ t: 'path', d: gores, stroke: lineC, sw: f(Math.max(0.3, r * 0.05)), fill: 'none', opacity: 0.55 });
+  // Lit band
+  ctx.nodes.push({ t: 'path', d: `M${P(-0.9, 0.55)}Q${P(0, 0.85)} ${P(0.9, 0.55)}`, stroke: mix(base, pal.sun, 0.55), sw: f(r * 0.14), fill: 'none', opacity: 0.55 });
+  // Ropes + basket
+  ctx.nodes.push({ t: 'path', d: `M${P(-0.2, 1.32)}L${P(-0.13, 1.62)}M${P(0.2, 1.32)}L${P(0.13, 1.62)}`, stroke: lineC, sw: f(Math.max(0.25, r * 0.045)), fill: 'none' });
+  const basket = mix(pal.haze, mix(pal.land, ctx.tok.sunrise, 0.25), 0.3 + 0.7 * depth);
+  ctx.nodes.push({ t: 'rect', x: f(cx - 0.16 * r), y: f(cy + 1.6 * r), w: f(0.32 * r), h: f(0.26 * r), rx: f(0.05 * r), fill: basket });
+}
+
+function buildBalloons(ctx: Ctx) {
+  const { W, H, rng, tok, pal } = ctx;
+  const hy = H * 0.66;
+  skyAndSun(ctx, hy);
+  const n = ctx.lite ? 3 : 4;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const base = H * (0.66 + t * 0.22);
+    const amp = H * (0.04 + 0.05 * t);
+    const pts = sample(rollingRidge(rng, W, base, amp, 1 - t * 0.35), -6, W + 6, 10);
+    ridgeLayer(ctx, pts, layerColor(ctx, i, n), (i + 1) / n);
+    if (i < 2) drawMist(ctx, base + amp * 0.6, 0.9);
+  }
+  const cool = mix(tok.accent, pal.skyTop, 0.35);
+  const balloons: [number, number, number, string, number][] = [
+    [W * 0.84, H * 0.44, H * 0.045, cool, 0.35],
+    [W * 0.68, H * 0.2, H * 0.08, tok.warning, 0.65],
+    [W * 0.32, H * 0.3, H * 0.13, tok.calm, 1],
+  ];
+  for (const [x, y, r, c, depth] of balloons) drawBalloon(ctx, x, y, r, c, depth);
+}
+
+function buildBowl(ctx: Ctx) {
+  const { W, H, pal, tok, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.6;
+  backdrop(ctx, hy, { layers: 2 });
+  // Surface
+  const surfY = H * 0.8;
+  const surf = mix(pal.land, pal.haze, dark ? 0.25 : 0.45);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(surfY - H * 0.04), w: W + 2, h: f(H * 0.26), fill: linear(ctx, 0, surfY - H * 0.04, 0, H, [{ o: 0, c: mix(surf, pal.glow, 0.2) }, { o: 1, c: mix(surf, pal.land, 0.5) }]) });
+  const cx = W / 2;
+  const rx = Math.min(W * 0.28, H * 0.34);
+  const ry = rx * 0.24;
+  const depth = rx * 0.62;
+  const rimY = surfY - depth - ry * 0.2;
+  // Resonance rings
+  let rings = '';
+  const nR = 3;
+  for (let k = 0; k < nR; k++) {
+    const s = 1.35 + 0.38 * k;
+    rings += ell(cx, rimY + depth * 0.3, rx * s, (ry + depth * 0.5) * s);
+  }
+  ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.3), sw: sw(ctx, 0.55, 0.9), fill: 'none', opacity: dark ? 0.45 : 0.6 });
+  // Cushion + shadow
+  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(surfY + ry * 0.4), rx: f(rx * 1.15), ry: f(ry * 0.9), fill: softFill(ctx, pal.land, 0.6) });
+  const cush = mix(tok.calm, pal.land, dark ? 0.55 : 0.3);
+  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(surfY - ry * 0.1), rx: f(rx * 0.92), ry: f(ry * 1.15), fill: linear(ctx, 0, surfY - ry * 1.3, 0, surfY + ry, [{ o: 0, c: mix(cush, pal.sun, 0.25) }, { o: 1, c: mix(cush, pal.land, 0.4) }]) });
+  // Bowl body
+  const brass = dark ? mix(tok.warning, pal.haze, 0.5) : mix(tok.warning, pal.glow, 0.35);
+  const [sx] = sunPos(ctx);
+  const hl = sx < cx ? 0.3 : 0.7;
+  const metal = linear(ctx, cx - rx, 0, cx + rx, 0, [
+    { o: 0, c: mix(brass, pal.land, 0.55) },
+    { o: hl - 0.12, c: brass },
+    { o: hl, c: mix(brass, pal.sun, 0.65) },
+    { o: hl + 0.12, c: brass },
+    { o: 1, c: mix(brass, pal.land, 0.6) },
+  ]);
+  const body = `M${f(cx - rx)} ${f(rimY)}C${f(cx - rx)} ${f(rimY + depth * 0.9)} ${f(cx - rx * 0.55)} ${f(rimY + depth * 1.05)} ${f(cx)} ${f(rimY + depth * 1.05)}C${f(cx + rx * 0.55)} ${f(rimY + depth * 1.05)} ${f(cx + rx)} ${f(rimY + depth * 0.9)} ${f(cx + rx)} ${f(rimY)}Z`;
+  ctx.nodes.push({ t: 'path', d: body, fill: metal });
+  // Rim + inside
+  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(rimY), rx: f(rx), ry: f(ry), fill: mix(brass, pal.sun, 0.35) });
+  ctx.nodes.push({
+    t: 'ellipse', cx: f(cx), cy: f(rimY + ry * 0.12), rx: f(rx * 0.9), ry: f(ry * 0.78),
+    fill: linear(ctx, 0, rimY - ry, 0, rimY + ry, [{ o: 0, c: mix(brass, pal.land, 0.6) }, { o: 1, c: mix(brass, pal.glow, 0.2) }]),
+  });
+  // Mallet resting against the cushion
+  const wood = mix(tok.sunrise, pal.land, dark ? 0.65 : 0.45);
+  const mx0 = cx + rx * 0.95;
+  const my0 = surfY + ry * 0.25;
+  ctx.nodes.push({ t: 'path', d: `M${f(mx0)} ${f(my0)}L${f(mx0 + rx * 0.62)} ${f(my0 - rx * 0.12)}`, stroke: wood, sw: f(Math.max(0.9, rx * 0.06)), fill: 'none' });
+  ctx.nodes.push({ t: 'ellipse', cx: f(mx0 + rx * 0.66), cy: f(my0 - rx * 0.13), rx: f(rx * 0.1), ry: f(rx * 0.08), fill: mix(wood, pal.land, 0.3) });
+}
+
+function buildPiano(ctx: Ctx) {
+  const { W, H, pal, tok, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.5;
+  backdrop(ctx, hy, { layers: 2 });
+  const top = H * 0.56;
+  const keyTop = H * 0.63;
+  // Case / fallboard
+  const wood = dark ? mix(pal.land, tok.sunrise, 0.12) : mix(pal.land, tok.sunrise, 0.22);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(top), w: W + 2, h: f(H - top + 1), fill: linear(ctx, 0, top, 0, keyTop, [{ o: 0, c: mix(wood, pal.glow, 0.25) }, { o: 1, c: mix(wood, '#000000', 0.2) }]) });
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(top), w: W + 2, h: f(Math.max(0.5, H * 0.008)), fill: mix(pal.horizon, pal.sun, 0.4), opacity: 0.7 });
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(keyTop - H * 0.012), w: W + 2, h: f(H * 0.012), fill: mix(tok.calm, pal.land, dark ? 0.4 : 0.15) });
+  // White keys
+  const kw = Math.max(6.5, H * 0.125);
+  const ivory = dark ? mix(pal.cloud, pal.haze, 0.35) : mix(pal.cloud, pal.horizon, 0.35);
+  const keyFill = linear(ctx, 0, keyTop, 0, H, [
+    { o: 0, c: mix(ivory, pal.cloudShade, 0.3) },
+    { o: 0.2, c: mix(ivory, pal.sun, 0.25) },
+    { o: 1, c: mix(ivory, pal.cloudShade, 0.35) },
+  ]);
+  const x0 = -kw * 0.35;
+  const count = Math.ceil((W - x0) / kw) + 1;
+  let whites = '';
+  const gap = Math.max(0.35, kw * 0.05);
+  for (let i = 0; i < count; i++) {
+    const x = x0 + i * kw;
+    whites += `M${f(x + gap / 2)} ${f(keyTop)}h${f(kw - gap)}v${f(H - keyTop + 2)}h${f(-(kw - gap))}Z`;
+  }
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(keyTop), w: W + 2, h: f(H - keyTop + 1), fill: mix(pal.land, '#000000', 0.2) });
+  ctx.nodes.push({ t: 'path', d: whites, fill: keyFill });
+  // Warm light across the keys
+  const [sx] = sunPos(ctx);
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(keyTop + (H - keyTop) * 0.35), rx: 38, ry: f((H - keyTop) * 0.6), fill: softFill(ctx, pal.glow, dark ? 0.3 : 0.4) });
+  // Black keys
+  const bh = (H - keyTop) * 0.58;
+  const bw = kw * 0.56;
+  let blacks = '';
+  for (let i = 0; i < count; i++) {
+    if (![0, 1, 3, 4, 5].includes(i % 7)) continue;
+    const bx = x0 + (i + 1) * kw - bw / 2;
+    blacks += `M${f(bx)} ${f(keyTop - 0.2)}h${f(bw)}v${f(bh)}q0 ${f(bw * 0.12)} ${f(-bw * 0.12)} ${f(bw * 0.12)}h${f(-bw * 0.76)}q${f(-bw * 0.12)} 0 ${f(-bw * 0.12)} ${f(-bw * 0.12)}Z`;
+  }
+  const ebony = mix(pal.land, '#000000', dark ? 0.2 : 0.1);
+  ctx.nodes.push({ t: 'path', d: blacks, fill: linear(ctx, 0, keyTop, 0, keyTop + bh, [{ o: 0, c: ebony }, { o: 0.85, c: mix(ebony, pal.glow, 0.12) }, { o: 1, c: mix(ebony, pal.sun, 0.25) }]) });
+}
+
+function buildStrings(ctx: Ctx) {
+  const { W, H, pal, tok, mode, rng } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.7;
+  backdrop(ctx, hy, { layers: 2, amp: 0.03 });
+  // Warm resonant waves across the whole cover
+  let bgWaves = '';
+  for (let k = 0; k < (ctx.lite ? 3 : 5); k++) {
+    const y = H * (0.22 + 0.1 * k);
+    const ph = rng() * 6;
+    const pts: Pt[] = [];
+    for (let x = -6; x <= W + 6; x += 4) pts.push([x, y + Math.sin(x / 9 + ph) * H * 0.018]);
+    bgWaves += smoothLine(pts);
+  }
+  ctx.nodes.push({ t: 'path', d: bgWaves, stroke: mix(pal.sun, pal.glow, 0.4), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: dark ? 0.25 : 0.35 });
+  const R = H * 0.23;
+  const bx = W * 0.38;
+  const by = H * 0.8;
+  const ang = (-62 * Math.PI) / 180;
+  const d: Pt = [Math.cos(ang), Math.sin(ang)];
+  const nrm: Pt = [-d[1], d[0]];
+  const wood = dark ? mix(tok.sunrise, pal.land, 0.62) : mix(tok.sunrise, pal.land, 0.42);
+  const wN = R * 0.42;
+  const wT = R * 0.34;
+  const p0: Pt = [bx + d[0] * R * 0.5, by + d[1] * R * 0.5];
+  const L = H * 1.1;
+  const p1: Pt = [p0[0] + d[0] * L, p0[1] + d[1] * L];
+  // Sound rings from the body
+  let rings = '';
+  for (let k = 1; k <= 3; k++) {
+    const rr = R * (1.25 + 0.38 * k);
+    for (const [a0, a1] of [[-0.55, 0.45], [Math.PI - 0.45, Math.PI + 0.4]] as const) {
+      rings += `M${f(bx + Math.cos(a0) * rr)} ${f(by + Math.sin(a0) * rr)}A${f(rr)} ${f(rr)} 0 0 1 ${f(bx + Math.cos(a1) * rr)} ${f(by + Math.sin(a1) * rr)}`;
+    }
+  }
+  ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.25), sw: sw(ctx, 0.6, 1), fill: 'none', opacity: dark ? 0.5 : 0.65 });
+  // Neck
+  const neck = `M${f(p0[0] - (nrm[0] * wN) / 2)} ${f(p0[1] - (nrm[1] * wN) / 2)}L${f(p1[0] - (nrm[0] * wT) / 2)} ${f(p1[1] - (nrm[1] * wT) / 2)}L${f(p1[0] + (nrm[0] * wT) / 2)} ${f(p1[1] + (nrm[1] * wT) / 2)}L${f(p0[0] + (nrm[0] * wN) / 2)} ${f(p0[1] + (nrm[1] * wN) / 2)}Z`;
+  ctx.nodes.push({ t: 'path', d: neck, fill: linear(ctx, p0[0] - nrm[0] * wN, p0[1] - nrm[1] * wN, p0[0] + nrm[0] * wN, p0[1] + nrm[1] * wN, [{ o: 0, c: mix(wood, pal.land, 0.4) }, { o: 0.5, c: mix(wood, pal.glow, 0.25) }, { o: 1, c: mix(wood, pal.land, 0.45) }]) });
+  // Pegs where the neck is still in frame
+  const tTop = (p0[1] - H * 0.06) / -d[1];
+  for (const t of [0.72, 0.86]) {
+    const c: Pt = [p0[0] + d[0] * tTop * t, p0[1] + d[1] * tTop * t];
+    const pl = wN * 0.95;
+    ctx.nodes.push({ t: 'path', d: `M${f(c[0] - nrm[0] * pl)} ${f(c[1] - nrm[1] * pl)}L${f(c[0] + nrm[0] * pl)} ${f(c[1] + nrm[1] * pl)}`, stroke: mix(wood, pal.land, 0.35), sw: f(Math.max(0.8, R * 0.09)), fill: 'none' });
+  }
+  // Body (gourd)
+  ctx.nodes.push({ t: 'ellipse', cx: f(bx), cy: f(by + R * 0.95), rx: f(R * 1.3), ry: f(R * 0.25), fill: softFill(ctx, pal.land, 0.5) });
+  const [sx] = sunPos(ctx);
+  const bodyFill = radial(ctx, bx + (sx > bx ? 0.35 : -0.35) * R, by - R * 0.4, R * 1.6, [
+    { o: 0, c: mix(wood, pal.sun, 0.45) },
+    { o: 0.5, c: wood },
+    { o: 1, c: mix(wood, pal.land, 0.55) },
+  ]);
+  ctx.nodes.push({ t: 'ellipse', cx: f(bx), cy: f(by), rx: f(R * 1.02), ry: f(R), fill: bodyFill });
+  // Soundboard + decorative rim
+  ctx.nodes.push({ t: 'ellipse', cx: f(bx + R * 0.05), cy: f(by + R * 0.02), rx: f(R * 0.72), ry: f(R * 0.7), fill: mix(wood, pal.sun, 0.22), opacity: 0.8 });
+  ctx.nodes.push({ t: 'path', d: ell(bx + R * 0.05, by + R * 0.02, R * 0.72, R * 0.7), stroke: mix(tok.warning, pal.sun, 0.3), sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: 0.8 });
+  // Neck joint band
+  ctx.nodes.push({ t: 'path', d: `M${f(p0[0] - nrm[0] * wN * 0.62)} ${f(p0[1] - nrm[1] * wN * 0.62)}L${f(p0[0] + nrm[0] * wN * 0.62)} ${f(p0[1] + nrm[1] * wN * 0.62)}`, stroke: mix(tok.warning, pal.sun, 0.25), sw: f(R * 0.12), fill: 'none' });
+  // Strings
+  const bridge: Pt = [bx - d[0] * R * 0.32, by - d[1] * R * 0.32];
+  let strings = '';
+  for (let s = 0; s < 4; s++) {
+    const o = (s - 1.5) * wN * 0.2;
+    strings += `M${f(bridge[0] + nrm[0] * o)} ${f(bridge[1] + nrm[1] * o)}L${f(p1[0] + nrm[0] * o * 0.8)} ${f(p1[1] + nrm[1] * o * 0.8)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: strings, stroke: mix(pal.sun, '#FFFFFF', 0.3), sw: sw(ctx, 0.22, 0.4), fill: 'none', opacity: 0.85 });
+  ctx.nodes.push({ t: 'path', d: `M${f(bridge[0] - nrm[0] * wN * 0.45)} ${f(bridge[1] - nrm[1] * wN * 0.45)}L${f(bridge[0] + nrm[0] * wN * 0.45)} ${f(bridge[1] + nrm[1] * wN * 0.45)}`, stroke: mix(pal.sun, wood, 0.2), sw: f(R * 0.08), fill: 'none' });
+}
+
+function buildWaves(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.4;
+  skyAndSun(ctx, hy);
+  const sea = linear(ctx, 0, hy, 0, H, [{ o: 0, c: mix(pal.horizon, pal.water, 0.45) }, { o: 1, c: mix(pal.water, pal.land, 0.3) }]);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy), w: W + 2, h: f(H - hy + 1), fill: sea });
+  const [sx] = sunPos(ctx);
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(hy + (H - hy) * 0.15), rx: 22, ry: f((H - hy) * 0.25), fill: softFill(ctx, pal.glow, 0.5) });
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.15), w: W + 2, h: 0.4, fill: mix(pal.horizon, '#FFFFFF', 0.4), opacity: 0.55 });
+  const foam = mix(pal.sun, '#FFFFFF', dark ? 0.1 : 0.4);
+  const bands = ctx.lite ? 3 : 4;
+  for (let k = 0; k < bands; k++) {
+    const t = k / (bands - 1);
+    const base = hy + (H - hy) * (0.22 + 0.26 * k * (4 / (bands + 1)));
+    const a = (H - hy) * (0.07 + 0.1 * t);
+    const Lw = 26 + 22 * t;
+    const ph = rng() * Math.PI * 2;
+    const yAt = (x: number) => base - a * (0.5 + 0.5 * Math.sin((2 * Math.PI * x) / Lw + ph)) ** 2.4;
+    const pts = sample(yAt, -8, W + 8, Math.round((W + 16) / 2));
+    const col = mix(mix(pal.water, pal.skyMid, 0.25 * (1 - t)), pal.land, 0.15 + 0.25 * t);
+    const fill = linear(ctx, 0, base - a, 0, base + (H - hy) * 0.25, [
+      { o: 0, c: mix(col, pal.horizon, 0.4) },
+      { o: 0.4, c: col },
+      { o: 1, c: mix(col, pal.land, 0.3) },
+    ]);
+    ctx.nodes.push({ t: 'path', d: closeTo(polyLine(pts), pts, H + 2), fill });
+    ctx.nodes.push({ t: 'path', d: polyLine(pts), stroke: foam, sw: sw(ctx, 0.35 + 0.35 * t, 0.7 + 0.5 * t), fill: 'none', opacity: 0.75 });
+    // Curling lips on crests (nearer bands)
+    if (t > 0.3) {
+      let curl = '';
+      const first = ((Math.PI / 2 - ph) / (2 * Math.PI)) * Lw;
+      for (let x = first - Lw * 3; x < W + Lw; x += Lw) {
+        if (x < -4 || x > W + 4) continue;
+        const y = base - a;
+        const c = a * 0.75;
+        curl += `M${f(x - c * 0.3)} ${f(y)}C${f(x + c * 0.5)} ${f(y - c * 0.35)} ${f(x + c * 1.1)} ${f(y + c * 0.25)} ${f(x + c * 0.7)} ${f(y + c * 0.8)}`;
+        curl += `M${f(x + c * 0.1)} ${f(y + c * 0.35)}c${f(c * 0.25)} ${f(-c * 0.1)} ${f(c * 0.4)} ${f(c * 0.1)} ${f(c * 0.3)} ${f(c * 0.35)}`;
+      }
+      ctx.nodes.push({ t: 'path', d: curl, stroke: foam, sw: sw(ctx, 0.5 + 0.4 * t, 0.9 + 0.5 * t), fill: 'none', opacity: 0.85 });
+    }
+    // Foam flecks
+    if (!ctx.lite) {
+      let fl = '';
+      for (let i = 0; i < 10; i++) {
+        const x = range(rng, 0, W);
+        fl += dot(x, yAt(x) + range(rng, 0.5, 3), range(rng, 0.15, 0.35));
+      }
+      ctx.nodes.push({ t: 'path', d: fl, fill: foam, opacity: 0.6 });
+    }
+  }
+  if (ctx.has('birds')) drawBirds(ctx, W * 0.7, H * 0.18, layerColor(ctx, 3, 4), 0.8);
+}
+
+function drawPerchedBird(ctx: Ctx, x: number, y: number, b: number, dir: 1 | -1, color: string) {
+  const { pal, tok } = ctx;
+  const X = (v: number) => f(x + v * b * dir);
+  const Y = (v: number) => f(y + v * b);
+  let d = ell(x, y - 0.8 * b, 1.0 * b, 0.78 * b);
+  d += dot(x + 0.72 * b * dir, y - 1.55 * b, 0.56 * b);
+  // Beak
+  d += `M${X(1.15)} ${Y(-1.72)}L${X(1.7)} ${Y(-1.5)}L${X(1.15)} ${Y(-1.35)}Z`;
+  // Tail
+  d += `M${X(-0.7)} ${Y(-0.95)}L${X(-2)} ${Y(-0.2)}L${X(-1.8)} ${Y(0.12)}L${X(-0.5)} ${Y(-0.45)}Z`;
+  ctx.nodes.push({ t: 'path', d, fill: color });
+  // Breast patch
+  ctx.nodes.push({ t: 'path', d: ell(x + 0.42 * b * dir, y - 0.72 * b, 0.52 * b, 0.5 * b), fill: mix(tok.calm, color, ctx.mode === 'dark' ? 0.5 : 0.25) });
+  // Legs + eye
+  ctx.nodes.push({ t: 'path', d: `M${X(-0.15)} ${Y(-0.1)}L${X(-0.2)} ${Y(0.35)}M${X(0.2)} ${Y(-0.1)}L${X(0.18)} ${Y(0.35)}`, stroke: color, sw: f(Math.max(0.25, b * 0.12)), fill: 'none' });
+  if (b > 2.2) ctx.nodes.push({ t: 'circle', cx: X(0.85), cy: Y(-1.65), r: f(b * 0.1), fill: pal.sun, opacity: 0.8 });
+}
+
+function buildBranch(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.74;
+  backdrop(ctx, hy, { layers: 2 });
+  const col = mix(pal.land, pal.haze, dark ? 0.05 : 0.12);
+  const y0 = H * 0.72;
+  const y1 = H * 0.56;
+  const pts: Pt[] = sample((x) => y0 + (y1 - y0) * (x / W) + Math.sin((x / W) * Math.PI) * -H * 0.04, -6, W * 0.92, 10);
+  ctx.nodes.push({ t: 'path', d: taper(pts, H * 0.055, H * 0.012), fill: col });
+  // Twigs
+  const twig = (i: number, dx: number, dy: number, w: number) => {
+    const p = pts[i]!;
+    const tp: Pt[] = [p, [p[0] + dx * 0.5, p[1] + dy * 0.55], [p[0] + dx, p[1] + dy]];
+    ctx.nodes.push({ t: 'path', d: taper(tp, w, w * 0.3), fill: col });
+    return tp[2];
+  };
+  const tips = [twig(3, W * 0.1, -H * 0.2, H * 0.02), twig(7, W * 0.12, H * 0.08, H * 0.014), pts[pts.length - 1]!];
+  // Leaves + blossoms
+  const leafC = mix(col, dark ? pal.haze : pal.glow, 0.25);
+  let leaves = '';
+  let blooms = '';
+  for (const tip of tips) {
+    for (let j = 0; j < (ctx.lite ? 2 : 3); j++) {
+      const a = range(rng, -2.6, 0.4);
+      const len = H * range(rng, 0.05, 0.08);
+      const tx = tip![0] + Math.cos(a) * len;
+      const ty = tip![1] + Math.sin(a) * len;
+      const nx = Math.cos(a + Math.PI / 2) * len * 0.28;
+      const ny = Math.sin(a + Math.PI / 2) * len * 0.28;
+      const mx = (tip![0] + tx) / 2;
+      const my = (tip![1] + ty) / 2;
+      leaves += `M${f(tip![0])} ${f(tip![1])}Q${f(mx + nx)} ${f(my + ny)} ${f(tx)} ${f(ty)}Q${f(mx - nx)} ${f(my - ny)} ${f(tip![0])} ${f(tip![1])}Z`;
+    }
+    blooms += flowerHead(tip![0] + H * 0.01, tip![1] - H * 0.02, H * 0.028);
+  }
+  ctx.nodes.push({ t: 'path', d: leaves, fill: leafC });
+  ctx.nodes.push({ t: 'path', d: blooms, fill: mix(tok.accent, pal.sun, dark ? 0.2 : 0.35), opacity: 0.95 });
+  // Perched birds
+  const b = H * 0.075;
+  const at = (x: number) => pts.reduce((a, p) => (Math.abs(p[0] - x) < Math.abs(a[0] - x) ? p : a), pts[0]!);
+  const p1 = at(W * 0.3);
+  const p2 = at(W * 0.6);
+  drawPerchedBird(ctx, p1[0], p1[1] - H * 0.018, b, 1, col);
+  drawPerchedBird(ctx, p2[0], p2[1] - H * 0.012, b * 0.85, -1, col);
+  drawBirds(ctx, W * 0.72, H * 0.2, mix(col, pal.haze, 0.2), 0.8);
+}
+
+function buildRaincloud(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.82;
+  drawSky(ctx, hy);
+  drawGlow(ctx, ctx.nodes, 0.6);
+  // Distant hills + puddle surface
+  const far = sample(rollingRidge(rng, W, hy, H * 0.035), -6, W + 6, 10);
+  ridgeLayer(ctx, far, layerColor(ctx, 0, 3), 0.3);
+  drawMist(ctx, hy + H * 0.01, 0.8);
+  const water = linear(ctx, 0, hy + H * 0.03, 0, H, [{ o: 0, c: mix(pal.water, pal.skyLow, 0.4) }, { o: 1, c: mix(pal.water, pal.land, 0.35) }]);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy + H * 0.03), w: W + 2, h: f(H * 0.2), fill: water });
+  // Cloud
+  const cs = Math.min(W * 0.78, H * 0.95);
+  const cx = W / 2;
+  const cb = H * 0.42;
+  const lit = mix(pal.cloud, pal.sun, dark ? 0.15 : 0.35);
+  cloudPuff(ctx, cx - cs * 0.28, cb - H * 0.1, cs * 0.5, mix(lit, pal.skyMid, 0.35), mix(pal.cloudShade, pal.skyMid, 0.3), { opacity: 0.7, lumps: 3 });
+  cloudPuff(ctx, cx, cb, cs, lit, mix(pal.cloudShade, pal.land, 0.1), { lumps: 5 });
+  // Drops
+  const dropC = dark ? mix(tok.accent, pal.cloud, 0.45) : mix(pal.water, pal.land, 0.3);
+  const s = H * 0.02;
+  let drops = '';
+  const cols = ctx.lite ? 5 : 7;
+  for (let c = 0; c < cols; c++) {
+    const x = cx - cs * 0.36 + (cs * 0.72 * c) / (cols - 1);
+    const rows = ctx.lite ? 2 : 3;
+    for (let r = 0; r < rows; r++) {
+      const y = cb + H * 0.07 + ((hy - cb - H * 0.05) * (r + (c % 2) * 0.5)) / rows;
+      if (y > hy) continue;
+      const ss = s * range(rng, 0.8, 1.1);
+      drops += `M${f(x)} ${f(y - 1.8 * ss)}C${f(x + 0.2 * ss)} ${f(y - 1.1 * ss)} ${f(x + ss)} ${f(y - 0.3 * ss)} ${f(x + ss)} ${f(y + 0.3 * ss)}A${f(ss)} ${f(ss)} 0 0 1 ${f(x - ss)} ${f(y + 0.3 * ss)}C${f(x - ss)} ${f(y - 0.3 * ss)} ${f(x - 0.2 * ss)} ${f(y - 1.1 * ss)} ${f(x)} ${f(y - 1.8 * ss)}Z`;
+    }
+  }
+  ctx.nodes.push({ t: 'path', d: drops, fill: dropC, opacity: 0.9 });
+  // Ripples
+  let rip = '';
+  for (const [rx, k] of [[0.3, 2], [0.62, 3], [0.85, 1]] as const) {
+    for (let i = 0; i < k; i++) rip += ell(W * rx, hy + H * 0.1, H * (0.03 + 0.03 * i), H * (0.008 + 0.008 * i));
+  }
+  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.4), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.6 });
+}
+
+function mountainRange(ctx: Ctx, i: number, n: number, baseY: number, amp: number, peakX: number, snow: boolean, width?: number) {
+  const { W, H, rng, pal } = ctx;
+  const pts = mountainPts(rng, W, baseY, amp, 0.6, peakX, width);
+  const color = layerColor(ctx, i, n);
+  const minY = Math.min(...pts.map((p) => p[1]));
+  const d = closeTo(polyLine(pts), pts, H + 2);
+  ctx.nodes.push({ t: 'path', d, fill: layerFill(ctx, color, minY, minY + H * 0.3, (i + 1) / n) });
+  if (snow) {
+    const clipId = newId(ctx, 'c');
+    ctx.defs.push({ t: 'clip', id: clipId, children: [{ t: 'path', d, fill: '#000' }] });
+    const snowLine = sample(rollingRidge(rng, W, minY + amp * 0.22, H * 0.02, 4), -6, W + 6, 18);
+    ctx.nodes.push({
+      t: 'g',
+      clip: clipId,
+      children: [{ t: 'path', d: `${polyLine(snowLine)}L${f(W + 6)} -2L-6 -2Z`, fill: mix(pal.sun, pal.haze, 0.3), opacity: ctx.mode === 'dark' ? 0.45 : 0.75 }],
+    });
+  }
+}
+
+function buildMeadow(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.58;
+  skyAndSun(ctx, hy);
+  const [sx] = sunPos(ctx);
+  const peakX = clamp(W - sx + 8, 30, 70);
+  mountainRange(ctx, 0, 5, H * 0.56, H * 0.4, peakX, true, 13);
+  drawMist(ctx, H * 0.56, 0.8);
+  mountainRange(ctx, 1, 5, H * 0.63, H * 0.24, peakX < 50 ? peakX + 38 : peakX - 38, true, 11);
+  drawMist(ctx, H * 0.64, 0.7);
+  // Meadow slopes
+  const green = mix(pal.land, dark ? pal.water : pal.haze, dark ? 0.15 : 0.1);
+  const m1 = sample(rollingRidge(rng, W, H * 0.7, H * 0.04), -6, W + 6, 10);
+  ridgeLayer(ctx, m1, mix(pal.haze, green, 0.65), 0.6);
+  const m2 = sample(rollingRidge(rng, W, H * 0.82, H * 0.05), -6, W + 6, 10);
+  ridgeLayer(ctx, m2, green, 1);
+  // Flowers: specks on the far slope, heads on stems in front
+  const petals = [tok.accent, tok.warning, pal.sun, tok.calm].map((c) => (dark ? mix(c, pal.land, 0.3) : mix(c, pal.sun, 0.12)));
+  const specks = ['', '', '', ''];
+  const nS = ctx.lite ? 18 : 60;
+  for (let i = 0; i < nS; i++) {
+    const u = rng();
+    const y = H * (0.7 + 0.28 * u);
+    specks[i % 4] += dot(range(rng, 0, W), y, (0.35 + 0.7 * u) * (ctx.lite ? 1.6 : 1) * (H / 100) * 1.3);
+  }
+  specks.forEach((d, i) => ctx.nodes.push({ t: 'path', d, fill: petals[i]!, opacity: 0.9 }));
+  const nF = ctx.lite ? 4 : 7;
+  let stems = '';
+  const heads = ['', '', '', ''];
+  const centres: string[] = [];
+  for (let i = 0; i < nF; i++) {
+    const x = (W * (i + 0.5)) / nF + range(rng, -3, 3);
+    const top = H * range(rng, 0.74, 0.86);
+    stems += `M${f(x)} ${f(H + 1)}Q${f(x + range(rng, -2, 2))} ${f((top + H) / 2)} ${f(x)} ${f(top)}`;
+    const r = H * range(rng, 0.03, 0.045) * (ctx.lite ? 1.2 : 1);
+    heads[i % 4] += flowerHead(x, top, r);
+    centres.push(dot(x, top, r * 0.28));
+  }
+  ctx.nodes.push({ t: 'path', d: stems, stroke: mix(green, pal.land, 0.4), sw: sw(ctx, 0.45, 0.8), fill: 'none' });
+  heads.forEach((d, i) => d && ctx.nodes.push({ t: 'path', d, fill: petals[i]! }));
+  ctx.nodes.push({ t: 'path', d: centres.join(''), fill: mix(tok.warning, pal.land, 0.35) });
+}
+
+function buildHaze(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.68;
+  const wash = (c: string, t = 0.45) => mix(c, pal.haze, t);
+  const sky = linear(ctx, 0, 0, 0, hy, [
+    { o: 0, c: wash(pal.skyTop, 0.35) },
+    { o: 0.6, c: wash(pal.skyMid, 0.4) },
+    { o: 1, c: wash(pal.horizon, 0.3) },
+  ]);
+  ctx.nodes.push({ t: 'rect', x: -1, y: -1, w: W + 2, h: H + 2, fill: sky });
+  drawGlow(ctx, ctx.nodes, 0.8);
+  // Diffuse sun: soft disc with no hard edge
+  const [sx, sy] = sunPos(ctx);
+  const r = sunRadius(ctx) * 1.35;
+  ctx.nodes.push({ t: 'circle', cx: f(sx), cy: f(sy), r: f(r * 3), fill: softFill(ctx, pal.sun, 0.5) });
+  ctx.nodes.push({ t: 'circle', cx: f(sx), cy: f(sy), r: f(r), fill: radial(ctx, sx, sy, r, [{ o: 0, c: pal.sun, a: 0.95 }, { o: 0.75, c: pal.sun, a: 0.7 }, { o: 1, c: pal.sun, a: 0 }]) });
+  // Haze bands drifting across (including over the sun)
+  const hazeC = mix(pal.haze, '#FFFFFF', dark ? 0.08 : 0.4);
+  const bandFill = softFill(ctx, hazeC, 0.85);
+  const bands = ctx.lite ? 4 : 7;
+  for (let i = 0; i < bands; i++) {
+    const y = H * (0.12 + (0.6 * i) / bands) + range(rng, -2, 2);
+    ctx.nodes.push({ t: 'ellipse', cx: f(range(rng, 0.2, 0.8) * W), cy: f(y), rx: f(range(rng, 45, 70)), ry: f(H * range(rng, 0.035, 0.06)), fill: bandFill, opacity: f(range(rng, 0.55, 0.85)) });
+  }
+  // Faded layered hills
+  const n = 3;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const pts = sample(rollingRidge(rng, W, H * (0.68 + t * 0.16), H * (0.03 + 0.03 * t)), -6, W + 6, 10);
+    ridgeLayer(ctx, pts, wash(layerColor(ctx, i, n + 1), 0.45 - t * 0.2), (i + 1) / (n + 1));
+    drawMist(ctx, H * (0.72 + t * 0.16), 1);
+  }
+  // Fine horizontal haze streaks
+  let streaks = '';
+  for (let i = 0; i < (ctx.lite ? 4 : 9); i++) {
+    const y = range(rng, H * 0.1, H * 0.85);
+    const x = range(rng, -10, W * 0.7);
+    streaks += `M${f(x)} ${f(y)}h${f(range(rng, 20, 45))}`;
+  }
+  ctx.nodes.push({ t: 'path', d: streaks, stroke: hazeC, sw: sw(ctx, 0.8, 1.3), fill: 'none', opacity: 0.35 });
+}
+
+function buildCoast(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.5;
+  skyAndSun(ctx, hy, { cloudCount: ctx.lite ? 1 : 2 });
+  drawWater(ctx, hy, false);
+  // Headland cliff on the right
+  const cliffC = layerColor(ctx, 2, 4);
+  const cx0 = W * 0.62;
+  const top = hy - H * 0.2;
+  const cliff: Pt[] = [
+    [cx0, hy + 0.3], [cx0 + W * 0.05, hy - H * 0.06], [cx0 + W * 0.09, hy - H * 0.13], [cx0 + W * 0.16, top + H * 0.02],
+    [cx0 + W * 0.28, top], [W + 6, top + H * 0.01], [W + 6, H * 0.8],
+  ];
+  const cliffD = `${smoothLine(cliff.slice(0, 6))}L${f(W + 6)} ${f(H + 2)}L${f(cx0 + W * 0.2)} ${f(H + 2)}Q${f(cx0 + W * 0.05)} ${f(hy + H * 0.12)} ${f(cx0)} ${f(hy + 0.3)}Z`;
+  ctx.nodes.push({ t: 'path', d: cliffD, fill: layerFill(ctx, cliffC, top, hy + H * 0.1, 0.75) });
+  // Rock face striations + foam at the cliff foot
+  let face = '';
+  for (let k = 0; k < (ctx.lite ? 2 : 4); k++) {
+    const x = cx0 + W * (0.1 + 0.07 * k);
+    face += `M${f(x)} ${f(top + H * 0.05 + k * 0.8)}L${f(x - W * 0.03)} ${f(hy + H * 0.08)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: face, stroke: mix(cliffC, pal.land, 0.5), sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: 0.5 });
+  ctx.nodes.push({ t: 'path', d: `M${f(cx0 - 2)} ${f(hy + 0.8)}Q${f(cx0 + W * 0.05)} ${f(hy + H * 0.06)} ${f(cx0 + W * 0.12)} ${f(hy + H * 0.14)}`, stroke: mix(pal.sun, '#FFFFFF', 0.3), sw: sw(ctx, 0.6, 1), fill: 'none', opacity: 0.6 });
+  // Grassy cap
+  ctx.nodes.push({ t: 'path', d: smoothLine(cliff.slice(2, 6)), stroke: mix(cliffC, pal.glow, 0.35), sw: sw(ctx, 1, 1.6), fill: 'none', opacity: 0.7 });
+  // Beach sweeping in from the lower left
+  const sand = dark ? mix(pal.land, pal.glow, 0.3) : mix(mix(pal.sun, pal.glow, 0.45), pal.horizon, 0.3);
+  const beach: Pt[] = [[-6, H * 0.64], [W * 0.22, H * 0.68], [W * 0.48, H * 0.77], [W * 0.72, H * 0.9], [W * 0.86, H + 2]];
+  const beachD = `${smoothLine(beach)}L-6 ${f(H + 2)}Z`;
+  ctx.nodes.push({ t: 'path', d: beachD, fill: linear(ctx, 0, H * 0.66, 0, H, [{ o: 0, c: mix(sand, pal.sun, 0.2) }, { o: 1, c: mix(sand, pal.land, 0.3) }]) });
+  // Foam lines along the shore
+  const foam = mix(pal.sun, '#FFFFFF', dark ? 0.15 : 0.45);
+  let fd = '';
+  for (let k = 0; k < 2; k++) {
+    const off = H * (0.018 + 0.035 * k);
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 10; i++) {
+      const u = i / 10;
+      const x = -6 + (W * (0.62 - 0.12 * k) + 6) * u;
+      const y = H * 0.64 + (H * 0.2) * u ** 1.4 - off + Math.sin(u * 14 + k * 2) * H * 0.006;
+      pts.push([x, y]);
+    }
+    fd += smoothLine(pts.slice(k * 2));
+  }
+  ctx.nodes.push({ t: 'path', d: fd, stroke: foam, sw: sw(ctx, 0.55, 0.9), fill: 'none', opacity: 0.8 });
+  // Dune grass leaning in the wind
+  const gc = mix(pal.land, sand, 0.2);
+  let grass = '';
+  const gx = W * 0.12;
+  const gy = H * 0.9;
+  for (let i = 0; i < (ctx.lite ? 4 : 7); i++) {
+    const x = gx + i * 1.6;
+    const h = H * range(rng, 0.12, 0.2);
+    grass += `M${f(x)} ${f(gy + 3)}Q${f(x + h * 0.15)} ${f(gy - h * 0.5)} ${f(x + h * 0.55)} ${f(gy - h)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: grass, stroke: gc, sw: sw(ctx, 0.6, 1), fill: 'none' });
+  drawBreeze(ctx, ctx.lite ? 2 : 3, H * 0.12, hy - H * 0.1, mix(pal.sun, '#FFFFFF', 0.3));
+  if (ctx.has('birds')) drawBirds(ctx, W * 0.42, H * 0.2, layerColor(ctx, 3, 4), 0.8);
+}
+
+function buildSunburst(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const hy = H * 0.66;
+  drawSky(ctx, hy);
+  drawGlow(ctx, ctx.nodes, 1.1);
+  const sx = W * ctx.spec.sunX;
+  const sy = hy;
+  const n = ctx.lite ? 12 : 16;
+  let d = '';
+  const len = 160;
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI + (Math.PI * (i + 0.5)) / n;
+    const w = (Math.PI / n) * 0.42;
+    d += `M${f(sx)} ${f(sy)}L${f(sx + Math.cos(a - w) * len)} ${f(sy + Math.sin(a - w) * len)}L${f(sx + Math.cos(a + w) * len)} ${f(sy + Math.sin(a + w) * len)}Z`;
+  }
+  ctx.nodes.push({ t: 'path', d, fill: radial(ctx, sx, sy, 95, [{ o: 0, c: pal.sun, a: mode === 'dark' ? 0.34 : 0.5 }, { o: 1, c: pal.sun, a: 0 }]) });
+  drawSun(ctx, ctx.nodes, [sx, sy], 1.7);
+  // Flat field bands
+  const bands = ctx.lite ? 3 : 4;
+  for (let i = 0; i < bands; i++) {
+    const t = i / (bands - 1);
+    const y = hy + (H - hy) * (0.02 + 0.3 * t ** 1.3);
+    const pts = sample(rollingRidge(rng, W, y, H * 0.008 * (1 + t), 0.6), -6, W + 6, 8);
+    ridgeLayer(ctx, pts, layerColor(ctx, i, bands), (i + 1) / bands);
+    if (i === 0) drawMist(ctx, y + 1, 0.8);
+  }
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.2), w: W + 2, h: 0.45, fill: mix(pal.sun, '#FFFFFF', 0.3), opacity: 0.6 });
+}
+
+function buildBeams(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.64;
+  drawSky(ctx, hy);
+  drawStars(ctx, hy);
+  drawGlow(ctx, ctx.nodes, 0.9);
+  const sx = ctx.spec.sunX * W;
+  const sy = H * 0.26;
+  // Beams fanning down from behind the cloud
+  let d = '';
+  const nB = ctx.lite ? 5 : 7;
+  for (let i = 0; i < nB; i++) {
+    const a = Math.PI / 2 + ((i - (nB - 1) / 2) / nB) * 1.5 + range(rng, -0.05, 0.05);
+    const w = range(rng, 0.035, 0.07);
+    const L = H * 1.4;
+    d += `M${f(sx)} ${f(sy)}L${f(sx + Math.cos(a - w) * L)} ${f(sy + Math.sin(a - w) * L)}L${f(sx + Math.cos(a + w) * L)} ${f(sy + Math.sin(a + w) * L)}Z`;
+  }
+  const beamFill = linear(ctx, 0, sy, 0, H, [{ o: 0, c: pal.sun, a: dark ? 0.4 : 0.55 }, { o: 1, c: pal.sun, a: 0.02 }]);
+  // Hills under the beams
+  const n = ctx.lite ? 2 : 3;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const pts = sample(rollingRidge(rng, W, H * (0.66 + t * 0.2), H * (0.04 + 0.04 * t)), -6, W + 6, 10);
+    ridgeLayer(ctx, pts, layerColor(ctx, i, n), (i + 1) / n);
+    if (i === 0) drawMist(ctx, H * 0.68, 0.7);
+  }
+  ctx.nodes.push({ t: 'path', d, fill: beamFill });
+  // Cloud bank hiding the sun, with a bright silver lining
+  const lit = mix(pal.cloud, pal.sun, dark ? 0.2 : 0.4);
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(sy), rx: 30, ry: f(H * 0.18), fill: softFill(ctx, pal.sun, 0.7) });
+  cloudPuff(ctx, sx - 22, sy + H * 0.02, 44, mix(lit, pal.skyMid, 0.25), mix(pal.cloudShade, pal.skyMid, 0.2), { lumps: 4, opacity: 0.85 });
+  cloudPuff(ctx, sx + 6, sy + H * 0.06, 58, lit, pal.cloudShade, { lumps: 5 });
+}
+
+function buildRiver(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.52;
+  skyAndSun(ctx, hy);
+  for (let i = 0; i < 2; i++) {
+    const pts = sample(rollingRidge(rng, W, hy + i * H * 0.03, H * (0.05 - i * 0.015)), -6, W + 6, 10);
+    ridgeLayer(ctx, pts, layerColor(ctx, i, 5), (i + 1) / 5);
+    drawMist(ctx, hy + H * 0.02 + i * H * 0.03, 0.8);
+  }
+  // Valley floor
+  const floorTop = hy + H * 0.05;
+  const vc = layerColor(ctx, 3, 5);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(floorTop), w: W + 2, h: f(H - floorTop + 1), fill: linear(ctx, 0, floorTop, 0, H, [{ o: 0, c: mix(vc, pal.haze, 0.35) }, { o: 1, c: mix(vc, pal.land, 0.3) }]) });
+  drawMist(ctx, floorTop + 1, 0.7);
+  // Winding river
+  const [sx] = sunPos(ctx);
+  const ph = range(rng, 0, Math.PI);
+  const steps = 16;
+  const L: Pt[] = [];
+  const R: Pt[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const y = floorTop + (H + 2 - floorTop) * t ** 1.25;
+    const x = sx + Math.sin(t * Math.PI * 1.7 + ph) * W * 0.24 * t + (W / 2 - sx) * t;
+    const w = 0.6 + t * W * 0.22;
+    L.push([x - w / 2, y]);
+    R.push([x + w / 2, y]);
+  }
+  const riverD = `${smoothLine(L)}L${f(R[R.length - 1]![0])} ${f(R[R.length - 1]![1])}${smoothLine([...R].reverse()).replace(/^M[^C]*/, '')}Z`;
+  const rf = linear(ctx, 0, floorTop, 0, H, [{ o: 0, c: mix(pal.horizon, '#FFFFFF', 0.25) }, { o: 0.4, c: pal.skyLow }, { o: 1, c: mix(pal.skyMid, pal.water, 0.4) }]);
+  ctx.nodes.push({ t: 'path', d: riverD, fill: rf });
+  ctx.nodes.push({ t: 'path', d: smoothLine(L) + smoothLine(R), stroke: mix(pal.sun, '#FFFFFF', 0.3), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: dark ? 0.4 : 0.55 });
+  // Bushes along the banks
+  let bush = '';
+  for (let i = 3; i < steps; i += 2) {
+    const s = (0.4 + (i / steps) * 1.3) * (ctx.lite ? 1.3 : 1);
+    bush += dot(L[i]![0] - s * 1.5, L[i]![1] - s * 0.3, s) + dot(R[i]![0] + s * 1.6, R[i]![1] - s * 0.2, s * 0.9);
+  }
+  ctx.nodes.push({ t: 'path', d: bush, fill: mix(vc, pal.land, 0.3), opacity: 0.85 });
+  // Framing slope in the near corner
+  const left = sx > W / 2;
+  const bank = sample((x) => {
+    const u = left ? x / W : 1 - x / W;
+    return H * 0.86 + H * 0.3 * clamp(u - 0.1, 0, 1) ** 0.9;
+  }, -6, W + 6, 12);
+  ridgeLayer(ctx, bank, layerColor(ctx, 4, 5), 1);
+}
+
+function buildCairn(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.56;
+  skyAndSun(ctx, hy);
+  const far = sample(rollingRidge(rng, W, hy - H * 0.01, H * 0.03), -6, W + 6, 10);
+  ridgeLayer(ctx, far, layerColor(ctx, 0, 4), 0.25);
+  drawWater(ctx, hy, true);
+  // Flat rock shore
+  const shoreC = layerColor(ctx, 3, 4);
+  const shore = sample((x) => H * 0.86 - H * 0.05 * Math.exp(-(((x - W * 0.62) / 28) ** 2)) + Math.sin(x / 6) * 0.4, -6, W + 6, 16);
+  ridgeLayer(ctx, shore, shoreC, 1);
+  // Stacked stones
+  const baseX = W * 0.62;
+  let y = H * 0.83;
+  const stone = mix(pal.land, pal.haze, dark ? 0.25 : 0.4);
+  const sizes = [0.13, 0.105, 0.085, 0.066, 0.05];
+  const [sx] = sunPos(ctx);
+  sizes.forEach((s, i) => {
+    const rx = H * s;
+    const ry = rx * 0.42;
+    const cx = baseX + range(rng, -1, 1) * H * 0.012;
+    const cy = y - ry;
+    const c = mix(stone, pal.haze, i * 0.05);
+    const fill = linear(ctx, cx + (sx < cx ? -rx : rx), cy - ry, cx + (sx < cx ? rx : -rx), cy + ry, [
+      { o: 0, c: mix(c, pal.sun, 0.35) },
+      { o: 0.5, c },
+      { o: 1, c: mix(c, pal.land, 0.5) },
+    ]);
+    ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(cy), rx: f(rx), ry: f(ry), fill });
+    y = cy - ry * 0.75;
+  });
+  // Pebbles
+  let peb = '';
+  for (let i = 0; i < (ctx.lite ? 3 : 6); i++) peb += ell(range(rng, W * 0.1, W * 0.9), H * range(rng, 0.9, 0.97), H * range(rng, 0.015, 0.03), H * 0.01);
+  ctx.nodes.push({ t: 'path', d: peb, fill: mix(stone, pal.land, 0.2) });
+}
+
+function buildDandelion(ctx: Ctx) {
+  const { W, H, pal, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.74;
+  backdrop(ctx, hy, { layers: 2 });
+  const hx = W * 0.4;
+  const hyH = H * 0.4;
+  const R = H * 0.17;
+  const seedC = dark ? mix(pal.sun, pal.cloud, 0.25) : mix(pal.sun, '#FFFFFF', 0.4);
+  // Breath lines
+  let br = '';
+  for (let k = 0; k < 2; k++) {
+    const y = hyH + (k - 0.5) * R * 0.9;
+    br += `M${f(hx - W * 0.5)} ${f(y + R * 0.3)}C${f(hx - R)} ${f(y + R * 0.5)} ${f(hx + R)} ${f(y - R * 0.6)} ${f(W + 4)} ${f(y - R * 1.3)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: br, stroke: seedC, sw: sw(ctx, 0.45, 0.8), fill: 'none', opacity: 0.35 });
+  // Stem
+  ctx.nodes.push({ t: 'path', d: `M${f(hx - W * 0.06)} ${f(H + 2)}Q${f(hx - W * 0.08)} ${f((H + hyH) / 2)} ${f(hx)} ${f(hyH)}`, stroke: mix(pal.land, pal.haze, 0.15), sw: sw(ctx, 0.9, 1.4), fill: 'none' });
+  // Halo behind the head
+  ctx.nodes.push({ t: 'circle', cx: f(hx), cy: f(hyH), r: f(R * 1.5), fill: softFill(ctx, pal.sun, dark ? 0.35 : 0.5) });
+  // Seed head (a wedge already blown away)
+  const n = ctx.lite ? 16 : 30;
+  let spokes = '';
+  let tufts = '';
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + range(rng, -0.05, 0.05);
+    if (a > Math.PI * 1.72 && a < Math.PI * 1.98) continue;
+    const r = R * range(rng, 0.85, 1);
+    const ex = hx + Math.cos(a) * r;
+    const ey = hyH + Math.sin(a) * r;
+    spokes += `M${f(hx + Math.cos(a) * R * 0.15)} ${f(hyH + Math.sin(a) * R * 0.15)}L${f(ex)} ${f(ey)}`;
+    const t = R * 0.16;
+    for (const da of [-0.5, 0, 0.5]) tufts += `M${f(ex)} ${f(ey)}l${f(Math.cos(a + da) * t)} ${f(Math.sin(a + da) * t)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: spokes, stroke: seedC, sw: sw(ctx, 0.22, 0.45), fill: 'none', opacity: 0.85 });
+  ctx.nodes.push({ t: 'path', d: tufts, stroke: seedC, sw: sw(ctx, 0.25, 0.5), fill: 'none', opacity: 0.95 });
+  ctx.nodes.push({ t: 'circle', cx: f(hx), cy: f(hyH), r: f(R * 0.16), fill: mix(pal.land, pal.glow, 0.3) });
+  // Drifting seeds
+  let flying = '';
+  for (let i = 0; i < (ctx.lite ? 3 : 6); i++) {
+    const t = (i + 1) / 7;
+    const x = hx + R * 1.3 + (W - hx - R) * t;
+    const y = hyH - R * 0.6 - H * 0.28 * t + range(rng, -2, 2);
+    const s = R * 0.22;
+    flying += `M${f(x)} ${f(y)}l${f(-s * 0.6)} ${f(s)}`;
+    for (const da of [-0.7, -0.25, 0.2]) flying += `M${f(x)} ${f(y)}l${f(Math.cos(-Math.PI / 2 + da) * s * 0.6)} ${f(Math.sin(-Math.PI / 2 + da) * s * 0.6)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: flying, stroke: seedC, sw: sw(ctx, 0.25, 0.5), fill: 'none', opacity: 0.9 });
+}
+
+function buildPuffs(ctx: Ctx) {
+  const { W, H, pal, mode } = ctx;
+  const dark = mode === 'dark';
+  drawSky(ctx, H);
+  drawStars(ctx, H * 0.7);
+  drawGlow(ctx, ctx.nodes, 0.9);
+  if (!ctx.has('noSun')) drawSun(ctx, ctx.nodes, undefined, 0.85);
+  const lit = mix(pal.cloud, pal.sun, dark ? 0.2 : 0.45);
+  const layers: [number, number, number, number][] = [
+    // cx, baseY, width, depth
+    [W * 0.78, H * 0.3, 34, 0.25],
+    [W * 0.2, H * 0.44, 40, 0.45],
+    [W * 0.7, H * 0.66, 58, 0.7],
+    [W * 0.28, H * 0.9, 70, 1],
+  ];
+  for (const [cx, by, w, dp] of layers) {
+    const l = mix(pal.haze, lit, 0.35 + 0.65 * dp);
+    const s = mix(pal.haze, mix(pal.cloudShade, pal.skyMid, 0.3), 0.3 + 0.7 * dp);
+    cloudPuff(ctx, cx, by, w * Math.max(0.8, H / 100), l, s, { lumps: 5, tall: 1.25 });
+  }
+  // Soft bank along the bottom
+  const bank = cloudBank(ctx, H * 0.97, 3, 6);
+  ctx.nodes.push({ t: 'path', d: bank.d, fill: linear(ctx, 0, bank.minY, 0, H, [{ o: 0, c: lit }, { o: 1, c: pal.cloudShade }]) });
+}
+
+/** Furrow rows on the nearest hill (detail 'rows'). */
+/** Almond leaf centred at (x, y), length l, rotated by a (radians). */
+function leafShape(x: number, y: number, l: number, a: number): string {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const P = (u: number, v: number) => `${f(x + u * c - v * s)} ${f(y + u * s + v * c)}`;
+  return `M${P(-l / 2, 0)}Q${P(0, -l * 0.42)} ${P(l / 2, 0)}Q${P(0, l * 0.42)} ${P(-l / 2, 0)}Z`;
+}
+
+/** Wind in the trees — a broadleaf tree on a knoll, crown leaning downwind, leaves carried off. */
+function buildWindtree(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.68;
+  backdrop(ctx, hy, { layers: 2 });
+  drawBreeze(ctx, ctx.lite ? 2 : 4, H * 0.16, H * 0.46, mix(pal.sun, pal.cloud, 0.4));
+  // Knoll
+  const kx = W * 0.4;
+  const knoll = sample((x) => H * 0.9 - H * 0.12 * Math.exp(-(((x - kx) / 34) ** 2)) + Math.sin(x / 7) * 0.35, -6, W + 6, 18);
+  const groundY = (x: number) => H * 0.9 - H * 0.12 * Math.exp(-(((x - kx) / 34) ** 2));
+  const hillC = layerColor(ctx, 3, 4);
+  ridgeLayer(ctx, knoll, hillC, 1);
+  // Trunk + limbs, leaning downwind (to the right)
+  const base: Pt = [kx, groundY(kx) + 0.5];
+  const th = H * 0.36;
+  const bark = mix(pal.land, tok.sunrise, dark ? 0.1 : 0.18);
+  const trunk: Pt[] = [base, [kx + th * 0.03, base[1] - th * 0.35], [kx + th * 0.1, base[1] - th * 0.62], [kx + th * 0.2, base[1] - th * 0.8]];
+  ctx.nodes.push({ t: 'path', d: taper(trunk, H * 0.045, H * 0.014), fill: bark });
+  const limbs: Pt[][] = [
+    [[kx + th * 0.05, base[1] - th * 0.45], [kx - th * 0.12, base[1] - th * 0.62], [kx - th * 0.18, base[1] - th * 0.75]],
+    [[kx + th * 0.09, base[1] - th * 0.58], [kx + th * 0.32, base[1] - th * 0.7], [kx + th * 0.48, base[1] - th * 0.74]],
+  ];
+  for (const l of limbs) ctx.nodes.push({ t: 'path', d: taper(l, H * 0.016, H * 0.006), fill: bark });
+  // Crown — clusters blown to the right
+  const leafBase = mix(pal.land, tok.calm, dark ? 0.22 : 0.18);
+  const [sx, sy] = sunPos(ctx);
+  const ccx = kx + th * 0.14;
+  const ccy = base[1] - th * 0.78;
+  const blobs: [number, number, number][] = [
+    [-0.34, 0.1, 0.2], [-0.12, -0.12, 0.26], [0.16, -0.18, 0.26], [0.42, -0.06, 0.24],
+    [0.62, 0.08, 0.18], [0.3, 0.12, 0.24], [0.02, 0.14, 0.24], [-0.2, 0.22, 0.16], [0.52, 0.22, 0.15],
+  ];
+  let crown = '';
+  for (const [u, v, r] of blobs) crown += dot(ccx + u * th, ccy + v * th, r * th * range(rng, 0.92, 1.08));
+  const crownFill = linear(ctx, sx < ccx ? ccx - th * 0.6 : ccx + th * 0.8, Math.min(sy, ccy - th * 0.4), sx < ccx ? ccx + th * 0.8 : ccx - th * 0.6, ccy + th * 0.4, [
+    { o: 0, c: mix(leafBase, pal.glow, dark ? 0.28 : 0.4) },
+    { o: 0.5, c: leafBase },
+    { o: 1, c: mix(leafBase, '#000000', dark ? 0.3 : 0.15) },
+  ]);
+  ctx.nodes.push({ t: 'path', d: crown, fill: crownFill });
+  // Leaf texture on the lit side
+  if (!ctx.lite) {
+    let tex = '';
+    for (let i = 0; i < 26; i++) {
+      const a = range(rng, 0, Math.PI * 2);
+      const rr = range(rng, 0.05, 0.42) * th;
+      tex += leafShape(ccx + th * 0.14 + Math.cos(a) * rr * 1.3, ccy - th * 0.02 + Math.sin(a) * rr * 0.7, th * 0.05, range(rng, -0.6, 0.6));
+    }
+    ctx.nodes.push({ t: 'path', d: tex, fill: mix(leafBase, pal.glow, 0.45), opacity: dark ? 0.45 : 0.55 });
+  }
+  // Leaves carried off on the wind
+  const flyC = mix(tok.sunrise, tok.warning, 0.4);
+  let fly = '';
+  const nFly = ctx.lite ? 5 : 11;
+  for (let i = 0; i < nFly; i++) {
+    const t = i / nFly;
+    const x = ccx + th * (0.7 + t * 1.2) + range(rng, -3, 3);
+    const y = ccy - th * 0.1 + Math.sin(t * 5 + 1) * H * 0.07 + range(rng, -2, 2);
+    if (x > W + 2) continue;
+    fly += leafShape(x, y, H * range(rng, 0.022, 0.034) * (ctx.lite ? 1.5 : 1), range(rng, -1.2, 1.2));
+  }
+  ctx.nodes.push({ t: 'path', d: fly, fill: mix(flyC, pal.land, dark ? 0.35 : 0.12), opacity: 0.9 });
+  // Bent grass tufts on the knoll
+  let grass = '';
+  for (let i = 0; i < (ctx.lite ? 8 : 18); i++) {
+    const x = range(rng, 2, W - 2);
+    const y = groundY(x) + range(rng, 0, H * 0.04);
+    const h = H * range(rng, 0.025, 0.05);
+    grass += `M${f(x)} ${f(y)}Q${f(x + h * 0.15)} ${f(y - h * 0.7)} ${f(x + h * 0.6)} ${f(y - h)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: grass, stroke: mix(hillC, pal.glow, 0.3), sw: sw(ctx, 0.45, 0.8), fill: 'none', opacity: 0.8 });
+}
+
+/** Morning pond — lily pads, a frog on a pad, ripples, cattails at the water's edge. */
+function buildPond(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.56;
+  skyAndSun(ctx, hy);
+  // Far treeline
+  const far = sample(rollingRidge(rng, W, hy - H * 0.02, H * 0.04, 1.6), -6, W + 6, 16);
+  ridgeLayer(ctx, far, layerColor(ctx, 1, 4), 0.4);
+  drawWater(ctx, hy, true);
+  drawMist(ctx, hy + H * 0.02, 0.9);
+  const padC = mix(pal.land, tok.calm, dark ? 0.24 : 0.2);
+  const padLit = mix(padC, pal.glow, dark ? 0.2 : 0.3);
+  // Ripples around the frog's pad
+  const fx = W * 0.56;
+  const fy = H * 0.8;
+  let rip = '';
+  for (let k = 0; k < 3; k++) rip += ell(fx, fy + H * 0.005, H * (0.14 + 0.07 * k), H * (0.03 + 0.016 * k));
+  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.sun, pal.horizon, 0.3), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: dark ? 0.4 : 0.6 });
+  // Lily pads (notched ellipses), perspective-scaled
+  const pad = (x: number, y: number, r: number) => {
+    const ry = r * 0.34;
+    const a = 0.22;
+    const d = `M${f(x)} ${f(y)}L${f(x + r * Math.cos(-a))} ${f(y + ry * Math.sin(-a))}A${f(r)} ${f(ry)} 0 1 0 ${f(x + r * Math.cos(a))} ${f(y + ry * Math.sin(a))}Z`;
+    ctx.nodes.push({ t: 'path', d, fill: linear(ctx, 0, y - ry, 0, y + ry, [{ o: 0, c: padLit }, { o: 1, c: padC }]) });
+  };
+  const pads: [number, number, number][] = [
+    [W * 0.2, H * 0.64, H * 0.05], [W * 0.34, H * 0.7, H * 0.065], [W * 0.82, H * 0.66, H * 0.055], [W * 0.14, H * 0.86, H * 0.1], [W * 0.84, H * 0.9, H * 0.085],
+  ];
+  for (const [x, y, r] of pads) pad(x, y, r);
+  pad(fx, fy, H * 0.13);
+  // Water-lily bloom
+  const bloom = dark ? mix(tok.accent, pal.sun, 0.45) : mix(pal.sun, tok.accent, 0.35);
+  const bx = W * 0.34 + H * 0.02;
+  const by = H * 0.69;
+  let petals = '';
+  for (let p = -2; p <= 2; p++) petals += leafShape(bx + p * H * 0.012, by - H * 0.012 - (2 - Math.abs(p)) * H * 0.004, H * 0.03, -Math.PI / 2 + p * 0.45);
+  ctx.nodes.push({ t: 'path', d: petals, fill: bloom });
+  // Frog sitting on the big pad
+  const b = H * 0.05;
+  const frogC = dark ? mix(tok.calm, pal.land, 0.45) : mix(pal.land, tok.calm, 0.3);
+  let frog = ell(fx, fy - b * 0.55, b * 1.1, b * 0.62); // body
+  frog += ell(fx + b * 0.95, fy - b * 0.95, b * 0.55, b * 0.42); // head
+  frog += dot(fx + b * 0.85, fy - b * 1.35, b * 0.22) + dot(fx + b * 1.2, fy - b * 1.3, b * 0.2); // eyes
+  frog += ell(fx - b * 0.55, fy - b * 0.2, b * 0.55, b * 0.3); // haunch
+  ctx.nodes.push({ t: 'path', d: frog, fill: linear(ctx, 0, fy - b * 1.6, 0, fy, [{ o: 0, c: mix(frogC, pal.glow, 0.3) }, { o: 1, c: mix(frogC, '#000000', 0.15) }]) });
+  if (!ctx.lite) ctx.nodes.push({ t: 'circle', cx: f(fx + b * 0.88), cy: f(fy - b * 1.38), r: f(b * 0.08), fill: pal.sun, opacity: 0.85 });
+  // Cattails + reeds on the left bank
+  const reedC = mix(pal.land, pal.haze, dark ? 0.05 : 0.1);
+  const headC = mix(tok.sunrise, pal.land, dark ? 0.6 : 0.45);
+  const nReeds = ctx.lite ? 4 : 7;
+  for (let i = 0; i < nReeds; i++) {
+    const x = W * (0.02 + i * 0.045) + range(rng, -1, 1);
+    const y0 = H + 1;
+    const h = H * range(rng, 0.3, 0.46);
+    const lean = range(rng, -2, 4);
+    const pts: Pt[] = [[x, y0], [x + lean * 0.4, y0 - h * 0.5], [x + lean, y0 - h]];
+    ctx.nodes.push({ t: 'path', d: taper(pts, H * 0.012, H * 0.005), fill: reedC });
+    if (i % 2 === 0) {
+      const hx = x + lean * 0.92;
+      const hyy = y0 - h * 0.86;
+      ctx.nodes.push({ t: 'path', d: ell(hx, hyy, H * 0.012, H * 0.045), fill: headC });
+    } else {
+      ctx.nodes.push({ t: 'path', d: taper([[x, y0], [x + lean + 4, y0 - h * 0.6], [x + lean + 9, y0 - h * 0.75]], H * 0.01, H * 0.001), fill: reedC });
+    }
+  }
+  if (ctx.has('birds')) {
+    const [sx, sy] = sunPos(ctx);
+    drawBirds(ctx, clamp(sx - 16, 18, 80), clamp(sy - 14, 10, 36), pal.land, 0.8);
+  }
+}
+
+/** Campfire — crossed logs in a ring of stones, layered flames, rising sparks and smoke. */
+function buildCampfire(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.6;
+  backdrop(ctx, hy, { layers: 2 });
+  const groundTop = H * 0.72;
+  const ground = sample((x) => groundTop + Math.sin(x / 9) * 0.6 + (x / W) * H * 0.02, -6, W + 6, 14);
+  ridgeLayer(ctx, ground, layerColor(ctx, 3, 4), 1);
+  const cx = W * 0.5;
+  const baseY = H * 0.84;
+  const fire = tok.sunrise;
+  const hot = tok.warning;
+  // Warm light pooled on the ground
+  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(baseY), rx: f(W * 0.42), ry: f(H * 0.1), fill: softFill(ctx, mix(hot, pal.glow, 0.3), dark ? 0.55 : 0.5) });
+  // Smoke curling up
+  const smokeX = cx + H * 0.02;
+  ctx.nodes.push({
+    t: 'path',
+    d: `M${f(smokeX)} ${f(baseY - H * 0.3)}C${f(smokeX + 6)} ${f(baseY - H * 0.4)} ${f(smokeX - 5)} ${f(baseY - H * 0.48)} ${f(smokeX + 3)} ${f(baseY - H * 0.58)}S${f(smokeX + 10)} ${f(baseY - H * 0.7)} ${f(smokeX + 6)} ${f(baseY - H * 0.78)}`,
+    stroke: mix(pal.haze, pal.cloud, 0.5),
+    sw: sw(ctx, 1.6, 2.2),
+    fill: 'none',
+    opacity: dark ? 0.35 : 0.45,
+  });
+  // Flames — outer, middle, core
+  const flame = (w: number, h: number, dx: number, lean: number) => {
+    const x0 = cx + dx;
+    const y0 = baseY - H * 0.03;
+    return `M${f(x0 - w)} ${f(y0)}C${f(x0 - w * 1.05)} ${f(y0 - h * 0.45)} ${f(x0 - w * 0.2 + lean * 0.5)} ${f(y0 - h * 0.6)} ${f(x0 + lean)} ${f(y0 - h)}C${f(x0 + w * 0.35 + lean * 0.4)} ${f(y0 - h * 0.62)} ${f(x0 + w * 1.05)} ${f(y0 - h * 0.42)} ${f(x0 + w)} ${f(y0)}Z`;
+  };
+  const fh = H * 0.3;
+  ctx.nodes.push({ t: 'path', d: flame(W * 0.12, fh, 0, 2) + flame(W * 0.07, fh * 0.7, -W * 0.08, -3) + flame(W * 0.07, fh * 0.66, W * 0.08, 4), fill: mix(fire, pal.land, dark ? 0.08 : 0.04), opacity: 0.95 });
+  ctx.nodes.push({ t: 'path', d: flame(W * 0.08, fh * 0.72, W * 0.005, 1.5) + flame(W * 0.045, fh * 0.48, -W * 0.06, -2), fill: mix(hot, fire, 0.2) });
+  ctx.nodes.push({ t: 'path', d: flame(W * 0.04, fh * 0.42, W * 0.01, 1), fill: mix(pal.sun, hot, 0.25) });
+  // Logs (crossed)
+  const wood = mix(pal.land, tok.sunrise, dark ? 0.22 : 0.3);
+  const L = W * 0.24;
+  const logs: [Pt, Pt][] = [
+    [[cx - L * 0.6, baseY + H * 0.01], [cx + L * 0.5, baseY - H * 0.05]],
+    [[cx + L * 0.6, baseY + H * 0.01], [cx - L * 0.5, baseY - H * 0.05]],
+  ];
+  for (const [a, b] of logs) {
+    ctx.nodes.push({ t: 'path', d: taper([a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], b], H * 0.04, H * 0.034), fill: linear(ctx, 0, baseY - H * 0.07, 0, baseY + H * 0.03, [{ o: 0, c: mix(wood, hot, 0.35) }, { o: 1, c: mix(wood, '#000000', 0.2) }]) });
+    ctx.nodes.push({ t: 'ellipse', cx: f(a[0]), cy: f(a[1]), rx: f(H * 0.014), ry: f(H * 0.019), fill: mix(wood, pal.glow, 0.35) });
+  }
+  // Sparks
+  let sparks = '';
+  for (let i = 0; i < (ctx.lite ? 4 : 9); i++) {
+    sparks += dot(cx + range(rng, -W * 0.14, W * 0.16), baseY - fh * range(rng, 1.05, 1.7), range(rng, 0.35, 0.7) * (ctx.lite ? 1.6 : 1));
+  }
+  ctx.nodes.push({ t: 'path', d: sparks, fill: mix(hot, pal.sun, 0.4), opacity: 0.9 });
+  // Ring of stones in front
+  const stone = mix(pal.land, pal.haze, dark ? 0.22 : 0.35);
+  const nS = ctx.lite ? 5 : 8;
+  for (let i = 0; i < nS; i++) {
+    const a = Math.PI * (0.08 + (0.84 * i) / (nS - 1));
+    const x = cx - Math.cos(a) * W * 0.25;
+    const y = baseY + Math.sin(a) * H * 0.05 + H * 0.01;
+    const rx = H * range(rng, 0.028, 0.038);
+    ctx.nodes.push({ t: 'ellipse', cx: f(x), cy: f(y), rx: f(rx), ry: f(rx * 0.62), fill: linear(ctx, 0, y - rx, 0, y + rx, [{ o: 0, c: mix(stone, hot, 0.3) }, { o: 1, c: mix(stone, '#000000', 0.2) }]) });
+  }
+}
+
+/** Rounded deciduous canopy line — union of overlapping crowns along a ground ridge. */
+function canopyRow(ctx: Ctx, ground: RidgeFn, crownR: number, step: number, color: string, depth: number) {
+  const { W, H, rng } = ctx;
+  let d = '';
+  let minY = H;
+  for (let x = -6; x < W + 8; x += step * range(rng, 0.7, 1.2)) {
+    const r = crownR * range(rng, 0.7, 1.25);
+    const by = ground(x);
+    const cy = by - r * range(rng, 1.1, 1.6);
+    d += dot(x, cy, r) + dot(x + r * 0.55, cy + r * 0.35, r * 0.72);
+    minY = Math.min(minY, cy - r);
+  }
+  const base = sample(ground, -6, W + 6, 12);
+  d += closeTo(smoothLine(base), base, H + 2);
+  ctx.nodes.push({ t: 'path', d, fill: layerFill(ctx, color, minY, minY + H * 0.3, depth) });
+}
+
+/** Forest birds — sunlit forest edge at dawn, songbirds on a limb, more flying over the trees. */
+function buildForestBirds(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.6;
+  skyAndSun(ctx, hy);
+  // Two rows of rounded forest canopy + a meadow edge
+  canopyRow(ctx, rollingRidge(rng, W, H * 0.62, H * 0.03), H * 0.05, 6, layerColor(ctx, 1, 5), 0.35);
+  drawMist(ctx, H * 0.62, 0.9);
+  canopyRow(ctx, rollingRidge(rng, W, H * 0.74, H * 0.03), H * 0.075, 9, layerColor(ctx, 2, 5), 0.6);
+  drawMist(ctx, H * 0.75, 0.6);
+  const meadow = sample(rollingRidge(rng, W, H * 0.88, H * 0.02), -6, W + 6, 12);
+  ridgeLayer(ctx, meadow, layerColor(ctx, 3, 5, mix(pal.land, tok.calm, 0.12)), 0.85);
+  // Flying birds over the treetops, near the sun
+  const [sx, sy] = sunPos(ctx);
+  const flyC = mix(pal.land, pal.haze, 0.15);
+  drawBirds(ctx, clamp(sx - 8, 30, 80), clamp(sy - 12, 12, 34), flyC, 0.85);
+  // Foreground tree at the forest edge: trunk on the left, a long limb into the frame
+  const col = dark ? mix(pal.land, '#000000', 0.15) : mix(pal.land, pal.haze, 0.08);
+  const trunk: Pt[] = [[W * 0.06, H + 2], [W * 0.08, H * 0.6], [W * 0.05, H * 0.2], [W * 0.02, -2]];
+  ctx.nodes.push({ t: 'path', d: taper(trunk, W * 0.1, W * 0.065), fill: col });
+  const limb: Pt[] = sample((x) => H * 0.5 - (x / W) * H * 0.08 + Math.sin((x / W) * Math.PI * 1.4) * H * 0.02, W * 0.08, W * 0.9, 10);
+  ctx.nodes.push({ t: 'path', d: taper(limb, H * 0.04, H * 0.01), fill: col });
+  const twig: Pt[] = [limb[5]!, [limb[5]![0] + W * 0.05, limb[5]![1] - H * 0.08], [limb[5]![0] + W * 0.11, limb[5]![1] - H * 0.13]];
+  ctx.nodes.push({ t: 'path', d: taper(twig, H * 0.016, H * 0.005), fill: col });
+  // Leaf canopy hanging over the top-left
+  const leafC = mix(col, tok.calm, dark ? 0.18 : 0.14);
+  let canopy = '';
+  const clumps: [number, number, number][] = [[0.02, 0.02, 0.2], [0.2, -0.02, 0.16], [0.36, 0.04, 0.12], [0.1, 0.14, 0.12], [0.5, -0.01, 0.1]];
+  for (const [u, v, r] of clumps) canopy += dot(W * u, H * v, H * r * range(rng, 0.9, 1.1));
+  ctx.nodes.push({ t: 'path', d: canopy, fill: leafC });
+  let leaves = '';
+  const tips: Pt[] = [limb[limb.length - 1]!, twig[2]!, limb[3]!];
+  for (const tip of tips) {
+    for (let j = 0; j < (ctx.lite ? 2 : 4); j++) leaves += leafShape(tip[0] + range(rng, -2, 3), tip[1] - range(rng, 0, 3), H * 0.05, range(rng, -2.4, -0.4));
+  }
+  ctx.nodes.push({ t: 'path', d: leaves, fill: mix(leafC, pal.glow, 0.2) });
+  // Songbirds perched along the limb
+  const at = (x: number) => limb.reduce((a, p) => (Math.abs(p[0] - x) < Math.abs(a[0] - x) ? p : a), limb[0]!);
+  const b = H * 0.062;
+  const perch: [number, number, 1 | -1][] = ctx.lite ? [[0.34, 1, 1], [0.62, 0.9, -1]] : [[0.28, 1, 1], [0.45, 0.85, 1], [0.64, 0.95, -1]];
+  for (const [x, s, dir] of perch) {
+    const p = at(W * x);
+    drawPerchedBird(ctx, p[0], p[1] - H * 0.012, b * s, dir, col);
+  }
+  // A second small flock lifting off the canopy
+  drawBirds(ctx, W * 0.52, H * 0.24, col, 0.7);
+}
+
+/** Soft rain — a gentle, dense rain curtain over a treeline and meadow, ripples in a puddle. */
+function buildSoftRain(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.6;
+  drawSky(ctx, hy);
+  drawGlow(ctx, ctx.nodes, 0.5);
+  // Low, even overcast
+  const shade = softFill(ctx, mix(pal.cloudShade, pal.skyMid, 0.3), 0.7);
+  for (let i = 0; i < (ctx.lite ? 3 : 6); i++) {
+    ctx.nodes.push({ t: 'ellipse', cx: f(range(rng, -10, W + 10)), cy: f(range(rng, 0, H * 0.22)), rx: f(range(rng, 30, 55)), ry: f(range(rng, 6, 12)), fill: shade, opacity: f(range(rng, 0.5, 0.8)) });
+  }
+  // Far hills fading into the rain
+  const far = sample(rollingRidge(rng, W, H * 0.58, H * 0.05), -6, W + 6, 10);
+  ridgeLayer(ctx, far, layerColor(ctx, 0, 5), 0.2);
+  drawMist(ctx, H * 0.6, 1);
+  // Treeline of rounded trees
+  canopyRow(ctx, rollingRidge(rng, W, H * 0.7, H * 0.02), H * 0.055, 7, layerColor(ctx, 1, 4.5), 0.45);
+  drawMist(ctx, H * 0.7, 0.9);
+  // Meadow
+  const meadowTop = H * 0.76;
+  const meadow = sample((x) => meadowTop + Math.sin(x / 13) * H * 0.008, -6, W + 6, 14);
+  ridgeLayer(ctx, meadow, layerColor(ctx, 2.2, 4.5, mix(pal.land, tok.calm, 0.1)), 0.75);
+  // Puddle reflecting the sky, with ripple rings
+  const px = W * 0.58;
+  const py = H * 0.88;
+  const prx = W * 0.3;
+  const pry = H * 0.055;
+  ctx.nodes.push({ t: 'path', d: ell(px, py, prx, pry), fill: linear(ctx, 0, py - pry, 0, py + pry, [{ o: 0, c: mix(pal.skyLow, pal.horizon, 0.4) }, { o: 1, c: mix(pal.water, pal.skyMid, 0.3) }]) });
+  let rip = '';
+  const rings: [number, number][] = ctx.lite ? [[-0.4, 0], [0.35, 0.1]] : [[-0.55, -0.1], [-0.15, 0.25], [0.3, -0.2], [0.6, 0.2], [0.05, -0.35]];
+  for (const [u, v] of rings) {
+    for (let k = 0; k < 2; k++) rip += ell(px + u * prx, py + v * pry, H * (0.018 + 0.02 * k), H * (0.005 + 0.005 * k));
+  }
+  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.5), sw: sw(ctx, 0.3, 0.55), fill: 'none', opacity: 0.75 });
+  // Rain curtain — soft translucent sheets, then dense fine streaks, nearly vertical
+  const sheetC = mix(pal.cloud, pal.skyLow, 0.4);
+  for (let i = 0; i < 3; i++) {
+    const x = range(rng, -5, W - 15);
+    const w = range(rng, 18, 34);
+    ctx.nodes.push({ t: 'path', d: `M${f(x)} -1L${f(x + w)} -1L${f(x + w - 4)} ${f(H * 0.8)}L${f(x - 4)} ${f(H * 0.8)}Z`, fill: linear(ctx, 0, 0, 0, H * 0.8, [{ o: 0, c: sheetC, a: 0 }, { o: 0.35, c: sheetC, a: dark ? 0.16 : 0.22 }, { o: 1, c: sheetC, a: 0 }]) });
+  }
+  const slant = 0.07;
+  const streaks = (count: number, lMin: number, lMax: number, y1: number) => {
+    let d = '';
+    for (let i = 0; i < count; i++) {
+      const x = range(rng, -4, W + 6);
+      const y = range(rng, -6, y1);
+      const len = range(rng, lMin, lMax);
+      d += `M${f(x)} ${f(y)}l${f(-len * slant)} ${f(len)}`;
+    }
+    return d;
+  };
+  const rainC = dark ? mix(pal.cloud, tok.accent, 0.2) : mix(pal.cloudShade, pal.water, 0.35);
+  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 40 : 140, 3, 6, H * 0.92), stroke: rainC, sw: ctx.lite ? 0.5 : 0.28, fill: 'none', opacity: dark ? 0.45 : 0.55 });
+  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 12 : 36, 7, 13, H * 0.9), stroke: rainC, sw: ctx.lite ? 0.8 : 0.45, fill: 'none', opacity: dark ? 0.5 : 0.6 });
+}
+
+/** Shoreline — low view over a sandy beach, gentle waves lapping in, foam lines on wet sand. */
+function buildShoreline(ctx: Ctx) {
+  const { W, H, pal, tok, rng, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.46;
+  skyAndSun(ctx, hy, { cloudCount: ctx.lite ? 1 : 3 });
+  // Open sea to the horizon
+  const sea = linear(ctx, 0, hy, 0, H * 0.66, [{ o: 0, c: mix(pal.horizon, pal.water, 0.45) }, { o: 1, c: mix(pal.water, pal.land, 0.2) }]);
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy), w: W + 2, h: f(H * 0.22), fill: sea });
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.15), w: W + 2, h: 0.4, fill: mix(pal.horizon, '#FFFFFF', 0.4), opacity: 0.55 });
+  const [sx] = sunPos(ctx);
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(hy + H * 0.06), rx: 16, ry: f(H * 0.07), fill: softFill(ctx, pal.glow, 0.55) });
+  const foam = mix(pal.sun, '#FFFFFF', dark ? 0.15 : 0.45);
+  // Low swells
+  let swell = '';
+  for (let k = 0; k < (ctx.lite ? 2 : 4); k++) {
+    const y = hy + H * (0.03 + 0.035 * k);
+    const x0 = range(rng, -10, W * 0.4);
+    swell += `M${f(x0)} ${f(y)}Q${f(x0 + 20)} ${f(y - 0.8)} ${f(x0 + range(rng, 35, 60))} ${f(y)}`;
+  }
+  ctx.nodes.push({ t: 'path', d: swell, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.55 });
+  // Sand (dry at the bottom), sloping gently toward the right
+  const sand = dark ? mix(tok.sunrise, pal.land, 0.62) : mix(mix(tok.sunrise, '#FFFFFF', 0.3), pal.haze, 0.3);
+  const slope = (x: number) => (x / W) * H * 0.04;
+  const sandTop = H * 0.64;
+  const sandPts = sample((x) => sandTop + slope(x) + Math.sin(x / 11) * 0.5, -6, W + 6, 14);
+  ctx.nodes.push({ t: 'path', d: closeTo(smoothLine(sandPts), sandPts, H + 2), fill: linear(ctx, 0, sandTop, 0, H, [{ o: 0, c: mix(sand, pal.land, dark ? 0.35 : 0.3) }, { o: 0.5, c: mix(sand, pal.land, dark ? 0.2 : 0.12) }, { o: 0.75, c: mix(sand, pal.glow, 0.15) }, { o: 1, c: mix(sand, pal.land, dark ? 0.3 : 0.15) }]) });
+  // Wash sheets: thin water sliding up the sand, each with a scalloped foam edge
+  const washes: [number, number, number][] = [[0.72, 0.08, 0.75], [0.8, 0.05, 0.6]];
+  for (const [yb, amp, op] of washes) {
+    const ph = range(rng, 0, Math.PI * 2);
+    const edge = (x: number) => H * yb + slope(x) + Math.sin(x / 9 + ph) * H * 0.012 + Math.sin(x / 3.2 + ph * 2) * H * 0.004;
+    const pts = sample(edge, -6, W + 6, 40);
+    const top = H * (yb - amp);
+    const body = `M-6 ${f(top)}L${f(W + 6)} ${f(top + slope(W))}` + smoothLine([...pts].reverse()).replace(/^M/, 'L') + 'Z';
+    ctx.nodes.push({ t: 'path', d: body, fill: linear(ctx, 0, top, 0, H * yb, [{ o: 0, c: mix(pal.water, pal.skyLow, 0.4), a: op }, { o: 1, c: mix(pal.skyLow, '#FFFFFF', dark ? 0.1 : 0.35), a: op }]) });
+    ctx.nodes.push({ t: 'path', d: smoothLine(pts), stroke: foam, sw: sw(ctx, 1.1, 1.6), fill: 'none', opacity: 0.95 });
+    // Secondary foam trace just behind the edge
+    const back = sample((x) => edge(x) - H * 0.018, -6, W + 6, 30);
+    if (!ctx.lite) ctx.nodes.push({ t: 'path', d: smoothLine(back), stroke: foam, sw: 0.35, fill: 'none', opacity: 0.5 });
+  }
+  // Shore break — a low curling wave with a thick foam crest where the sea meets the sand
+  const bph = range(rng, 0, Math.PI * 2);
+  const crest = sample((x) => H * 0.645 + slope(x) * 0.5 + Math.sin(x / 7 + bph) * H * 0.006, -6, W + 6, 30);
+  const under = sample((x) => H * 0.665 + slope(x) * 0.5, -6, W + 6, 10);
+  ctx.nodes.push({ t: 'path', d: smoothLine(crest) + smoothLine([...under].reverse()).replace(/^M/, 'L') + 'Z', fill: mix(pal.water, pal.land, 0.25) });
+  ctx.nodes.push({ t: 'path', d: smoothLine(crest), stroke: foam, sw: sw(ctx, 1.4, 2), fill: 'none', opacity: 0.95 });
+  // Wet-sand glint below the last wash
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(H * 0.86), rx: 18, ry: f(H * 0.02), fill: softFill(ctx, pal.sun, dark ? 0.35 : 0.5) });
+  // Foam lace left on the wet sand
+  let lace = '';
+  for (let i = 0; i < (ctx.lite ? 3 : 7); i++) {
+    const x = range(rng, 0, W);
+    const y = H * range(rng, 0.82, 0.9) + slope(x);
+    lace += `M${f(x)} ${f(y)}q${f(3)} ${f(-0.8)} ${f(6)} 0t${f(6)} 0`;
+  }
+  ctx.nodes.push({ t: 'path', d: lace, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.55 });
+  // A few shells / pebbles on the dry sand
+  let peb = '';
+  for (let i = 0; i < (ctx.lite ? 2 : 5); i++) peb += ell(range(rng, 5, W - 5), H * range(rng, 0.93, 0.98), H * range(rng, 0.008, 0.016), H * 0.006);
+  ctx.nodes.push({ t: 'path', d: peb, fill: mix(sand, pal.land, 0.35), opacity: 0.8 });
+  if (ctx.has('birds')) drawBirds(ctx, W * 0.3, H * 0.2, layerColor(ctx, 3, 4), 0.7);
+}
+
+function drawRows(ctx: Ctx, nearPts: Pt[], color: string) {
+  const { W, H, pal } = ctx;
+  const clipId = newId(ctx, 'c');
+  ctx.defs.push({ t: 'clip', id: clipId, children: [{ t: 'path', d: closeTo(smoothLine(nearPts), nearPts, H + 2), fill: '#000' }] });
+  const vx = W * 0.5;
+  const vy = Math.min(...nearPts.map((p) => p[1])) - H * 0.08;
+  let d = '';
+  for (let i = -8; i <= 8; i++) d += `M${f(vx + i * 1.5)} ${f(vy)}L${f(vx + i * 16)} ${f(H + 2)}`;
+  ctx.nodes.push({ t: 'g', clip: clipId, children: [{ t: 'path', d, stroke: mix(color, pal.glow, 0.35), sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: 0.55 }] });
+}
+
 const BUILDERS: Record<SceneType, (ctx: Ctx) => void> = {
   hills: buildHills,
   ocean: buildOcean,
@@ -1297,6 +2661,28 @@ const BUILDERS: Record<SceneType, (ctx: Ctx) => void> = {
   window: buildWindow,
   forest: buildForest,
   rain: buildRain,
+  balloons: buildBalloons,
+  bowl: buildBowl,
+  piano: buildPiano,
+  strings: buildStrings,
+  waves: buildWaves,
+  branch: buildBranch,
+  raincloud: buildRaincloud,
+  meadow: buildMeadow,
+  haze: buildHaze,
+  coast: buildCoast,
+  sunburst: buildSunburst,
+  beams: buildBeams,
+  river: buildRiver,
+  cairn: buildCairn,
+  dandelion: buildDandelion,
+  puffs: buildPuffs,
+  windtree: buildWindtree,
+  pond: buildPond,
+  campfire: buildCampfire,
+  forestbirds: buildForestBirds,
+  softrain: buildSoftRain,
+  shoreline: buildShoreline,
 };
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -1314,6 +2700,7 @@ export function sceneKey(spec: SceneSpec, opts: SceneOptions): string {
     f(opts.aspect ?? 1),
     opts.lod ?? 'full',
     opts.accent ?? '',
+    opts.tokens ? [opts.tokens.accent, opts.tokens.calm, opts.tokens.sunrise, opts.tokens.warning, opts.tokens.bg].join(',') : '',
   ].join('|');
 }
 
@@ -1322,11 +2709,32 @@ export function buildScene(spec: SceneSpec, opts: SceneOptions): SceneModel {
   const H = f(100 * (opts.aspect ?? 1));
   const details = new Set(spec.details ?? []);
   const idp = opts.idPrefix ?? `sc${hashString(sceneKey(spec, opts)).toString(36)}`;
+  const pal = scenePalette(spec.timeOfDay, opts.mode, spec.hueShift, opts.accent, spec.type === 'rain' || spec.type === 'raincloud' || spec.type === 'softrain');
+  const valid = (c?: string) => (c && /^#[0-9a-f]{6}$/i.test(c) ? c : undefined);
+  const tk = opts.tokens;
+  const tok: SceneTokens = {
+    accent: valid(tk?.accent) ?? valid(opts.accent) ?? pal.glow,
+    calm: valid(tk?.calm) ?? pal.glow,
+    sunrise: valid(tk?.sunrise) ?? pal.glow,
+    warning: valid(tk?.warning) ?? pal.sun,
+    bg: valid(tk?.bg) ?? pal.land,
+  };
+  if (opts.mode === 'dark' && valid(tk?.bg)) {
+    // Sink night scenes toward the app background so they read dark and moody, not washed out.
+    pal.skyTop = mix(pal.skyTop, tok.bg, 0.3);
+    pal.skyMid = mix(pal.skyMid, tok.bg, 0.2);
+    pal.skyLow = mix(pal.skyLow, tok.bg, 0.1);
+    pal.haze = mix(pal.haze, tok.bg, 0.12);
+    pal.water = mix(pal.water, tok.bg, 0.15);
+    pal.land = mix(pal.land, tok.bg, 0.35);
+    pal.cloudShade = mix(pal.cloudShade, tok.bg, 0.15);
+  }
   const ctx: Ctx = {
     W,
     H,
     rng: mulberry32(spec.seed),
-    pal: scenePalette(spec.timeOfDay, opts.mode, spec.hueShift, opts.accent, spec.type === 'rain'),
+    pal,
+    tok,
     mode: opts.mode,
     lite: opts.lod === 'lite',
     spec,
@@ -1363,7 +2771,7 @@ export function buildSceneCached(spec: SceneSpec, opts: SceneOptions): SceneMode
 export function deriveSceneSpec(id: string): SceneSpec {
   const seed = hashString(id);
   const rng = mulberry32(seed);
-  const type = SCENE_TYPES[Math.floor(rng() * SCENE_TYPES.length)]!;
+  const type = LANDSCAPE_TYPES[Math.floor(rng() * LANDSCAPE_TYPES.length)]!;
   // Weighted toward the brand's morning hours.
   const times: TimeOfDay[] = ['predawn', 'dawn', 'dawn', 'sunrise', 'sunrise', 'sunrise', 'morning', 'morning', 'golden', 'dusk'];
   const timeOfDay = times[Math.floor(rng() * times.length)]!;

@@ -9,6 +9,7 @@ import { TRACK_COVER_IMAGES, trackCoverKeyFor, type TrackCoverKey } from '@/cons
 import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { sceneSpecFor } from '@/constants/scene-covers';
+import { ALARM_SOUNDS } from '@/constants/sounds';
 import { UNLOCK_TRACKS } from '@/constants/unlock-tracks';
 import {
   mulberry32,
@@ -60,6 +61,10 @@ export default function CoverGalleryScreen() {
 
   const trackItems = useMemo(
     () => UNLOCK_TRACKS.map((t) => ({ key: t.id, label: t.title, spec: sceneSpecFor(t.id), locked: t.locked })),
+    [],
+  );
+  const alarmItems = useMemo(
+    () => ALARM_SOUNDS.map((s) => ({ key: `alarm:${s.id}`, label: s.label, spec: sceneSpecFor(`alarm:${s.id}`) })),
     [],
   );
   const randomItems = useMemo(() => randomSpecs(seed, 18), [seed]);
@@ -114,6 +119,18 @@ export default function CoverGalleryScreen() {
               <Text style={styles.label} numberOfLines={1}>
                 {it.label}
                 {it.locked ? ' · Premium' : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.section}>Scene covers · alarm tones</Text>
+        <View style={styles.grid}>
+          {alarmItems.map((it) => (
+            <View key={it.key} style={{ width: cell }}>
+              <SceneCover scene={it.spec} size={cell} radius={radii.md} mode={forced} />
+              <Text style={styles.label} numberOfLines={1}>
+                {it.label}
               </Text>
             </View>
           ))}

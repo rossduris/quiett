@@ -9,6 +9,7 @@ import {
   QuiettPoseCameraView,
 } from 'quiett-pose';
 import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
+import { PoseDebugOverlay, PoseDebugReadout } from '@/components/PoseDebugOverlay';
 import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
@@ -24,7 +25,8 @@ import {
   captureFromCameraRef,
   createOnDevicePoseDetector,
 } from '@/lib/pose';
-import type { PoseStatus } from '@/lib/pose/types';
+import type { PoseDiagnostics, PoseStatus } from '@/lib/pose/types';
+import { usePoseDebugOverlay, usePoseDetectorMode } from '@/lib/pose-dev-pref';
 import {
   CONFIRM_HOLD_MS,
   formatMmSs,
@@ -83,15 +85,24 @@ export default function SessionScreen() {
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
 
+  // Dev: Settings → "Pose detector (dev)" / "Pose debug overlay". Release: legacy, no overlay.
+  const poseDetectorMode = usePoseDetectorMode();
+  const poseDebugOverlay = usePoseDebugOverlay() && __DEV__;
+  const poseDebugOverlayRef = useRef(poseDebugOverlay);
+  poseDebugOverlayRef.current = poseDebugOverlay;
+  const [poseDiag, setPoseDiag] = useState<PoseDiagnostics | undefined>(undefined);
+  const [poseFps, setPoseFps] = useState<number | undefined>(undefined);
+  const lastDiagAt = useRef<number | null>(null);
+
   const detector = useMemo(
     () =>
       preferLive
-        ? createOnDevicePoseDetector({ mode: 'live' })
+        ? createOnDevicePoseDetector({ mode: 'live', detector: poseDetectorMode })
         : createOnDevicePoseDetector({
             mode: 'capture',
             captureFrame: captureFromCameraRef(cameraRef),
           }),
-    [preferLive],
+    [preferLive, poseDetectorMode],
   );
 
   const dispatch = (event: SessionEvent) => {
@@ -232,6 +243,18 @@ export default function SessionScreen() {
     detector.start();
     const unsub = detector.subscribe((sample) => {
       setPose(sample.status);
+      if (poseDebugOverlayRef.current && sample.diagnostics) {
+        const d = sample.diagnostics;
+        const prev = lastDiagAt.current;
+        if (prev !== d.timestamp) {
+          if (prev != null && d.timestamp > prev) {
+            const inst = 1000 / (d.timestamp - prev);
+            setPoseFps((f) => (f == null ? inst : f * 0.8 + inst * 0.2));
+          }
+          lastDiagAt.current = d.timestamp;
+          setPoseDiag(d);
+        }
+      }
     });
     return () => {
       unsub();
@@ -383,6 +406,7 @@ export default function SessionScreen() {
     <QuiettPoseCameraView
       style={StyleSheet.absoluteFill}
       isActive={phase !== 'completed' && phase !== 'emergency'}
+      detectorMode={poseDetectorMode}
       onCameraReady={() => {
         setCameraReady(true);
       }}
@@ -423,6 +447,7 @@ export default function SessionScreen() {
       >
         <View style={styles.top}>
           <PoseStatusChip status={pose} />
+          {poseDebugOverlay ? <PoseDebugReadout diagnostics={poseDiag} fps={poseFps} /> : null}
           {wakeIntention.length > 0 && phase === 'meditating' && (
             <Text style={styles.intention}>{wakeIntention}</Text>
           )}
@@ -434,7 +459,13 @@ export default function SessionScreen() {
             confirmProgress={confirmProgress}
             sitProgress={sitProgress}
             timerLabel={timerLabel}
-            camera={cameraView}
+            camera={
+              poseDebugOverlay && preferLive ? (
+                <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
+              ) : (
+                cameraView
+              )
+            }
           />
         </View>
 

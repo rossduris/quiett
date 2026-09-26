@@ -31,6 +31,15 @@ export const STILLNESS_WINDOW_MS = 1200;
  */
 export const STILLNESS_MAX_MOTION = 0.028;
 
+/**
+ * Time-based leave grace: once holding is published, a non-holding raw status must
+ * persist this long before it's published. A 1–3 frame flicker (a Vision miss, a
+ * blink turning the face check off) no longer resets the 2.5 s hold. ~350 ms is
+ * ~4 frames at 12 fps / ~2 at 5 fps — short enough that real breaks still land fast.
+ * Phone going flat (not_upright) skips the grace.
+ */
+export const LEAVE_HOLDING_GRACE_MS = 350;
+
 /** Harder to enter holding (bias against false dismissals of the alarm). */
 export const ENTER_HOLDING_FRAMES = 2;
 /** Easier to leave holding once meditating / detecting (responsive break). */

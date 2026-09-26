@@ -108,26 +108,62 @@ export function LibraryTrackMark({ trackId, kind, color, size = 56 }: Props) {
       case 'ambient:calm_waves':
         return (
           <G>
-            <Path d="M10 26 Q18 18 26 26 T42 26 T58 26" {...common} />
-            <Path d="M10 36 Q18 28 26 36 T42 36 T58 36" {...common} />
-            <Path d="M10 46 Q18 38 26 46 T42 46 T58 46" {...common} strokeOpacity={0.55} />
+            <Circle cx="42" cy="18" r="5" {...common} strokeOpacity={0.7} />
+            <Line x1="8" y1="26" x2="56" y2="26" {...common} strokeOpacity={0.55} />
+            <Path d="M8 36 Q14 32 20 36 T32 36 T44 36 T56 36" {...common} />
+            <Path d="M8 46 Q16 42 24 46 T40 46 T56 46" {...common} strokeOpacity={0.75} />
+            <Path d="M12 54 L20 54 M28 55 L40 55 M46 54 L52 54" {...common} strokeOpacity={0.45} />
           </G>
         );
       case 'ambient:morning_birds':
         return (
           <G>
-            <Path d="M14 30 Q22 22 30 30" {...common} />
-            <Path d="M30 30 Q38 22 46 30" {...common} />
-            <Path d="M22 42 Q30 34 38 42" {...common} strokeOpacity={0.55} />
+            <Line x1="18" y1="54" x2="18" y2="28" {...common} />
+            <Circle cx="18" cy="20" r="10" {...common} />
+            <Path d="M18 42 Q32 38 52 38" {...common} />
+            <Path d="M34 38 C31 32 36 28 40 30 L45 28.5 L42 32 C42 36 38 38 34 38 Z" {...common} />
+            <Path d="M40 16 Q44 12 48 16 Q52 12 56 16" {...common} strokeOpacity={0.6} />
           </G>
         );
       case 'ambient:soft_rain':
         return (
           <G>
-            <Path d="M18 18 Q32 10 46 18 Q50 28 32 30 Q14 28 18 18 Z" {...common} />
-            <Line x1="22" y1="36" x2="20" y2="48" {...common} />
-            <Line x1="32" y1="34" x2="30" y2="50" {...common} />
-            <Line x1="42" y1="36" x2="40" y2="48" {...common} />
+            {[14, 24, 34, 44, 54].map((x, i) => (
+              <Line key={x} x1={x} y1={i % 2 ? 14 : 10} x2={x - 2} y2={i % 2 ? 30 : 26} {...common} strokeOpacity={0.75} />
+            ))}
+            {[19, 29, 39, 49].map((x) => (
+              <Line key={x} x1={x} y1={24} x2={x - 1.5} y2={36} {...common} strokeOpacity={0.5} />
+            ))}
+            <Path d="M8 44 Q20 38 32 43 T58 42" {...common} />
+            <Ellipse cx="34" cy="53" rx="9" ry="2.5" {...common} strokeOpacity={0.6} />
+          </G>
+        );
+      case 'ambient:wind_in_trees':
+        return (
+          <G>
+            <Line x1="26" y1="52" x2="26" y2="34" {...common} />
+            <Circle cx="26" cy="26" r="11" {...common} />
+            <Path d="M40 20 Q48 16 54 20" {...common} strokeOpacity={0.7} />
+            <Path d="M42 30 Q50 26 56 30" {...common} strokeOpacity={0.55} />
+            <Path d="M40 40 Q46 37 50 40" {...common} strokeOpacity={0.4} />
+          </G>
+        );
+      case 'ambient:morning_pond':
+        return (
+          <G>
+            <Ellipse cx="34" cy="40" rx="18" ry="6" {...common} />
+            <Ellipse cx="34" cy="40" rx="26" ry="10" {...common} strokeOpacity={0.45} />
+            <Line x1="14" y1="36" x2="14" y2="14" {...common} />
+            <Ellipse cx="14" cy="20" rx="2.5" ry="5" {...common} />
+          </G>
+        );
+      case 'ambient:campfire':
+        return (
+          <G>
+            <Path d="M32 14 C24 24 22 32 26 40 C28 44 36 44 38 40 C42 32 38 24 32 14 Z" {...common} />
+            <Path d="M32 28 C29 33 29 37 32 40 C35 37 35 33 32 28 Z" {...common} strokeOpacity={0.6} />
+            <Line x1="16" y1="50" x2="48" y2="42" {...common} />
+            <Line x1="16" y1="42" x2="48" y2="50" {...common} />
           </G>
         );
       default:
