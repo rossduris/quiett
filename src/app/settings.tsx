@@ -1,3 +1,6 @@
+import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow';
+import { useBreathingLight } from '@/lib/breathing-pref';
+import { EnterStagger } from '@/components/EnterStagger';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -23,6 +26,7 @@ export default function SettingsScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { isPremium } = usePremium();
+  const [breathingLight, setBreathingLight] = useBreathingLight();
 
   return (
     <View style={styles.screen}>
@@ -32,60 +36,84 @@ export default function SettingsScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        <SettingsCard>
-          <ThemePicker />
-        </SettingsCard>
+        <EnterStagger index={0}>
+          <SettingsCard>
+            <ThemePicker />
+          </SettingsCard>
+        </EnterStagger>
 
-        <SettingsCard label="Preferences">
-          <SettingsLinkRow
-            icon="notifications-outline"
-            label="Notifications"
-            onPress={() => router.push('/notifications')}
-          />
-          <SettingsLinkRow
-            icon="bulb-outline"
-            label="Wake-up intention"
-            onPress={() => router.push('/wake-intention')}
-          />
-        </SettingsCard>
+        <EnterStagger index={1}>
+          <SettingsCard label="Preferences">
+            <SettingsLinkRow
+              icon="notifications-outline"
+              label="Notifications"
+              onPress={() => router.push('/notifications')}
+            />
+            <SettingsLinkRow
+              icon="bulb-outline"
+              label="Wake-up intention"
+              onPress={() => router.push('/wake-intention')}
+            />
+            <SettingsSwitchRow
+              icon="radio-button-on-outline"
+              label="Breathing light while meditating"
+              value={breathingLight}
+              onChange={setBreathingLight}
+            />
+          </SettingsCard>
+        </EnterStagger>
 
-        <StreakDeadlineCard />
+        <EnterStagger index={2}>
+          <StreakDeadlineCard />
+        </EnterStagger>
 
-        <SettingsCard label="Subscription">
-          <SettingsLinkRow
-            icon={isPremium ? 'sunny' : 'sunny-outline'}
-            label="Quiett Premium"
-            value={isPremium ? 'Active' : 'Free'}
-            valueColor={isPremium ? colors.calm : undefined}
-            accessibilityLabel={
-              isPremium ? 'Quiett Premium, active. Manage subscription' : 'Quiett Premium, free plan'
-            }
-            onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
-          />
-        </SettingsCard>
+        <EnterStagger index={3}>
+          <SettingsCard label="Subscription">
+            <SettingsLinkRow
+              icon={isPremium ? 'sunny' : 'sunny-outline'}
+              label="Quiett Premium"
+              value={isPremium ? 'Active' : 'Free'}
+              valueColor={isPremium ? colors.calm : undefined}
+              accessibilityLabel={
+                isPremium ? 'Quiett Premium, active. Manage subscription' : 'Quiett Premium, free plan'
+              }
+              onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
+            />
+          </SettingsCard>
+        </EnterStagger>
 
-        <SettingsCard label="Help">
-          <SettingsLinkRow icon="help-circle-outline" label="Troubleshooting" onPress={() => router.push('/help')} />
-          <SettingsLinkRow
-            icon="checkmark-circle-outline"
-            label="Alarm reliability check"
-            onPress={() => router.push('/reliability-check')}
-          />
-          <SetupTips />
-          <SettingsLinkRow
-            icon="mail-outline"
-            label="Contact support"
-            kind="link"
-            accessibilityHint="Opens an email with your app version filled in"
-            onPress={() => void contactSupport()}
-          />
-        </SettingsCard>
+        <EnterStagger index={4}>
+          <SettingsCard label="Help">
+            <SettingsLinkRow icon="help-circle-outline" label="Troubleshooting" onPress={() => router.push('/help')} />
+            <SettingsLinkRow
+              icon="checkmark-circle-outline"
+              label="Alarm reliability check"
+              onPress={() => router.push('/reliability-check')}
+            />
+            <SetupTips />
+            <SettingsLinkRow
+              icon="mail-outline"
+              label="Contact support"
+              kind="link"
+              accessibilityHint="Opens an email with your app version filled in"
+              onPress={() => void contactSupport()}
+            />
+          </SettingsCard>
+        </EnterStagger>
 
-        <LegalCard />
+        <EnterStagger index={5}>
+          <LegalCard />
+        </EnterStagger>
 
-        {__DEV__ ? <DevSettingsCard /> : null}
+        {__DEV__ ? (
+          <EnterStagger index={6}>
+            <DevSettingsCard />
+          </EnterStagger>
+        ) : null}
 
-        <AppVersionFooter />
+        <EnterStagger index={7}>
+          <AppVersionFooter />
+        </EnterStagger>
       </ScrollView>
     </View>
   );

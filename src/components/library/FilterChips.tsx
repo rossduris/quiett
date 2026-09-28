@@ -4,6 +4,7 @@ import { spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { chip, chipActive, pressedStyle } from './library-styles';
+import { hapticSelect } from '@/lib/haptics';
 
 type Item<T extends string> = { id: T; label: string };
 
@@ -31,7 +32,10 @@ export function FilterChips<T extends string>({ items, activeId, onChange, a11yP
             accessibilityLabel={a11yPrefix ? `${a11yPrefix} ${item.label}` : item.label}
             accessibilityState={{ selected: active }}
             hitSlop={{ top: 4, bottom: 4 }}
-            onPress={() => onChange(item.id)}
+            onPress={() => {
+              if (item.id !== activeId) hapticSelect();
+              onChange(item.id);
+            }}
             style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && pressedStyle]}
           >
             <Text style={[styles.text, active && styles.textActive]}>{item.label}</Text>

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/theme-provider';
 import { THEMES, type ColorTokens, type ThemeId } from '@/constants/themes';
 import { radii, spacing, typography } from '@/constants/theme';
+import { hapticSelect } from '@/lib/haptics';
 
 type Props = {
   label?: string;
@@ -27,7 +28,10 @@ export function ThemePicker({ label = 'Appearance' }: Props) {
               accessibilityRole="radio"
               accessibilityState={{ checked: isActive }}
               accessibilityLabel={theme.name}
-              onPress={() => void setTheme(theme.id as ThemeId)}
+              onPress={() => {
+                hapticSelect();
+                void setTheme(theme.id as ThemeId);
+              }}
               style={({ pressed }) => [styles.option, isActive && styles.optionActive, pressed && styles.pressed]}
             >
               <Text style={[styles.optionLabel, isActive && styles.optionLabelActive]}>{theme.name}</Text>

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
+import { SpringPill } from '@/components/SpringPill';
 
 export type PillOption<T> = { value: T; label: string; accessibilityLabel?: string };
 
@@ -21,16 +22,19 @@ export function PillGroup<T extends string | number>({ options, selected, onSele
       {options.map((o) => {
         const on = o.value === selected;
         return (
-          <Pressable
+          <SpringPill
             key={String(o.value)}
+            selected={on}
+            label={o.label}
             onPress={() => onSelect(o.value)}
             accessibilityRole="radio"
             accessibilityLabel={o.accessibilityLabel ?? o.label}
             accessibilityState={{ checked: on }}
-            style={({ pressed }) => [styles.pill, on && styles.pillOn, pressed && styles.pressed]}
-          >
-            <Text style={[styles.text, on && styles.textOn]}>{o.label}</Text>
-          </Pressable>
+            style={styles.pill}
+            selectedStyle={styles.pillOn}
+            textStyle={styles.text}
+            selectedTextStyle={styles.textOn}
+          />
         );
       })}
     </View>

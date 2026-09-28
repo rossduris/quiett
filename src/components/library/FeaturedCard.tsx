@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { SurpriseOffNote } from '@/components/SurpriseOffNote';
 import { TrackCover } from '@/components/TrackCover';
+import { PlayButton } from '@/components/PlayButton';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
@@ -11,7 +12,7 @@ import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y'
 import { useThemeColors } from '@/lib/theme-provider';
 import { chip, chipActive, playFab, pressedStyle } from './library-styles';
 
-const ART_H = 132;
+export const ART_H = 132;
 
 type Props = {
   track: UnlockTrack;
@@ -78,7 +79,7 @@ export function FeaturedCard({
       >
         {scenes ? (
           <View style={styles.art}>
-            {width > 0 ? <TrackCover trackId={track.id} size={width - 2} height={ART_H} /> : null}
+            {width > 0 ? <TrackCover trackId={track.id} size={width - 2} height={ART_H} animate /> : null}
           </View>
         ) : (
           <View style={styles.markWrap}>
@@ -95,14 +96,16 @@ export function FeaturedCard({
           <Text style={styles.meta}>{meta}</Text>
         </View>
         {preview ? (
-          <Pressable
+          <PlayButton
             {...previewButtonA11yHidden}
-            hitSlop={8}
+            playing={previewing}
             onPress={preview}
-            style={({ pressed }) => [styles.fab, previewing && styles.fabActive, pressed && pressedStyle]}
-          >
-            <Ionicons name={previewing ? 'stop' : 'play'} size={16} color={previewing ? colors.calm : colors.text} />
-          </Pressable>
+            colors={colors}
+            size={36}
+            iconSize={16}
+            style={styles.fab}
+            activeStyle={styles.fabActive}
+          />
         ) : null}
       </View>
     </View>

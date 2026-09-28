@@ -3,6 +3,9 @@ import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'rea
 import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
+import Animated from 'react-native-reanimated';
+import { hapticTap } from '@/lib/haptics';
+import { usePressScale } from '@/lib/use-press-scale';
 
 type Props = {
   label: string;
@@ -21,23 +24,30 @@ export function PrimaryButton({
 }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const press = usePressScale(0.97);
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
+      onPress={() => {
+        if (variant === 'primary') hapticTap();
+        onPress();
+      }}
+      onPressIn={press.handlers.onPressIn}
+      onPressOut={press.handlers.onPressOut}
+      style={style}
+    >
+      <Animated.View style={[
         styles.base,
         variant === 'primary' && styles.primary,
         variant === 'secondary' && styles.secondary,
         variant === 'danger' && styles.danger,
         variant === 'ghost' && styles.ghost,
-        pressed && styles.pressed,
         disabled && styles.disabled,
-        style,
-      ]}
-    >
-      <Text style={[styles.label, variant === 'primary' && styles.labelOnAccent]}>{label}</Text>
+        press.style,
+      ]}>
+        <Text style={[styles.label, variant === 'primary' && styles.labelOnAccent]}>{label}</Text>
+      </Animated.View>
     </Pressable>
   );
 }

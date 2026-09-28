@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { TrackCover } from '@/components/TrackCover';
+import { PlayButton } from '@/components/PlayButton';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById, type SoundOption } from '@/constants/sounds';
@@ -54,7 +55,7 @@ export function MorningStepsCard({
   const trackArt =
     coverStyle !== 'classic' ? (
       <View style={[styles.art, { borderColor: colors.border }]}>
-        <TrackCover trackId={unlockTrack.id} size={ART - 2} radius={radii.md - 1} />
+        <TrackCover trackId={unlockTrack.id} size={ART - 2} radius={radii.md - 1} animate />
       </View>
     ) : (
       <View style={[styles.art, { backgroundColor: unlockTrack.accentSoft, borderColor: unlockTrack.accent }]}>
@@ -179,14 +180,16 @@ function StepRow({
         </Text>
       </View>
       {onPreview ? (
-        <Pressable
+        <PlayButton
           {...previewButtonA11yHidden}
-          hitSlop={8}
+          playing={!!previewPlaying}
           onPress={onPreview}
-          style={({ pressed }) => [styles.previewBtn, previewPlaying && styles.previewBtnActive, pressed && pressedStyle]}
-        >
-          <Ionicons name={previewPlaying ? 'stop' : 'play'} size={14} color={previewPlaying ? colors.calm : colors.text} />
-        </Pressable>
+          colors={colors}
+          size={34}
+          iconSize={14}
+          style={styles.previewBtn}
+          activeStyle={styles.previewBtnActive}
+        />
       ) : null}
       <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
     </Pressable>

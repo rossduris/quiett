@@ -3,12 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { SceneLockBadge } from '@/components/SceneCover';
+import { PlayButton } from '@/components/PlayButton';
 import { TrackCover } from '@/components/TrackCover';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
 import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
 import { CARD_H, CARD_W, SCENE_ART_H, frostPill, playFab, pillText, pressedStyle } from './library-styles';
+import { hapticSelect } from '@/lib/haptics';
 
 type Props = {
   track: UnlockTrack;
@@ -44,14 +46,16 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
         <View />
       )}
       {preview ? (
-        <Pressable
+        <PlayButton
           {...previewButtonA11yHidden}
-          hitSlop={8}
+          playing={previewing}
           onPress={preview}
-          style={({ pressed }) => [styles.fab, previewing && styles.fabActive, pressed && pressedStyle]}
-        >
-          <Ionicons name={previewing ? 'stop' : 'play'} size={14} color={previewing ? colors.calm : colors.text} />
-        </Pressable>
+          colors={colors}
+          size={32}
+          iconSize={14}
+          style={styles.fab}
+          activeStyle={styles.fabActive}
+        />
       ) : null}
     </View>
   );
@@ -73,13 +77,16 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
       accessibilityState={{ selected }}
       accessibilityLabel={`${track.title}, ${track.durationLabel}, ${kindLabel(track.kind)}${status}`}
       {...previewA11yActions(previewing, preview)}
-      onPress={() => onSelect(track)}
+      onPress={() => {
+        hapticSelect();
+        onSelect(track);
+      }}
       style={({ pressed }) => [styles.card, selected && styles.cardSelected, pressed && pressedStyle]}
     >
       {scenes ? (
         <View style={styles.sceneCard}>
           <View style={styles.art}>
-            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} />
+            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} animate={previewing} />
             <View style={styles.overlay}>{badges}</View>
           </View>
           <View style={styles.sceneBottom}>{text}</View>

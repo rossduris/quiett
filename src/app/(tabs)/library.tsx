@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FeaturedCard } from '@/components/library/FeaturedCard';
+import Animated from 'react-native-reanimated';
+import { EnterStagger } from '@/components/EnterStagger';
+import { ART_H, FeaturedCard } from '@/components/library/FeaturedCard';
+import { FeaturedSkeleton } from '@/components/Shimmer';
+import { enterFade } from '@/lib/motion';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { FilterChips } from '@/components/library/FilterChips';
 import { LibraryHeader } from '@/components/library/LibraryHeader';
 import { TrackShelf } from '@/components/library/TrackShelf';
@@ -21,6 +26,7 @@ export default function LibraryScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const scenes = useCoverStyle() !== 'classic';
   const lib = useLibraryState();
+  const reduce = useReduceMotion();
 
   const filterItems = useMemo(
     () => [
@@ -37,8 +43,12 @@ export default function LibraryScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}
         showsVerticalScrollIndicator={false}
       >
-        <LibraryHeader isPremium={lib.isPremium} onOpenPaywall={lib.openPaywall} />
+        <EnterStagger index={0}>
+          <LibraryHeader isPremium={lib.isPremium} onOpenPaywall={lib.openPaywall} />
+        </EnterStagger>
 
+        {lib.ready ? (
+        <Animated.View entering={enterFade(reduce, 60)}>
         <FeaturedCard
           track={lib.selectedTrack}
           locked={lib.isLocked(lib.selectedTrack)}
@@ -49,12 +59,19 @@ export default function LibraryScreen() {
           onToggleSurprise={() => void lib.toggleSurprise()}
           onPreview={lib.previewTrack}
         />
+        </Animated.View>
+        ) : (
+          <FeaturedSkeleton artHeight={scenes ? ART_H : 96} />
+        )}
 
         {lib.voiceOn ? <VoicePicker voiceId={lib.voiceId} onSelect={(id) => void lib.selectVoice(id)} /> : null}
 
-        <FilterChips items={filterItems} activeId={lib.filter} onChange={lib.setFilter} a11yPrefix="Show" />
+        <EnterStagger index={2}>
+          <FilterChips items={filterItems} activeId={lib.filter} onChange={lib.setFilter} a11yPrefix="Show" />
+        </EnterStagger>
 
-        {lib.sections.map((kind) => (
+        {lib.sections.map((kind, i) => (
+          <EnterStagger key={kind} index={3 + i}>
           <TrackShelf
             key={kind}
             kind={kind}
@@ -65,6 +82,7 @@ export default function LibraryScreen() {
             onSelect={lib.selectTrack}
             onPreview={lib.previewTrack}
           />
+          </EnterStagger>
         ))}
       </ScrollView>
     </View>
