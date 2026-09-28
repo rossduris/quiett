@@ -89,6 +89,14 @@
         }
       ],
       "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Quiett lets you choose a profile photo from your library. It stays on your iPhone.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "./plugins/withoutPushEntitlement.js"
     ],
     "experiments": {

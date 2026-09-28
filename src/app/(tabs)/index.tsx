@@ -4,9 +4,11 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { AlarmCard } from '@/components/home/AlarmCard';
+import { EnterStagger } from '@/components/EnterStagger';
 import { DayOpenCard } from '@/components/home/DayOpenCard';
 import { GetStartedCard, type GetStartedStep } from '@/components/home/GetStartedCard';
 import { HomeHeader } from '@/components/home/HomeHeader';
+import { IntentionCard } from '@/components/home/IntentionCard';
 import { MorningStepsCard } from '@/components/home/MorningStepsCard';
 import { ReliabilityCard } from '@/components/home/ReliabilityCard';
 import { WeekCard } from '@/components/home/WeekCard';
@@ -20,6 +22,7 @@ import { unlockTrackById } from '@/constants/unlock-tracks';
 import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { useThemeColors } from '@/lib/theme-provider';
 import { useHomeState } from '@/lib/use-home-state';
+import { greetingFor, useProfileIdentity } from '@/lib/profile-identity';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -28,6 +31,8 @@ export default function HomeScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const coverStyle = useCoverStyle();
   const home = useHomeState();
+  const identity = useProfileIdentity();
+  const greeting = identity.name ? greetingFor(home.now, identity.name) : null;
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showTrackPicker, setShowTrackPicker] = useState(false);
@@ -57,6 +62,7 @@ export default function HomeScreen() {
         streakCount={home.streak.count}
         dayOpenQuiet={home.unlockedToday && !home.showDayOpen}
         onOpenStreak={openStreak}
+        greeting={greeting}
       />
 
       <ScrollView
@@ -78,6 +84,7 @@ export default function HomeScreen() {
 
         {home.showReliabilityCard ? <ReliabilityCard onPress={() => router.push('/reliability-check')} /> : null}
 
+        <EnterStagger index={0}>
         <AlarmCard
           alarm={home.alarm}
           alarmSavedAt={home.alarmSavedAt}
@@ -89,7 +96,13 @@ export default function HomeScreen() {
           onToggleEnabled={() => void home.toggleAlarmEnabled()}
           onToggleWeekday={(day) => void home.toggleWeekday(day)}
         />
+        </EnterStagger>
 
+        <EnterStagger index={1}>
+          <IntentionCard intention={home.wakeIntention} onPress={() => router.push('/wake-intention')} />
+        </EnterStagger>
+
+        <EnterStagger index={2}>
         <MorningStepsCard
           alarmSound={alarmSound}
           unlockTrack={unlockTrack}
@@ -101,13 +114,16 @@ export default function HomeScreen() {
           onOpenTrack={() => setShowTrackPicker(true)}
           onToggleSurprise={() => void home.toggleSurprise()}
         />
+        </EnterStagger>
 
+        <EnterStagger index={3}>
         <WeekCard
           completedDays={home.completedDays}
           scheduledWeekdays={home.alarm.weekdays}
           unlockedToday={home.unlockedToday}
           onPress={openStreak}
         />
+        </EnterStagger>
       </ScrollView>
 
       <UnlockTrackPicker

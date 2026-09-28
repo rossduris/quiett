@@ -11,9 +11,11 @@ type Props = {
   /** Today is unlocked and the Morning unlocked card has been dismissed. */
   dayOpenQuiet: boolean;
   onOpenStreak: () => void;
+  /** "Good morning, Ross" when the user set a name; brand title otherwise. */
+  greeting?: string | null;
 };
 
-export function HomeHeader({ streakCount, dayOpenQuiet, onOpenStreak }: Props) {
+export function HomeHeader({ streakCount, dayOpenQuiet, onOpenStreak, greeting }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const empty = streakCount === 0;
@@ -21,7 +23,9 @@ export function HomeHeader({ streakCount, dayOpenQuiet, onOpenStreak }: Props) {
   return (
     <View style={styles.topBar}>
       <View style={styles.header}>
-        <Text style={styles.brand}>Quiett</Text>
+        <Text style={styles.brand} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} accessibilityRole="header">
+          {greeting || 'Quiett'}
+        </Text>
         <Text style={[styles.tagline, dayOpenQuiet && styles.taglineOpen]}>
           {dayOpenQuiet ? 'Your day is open' : 'Stay still. Then the morning begins.'}
         </Text>
