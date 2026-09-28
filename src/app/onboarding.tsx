@@ -18,6 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Animated, { FadeIn, FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { deviceUses24h } from '@/lib/time-format';
+import { SpringPill } from '@/components/SpringPill';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { AnimatedScene } from '@/components/onboarding/art/AnimatedScene';
 import { artPalette } from '@/components/onboarding/art/art-palette';
@@ -60,6 +61,8 @@ import {
   clearWakeResolved,
   dayKey,
   formatWeekdayHint,
+  WEEKDAY_DISPLAY_ORDER,
+  WEEKDAY_SHORT,
   loadAlarmPrefs,
   loadEveningReminderPrefs,
   loadOnboardingGoal,
@@ -91,8 +94,6 @@ type StepId = (typeof STEPS)[number];
 
 /** Steps with a full-bleed scene of their own (the background hills step aside). */
 const SCENE_STEPS: readonly StepId[] = ['welcome', 'commit'];
-
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
 /** Preferred picks for variety (music + ambient). Only used if they're free in the catalog. */
 const FIRST_SOUND_PREFS = ['music:soft-pad', 'music:warm-drone', 'music:low-cloud', 'ambient:night_crickets', 'ambient:calm_waves'];
@@ -512,22 +513,23 @@ export default function OnboardingScreen() {
             </Pressable>
           )}
           <View style={styles.dayPills}>
-            {DAY_LABELS.map((label, i) => {
-              const day = (i + 1) as Weekday;
+            {WEEKDAY_DISPLAY_ORDER.map((day: Weekday) => {
+              const label = WEEKDAY_SHORT[day];
               const selected = alarm.weekdays.includes(day);
               return (
-                <Pressable
+                <SpringPill
                   key={day}
+                  selected={selected}
+                  label={label}
                   onPress={() => toggleDay(day)}
-                  style={[styles.pill, selected && styles.pillSelected]}
+                  style={styles.pill}
+                  selectedStyle={styles.pillSelected}
+                  textStyle={styles.pillText}
+                  selectedTextStyle={styles.pillTextSelected}
                   accessibilityRole="checkbox"
                   accessibilityLabel={label}
                   accessibilityState={{ checked: selected }}
-                >
-                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                    {label}
-                  </Text>
-                </Pressable>
+                />
               );
             })}
           </View>

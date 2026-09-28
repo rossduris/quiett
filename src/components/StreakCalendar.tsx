@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { mix } from '@/lib/scene-gen';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -12,8 +14,9 @@ import {
   type CalendarCell,
   type Schedule,
 } from '@/lib/streak-calendar';
+import { WEEKDAY_DISPLAY_ORDER, WEEKDAY_INITIAL } from '@/lib/storage';
 
-const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
+const DAY_LABELS = WEEKDAY_DISPLAY_ORDER.map((d) => WEEKDAY_INITIAL[d]);
 
 type Props = {
   completedDays: readonly string[];
@@ -44,34 +47,47 @@ function cellA11yLabel(cell: CalendarCell): string {
 
 type Styles = ReturnType<typeof createStyles>;
 
-function CellView({ cell, styles }: { cell: CalendarCell; styles: Styles }) {
+/** Filled accent dot with a soft top-left highlight (unlocked mornings, and the legend). */
+function UnlockedDot({ size, colors, id }: { size: number; colors: ColorTokens; id: string }) {
+  const r = size / 2;
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      <Defs>
+        <RadialGradient id={id} cx="35%" cy="30%" r="75%">
+          <Stop offset="0" stopColor={mix(colors.calm, colors.sunrise, 0.45)} />
+          <Stop offset="1" stopColor={colors.calm} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={r} cy={r} r={r} fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+function CellView({ cell, styles, colors }: { cell: CalendarCell; styles: Styles; colors: ColorTokens }) {
   return (
     <View
-      style={[
-        styles.cell,
-        !cell.scheduled && styles.cellOff,
-        cell.completed && styles.cellFilled,
-        cell.missed && styles.cellMissed,
-        cell.isToday && styles.cellToday,
-      ]}
+      style={[styles.cell, cell.isFuture && !cell.isToday && styles.cellFuture]}
       accessible
       accessibilityLabel={cellA11yLabel(cell)}
     >
+      {cell.isToday ? <View style={styles.todayRing} /> : null}
       {cell.completed ? (
-        <Text style={styles.check}>✓</Text>
+        <View style={styles.dot}>
+          <UnlockedDot size={DOT} colors={colors} id={`cal-${cell.key}`} />
+          <Text style={styles.dotNum}>{cell.day}</Text>
+        </View>
       ) : (
         <Text
           style={[
             styles.dayNum,
             !cell.scheduled && styles.dayNumOff,
-            cell.isFuture && styles.dayNumFuture,
-            cell.missed && styles.dayNumMissed,
             cell.isToday && styles.dayNumToday,
           ]}
         >
           {cell.day}
         </Text>
       )}
+      {cell.missed ? <View style={styles.missedMark} /> : null}
     </View>
   );
 }
@@ -174,7 +190,7 @@ export function StreakCalendar({
         <View key={`w-${wi}`} style={styles.week}>
           {week.map((cell, di) =>
             cell ? (
-              <CellView key={cell.key} cell={cell} styles={styles} />
+              <CellView key={cell.key} cell={cell} styles={styles} colors={colors} />
             ) : (
               <View key={`blank-${wi}-${di}`} style={styles.blank} />
             ),
@@ -184,15 +200,21 @@ export function StreakCalendar({
 
       <View style={styles.legend}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.cellFilled]} />
+          <View style={styles.legendDot}>
+            <UnlockedDot size={10} colors={colors} id="cal-legend-dot" />
+          </View>
           <Text style={styles.legendText}>Unlocked</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.cellMissed]} />
+          <View style={styles.legendRing} />
+          <Text style={styles.legendText}>Today</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.legendMissed} />
           <Text style={styles.legendText}>Missed</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.cellOff]} />
+          <Text style={styles.legendOffNum}>8</Text>
           <Text style={styles.legendText}>Off day</Text>
         </View>
       </View>
@@ -200,113 +222,70 @@ export function StreakCalendar({
   );
 }
 
-const CELL = 34;
+const CELL = 38;
+const DOT = 30;
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-  wrap: { gap: spacing.sm },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  title: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  navBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  navDisabled: { opacity: 0.35 },
-  pressed: { opacity: 0.75 },
-  dowRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
-  },
-  dow: {
-    width: CELL,
-    textAlign: 'center',
-    ...typography.eyebrow,
-    color: colors.textDim,
-    fontSize: 11,
-    letterSpacing: 0.4,
-  },
-  week: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  blank: { width: CELL, height: CELL },
-  cell: {
-    width: CELL,
-    height: CELL,
-    borderRadius: radii.full,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cellOff: {
-    borderStyle: 'dashed',
-    opacity: 0.4,
-  },
-  cellFilled: {
-    backgroundColor: colors.calm,
-    borderColor: colors.calm,
-    borderStyle: 'solid',
-    opacity: 1,
-  },
-  cellMissed: {
-    borderColor: colors.warning,
-    borderStyle: 'solid',
-    opacity: 0.85,
-  },
-  cellToday: {
-    borderColor: colors.text,
-    borderWidth: 2,
-    opacity: 1,
-  },
-  check: {
-    color: colors.bg,
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: -1,
-  },
-  dayNum: {
-    ...typography.caption,
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  dayNumOff: { color: colors.textDim },
-  dayNumFuture: { color: colors.textDim },
-  dayNumMissed: { color: colors.warning },
-  dayNumToday: { color: colors.text },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.md,
-    marginTop: spacing.xs,
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radii.full,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  legendText: { ...typography.caption, color: colors.textDim, fontSize: 11, fontWeight: '600' },
-});
+    wrap: { gap: spacing.sm },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.xs,
+    },
+    title: { ...typography.body, color: colors.text, fontWeight: '600' },
+    navBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: radii.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.bg,
+    },
+    navDisabled: { opacity: 0.35 },
+    pressed: { opacity: 0.75 },
+    dowRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    dow: {
+      width: CELL,
+      textAlign: 'center',
+      ...typography.eyebrow,
+      color: colors.textDim,
+      fontSize: 10,
+      letterSpacing: 0.6,
+    },
+    week: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    blank: { width: CELL, height: CELL },
+    cell: { width: CELL, height: CELL, alignItems: 'center', justifyContent: 'center' },
+    cellFuture: { opacity: 0.38 },
+    todayRing: {
+      position: 'absolute',
+      width: CELL - 2,
+      height: CELL - 2,
+      borderRadius: radii.full,
+      borderWidth: 1.5,
+      borderColor: colors.text,
+    },
+    dot: { width: DOT, height: DOT, alignItems: 'center', justifyContent: 'center' },
+    dotNum: { ...typography.caption, color: colors.bg, fontSize: 12, fontWeight: '700' },
+    dayNum: { ...typography.caption, color: colors.textMuted, fontSize: 13, fontWeight: '500', fontVariant: ['tabular-nums'] },
+    dayNumOff: { color: colors.textDim, opacity: 0.6 },
+    dayNumToday: { color: colors.text, fontWeight: '700' },
+    missedMark: {
+      position: 'absolute',
+      bottom: 3,
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.warning,
+      opacity: 0.8,
+    },
+    legend: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    legendDot: { width: 10, height: 10 },
+    legendRing: { width: 10, height: 10, borderRadius: radii.full, borderWidth: 1.5, borderColor: colors.text },
+    legendMissed: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.warning, opacity: 0.8 },
+    legendOffNum: { fontSize: 11, fontWeight: '500', color: colors.textDim, opacity: 0.6 },
+    legendText: { ...typography.caption, color: colors.textDim, fontSize: 11, fontWeight: '600' },
+  });
 }

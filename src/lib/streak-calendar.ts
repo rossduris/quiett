@@ -1,4 +1,10 @@
-import { dayKey, getIsoWeekday, type ScheduleResolver, type Weekday } from '@/lib/storage';
+import {
+  dayKey,
+  displayWeekdayIndex,
+  getIsoWeekday,
+  type ScheduleResolver,
+  type Weekday,
+} from '@/lib/storage';
 
 /** A fixed weekday list, or a resolver over the schedule history (see `scheduleResolver`). */
 export type Schedule = readonly Weekday[] | ScheduleResolver;
@@ -82,7 +88,8 @@ export function buildMonthGrid(
   const todayKey = dayKey(0, now);
   const first = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const leadingBlanks = getIsoWeekday(first) - 1;
+  // Sunday-first grid (columns follow WEEKDAY_DISPLAY_ORDER).
+  const leadingBlanks = displayWeekdayIndex(first);
   const cells: CalendarCell[] = [];
 
   for (let day = 1; day <= daysInMonth; day++) {

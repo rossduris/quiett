@@ -85,7 +85,7 @@ export const ALL_BADGES: Badge[] = [
     id: 'perfect-week',
     icon: 'checkmark-done',
     label: 'Perfect Week',
-    description: 'Completed every scheduled morning in a week (Mon–Sun)',
+    description: 'Completed every scheduled morning in a week (Sun–Sat)',
     category: 'milestone',
   },
   {

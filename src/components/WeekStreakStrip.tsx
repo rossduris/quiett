@@ -1,7 +1,10 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
+import { SPRING_BOUNCY } from '@/lib/motion';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { spacing } from '@/constants/theme';
-import { dayKey, type Weekday } from '@/lib/storage';
+import { dayKey, WEEKDAY_DISPLAY_ORDER, WEEKDAY_INITIAL, type Weekday } from '@/lib/storage';
 import { useThemeColors } from '@/lib/theme-provider';
 import type { ColorTokens } from '@/constants/themes';
 
@@ -13,14 +16,11 @@ type DayCell = {
   scheduled: boolean;
 };
 
-/** Monday-start week containing today (Calm-style Mon–Sun strip). */
+/** Sunday-start week containing today (Sun–Sat strip); index i ↔ WEEKDAY_DISPLAY_ORDER[i]. */
 export function weekDayKeys(today = new Date()): string[] {
-  const dow = today.getDay(); // 0=Sun … 6=Sat
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  return Array.from({ length: 7 }, (_, i) => dayKey(mondayOffset + i, today));
+  const sundayOffset = -today.getDay(); // 0=Sun … 6=Sat
+  return Array.from({ length: 7 }, (_, i) => dayKey(sundayOffset + i, today));
 }
-
-const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
 
 type Props = {
   completedDays: readonly string[];
@@ -35,12 +35,19 @@ function WeekStreakStripBase({ completedDays, scheduledWeekdays, todayKey }: Pro
   const keys = weekDayKeys();
   const completed = new Set(completedDays);
   const scheduled = scheduledWeekdays ? new Set(scheduledWeekdays) : null;
+  // After first paint, a day that turns completed (e.g. back from /success) springs its fill in.
+  const reduce = useReduceMotion();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+  }, []);
+  const fillIn = mounted.current && !reduce ? ZoomIn.springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220) : undefined;
   
   const cells: DayCell[] = keys.map((key, i) => {
-    const isoWeekday = ((i + 1) as Weekday);
+    const isoWeekday: Weekday = WEEKDAY_DISPLAY_ORDER[i] ?? 7;
     return {
       key,
-      label: DAY_LABELS[i] ?? '',
+      label: WEEKDAY_INITIAL[isoWeekday],
       completed: completed.has(key),
       isToday: key === today,
       scheduled: scheduled === null || scheduled.has(isoWeekday),
@@ -55,11 +62,15 @@ function WeekStreakStripBase({ completedDays, scheduledWeekdays, todayKey }: Pro
             style={[
               styles.dot,
               !cell.scheduled && styles.dotOff,
-              cell.completed && styles.dotFilled,
+              cell.completed && styles.dotDone,
               cell.isToday && styles.dotToday,
             ]}
           >
-            {cell.completed ? <Text style={styles.check}>✓</Text> : null}
+            {cell.completed ? (
+              <Animated.View entering={fillIn} style={[styles.fill, cell.isToday && styles.fillToday]}>
+                <Text style={styles.check}>✓</Text>
+              </Animated.View>
+            ) : null}
           </View>
           <Text style={[
             styles.label, 
@@ -112,6 +123,17 @@ function createStyles(colors: ColorTokens) {
       borderStyle: 'solid',
       opacity: 1,
     },
+    // Fill is its own layer so it can spring in; the ring keeps the outline.
+    dotDone: { borderColor: colors.calm, borderStyle: 'solid', opacity: 1 },
+    fill: {
+      ...StyleSheet.absoluteFill,
+      margin: -1.5,
+      borderRadius: DOT / 2,
+      backgroundColor: colors.calm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    fillToday: { margin: 1 },
     dotToday: {
       borderColor: colors.text,
       borderWidth: 2,

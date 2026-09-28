@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { DURATION, EASE, enterStagger } from '@/lib/motion';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { WeekStreakStrip, weekDayKeys } from '@/components/WeekStreakStrip';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
@@ -15,6 +18,7 @@ import {
   type AlarmPrefs,
   type StreakData,
   type StreakDeadlinePrefs,
+  WEEKDAY_DISPLAY_ORDER,
   type Weekday,
 } from '@/lib/storage';
 
@@ -145,6 +149,7 @@ export function StreakSheet({
   now,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const reduce = useReduceMotion();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [deadline, setDeadline] = useState<StreakDeadlinePrefs>({ enabled: false, minutes: 30 });
@@ -181,7 +186,7 @@ export function StreakSheet({
     let scheduledCount = 0;
     let doneCount = 0;
     keys.forEach((key, i) => {
-      if (scheduled.has((i + 1) as Weekday)) {
+      if (scheduled.has(WEEKDAY_DISPLAY_ORDER[i] ?? 7)) {
         scheduledCount += 1;
         if (done.has(key)) doneCount += 1;
       }
@@ -226,7 +231,8 @@ export function StreakSheet({
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
         >
-          <View
+          <Animated.View
+            entering={enterStagger(0, reduce, 120)}
             style={[styles.card, styles.heroCard, hasStreak && styles.heroCardLit]}
             accessible
             accessibilityLabel={`Current streak, ${count} ${count === 1 ? 'day' : 'days'}. Best streak, ${best} ${best === 1 ? 'day' : 'days'}.`}
@@ -246,9 +252,9 @@ export function StreakSheet({
                 Best · {best} {best === 1 ? 'day' : 'days'}
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={styles.card}>
+          <Animated.View entering={enterStagger(1, reduce, 120)} style={styles.card}>
             <View style={styles.cardTop}>
               <Text style={styles.cardLabel}>This week</Text>
               <Text style={styles.cardMeta}>
@@ -256,9 +262,9 @@ export function StreakSheet({
               </Text>
             </View>
             <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={alarm.weekdays} />
-          </View>
+          </Animated.View>
 
-          <View style={styles.card}>
+          <Animated.View entering={enterStagger(2, reduce, 120)} style={styles.card}>
             <Text style={styles.cardLabel}>{hasStreak ? 'Streak due' : 'Your next morning'}</Text>
             <View style={styles.infoRow}>
               <View style={styles.infoIcon}>
@@ -270,9 +276,9 @@ export function StreakSheet({
                 <Text style={styles.infoText}>{due.detail}</Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={styles.card}>
+          <Animated.View entering={enterStagger(3, reduce, 120)} style={styles.card}>
             <Text style={styles.cardLabel}>Next milestone</Text>
             <View style={styles.infoRow}>
               <View style={styles.infoIcon}>
@@ -286,12 +292,12 @@ export function StreakSheet({
                     accessibilityRole="progressbar"
                     accessibilityValue={{ min: 0, max: goal.target, now: count }}
                   >
-                    <View style={[styles.progressFill, { width: `${goalProgress * 100}%` }]} />
+                    <GrowFill style={[styles.progressFill, { width: `${goalProgress * 100}%` }]} reduce={reduce} />
                   </View>
                 ) : null}
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           {onSeeHistory ? (
           <Pressable
@@ -423,4 +429,14 @@ function createStyles(colors: ColorTokens) {
     historyText: { color: colors.calm, fontSize: 15, fontWeight: '700' },
     pressed: { opacity: 0.8 },
   });
+}
+
+/** Progress fill that grows from the left once the sheet has settled (scaleX, UI thread). */
+function GrowFill({ style, reduce }: { style: object; reduce: boolean }) {
+  const v = useSharedValue(reduce ? 1 : 0);
+  useEffect(() => {
+    v.value = reduce ? 1 : withDelay(420, withTiming(1, { duration: DURATION.max, easing: EASE }));
+  }, [reduce, v]);
+  const a = useAnimatedStyle(() => ({ transform: [{ scaleX: v.value }] }));
+  return <Animated.View style={[style, { transformOrigin: 'left center' }, a]} />;
 }

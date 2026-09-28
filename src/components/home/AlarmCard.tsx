@@ -2,16 +2,29 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { RollingText } from '@/components/RollingText';
+import { SpringPill } from '@/components/SpringPill';
+import { MiniSwitch } from '@/components/settings/SettingsSwitchRow';
+import { hapticSelect, hapticSoft } from '@/lib/haptics';
+import { DURATION, EASE, SPRING_SOFT } from '@/lib/motion';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { getRingsCountdown, getTodayStatusChip, relativeDayLabel, type TodayStatus } from '@/lib/home-status';
-import { formatWeekdayHint, nextAlarmDate, type AlarmPrefs, type Weekday } from '@/lib/storage';
+import {
+  formatWeekdayHint,
+  nextAlarmDate,
+  WEEKDAY_DISPLAY_ORDER,
+  WEEKDAY_SHORT,
+  type AlarmPrefs,
+  type Weekday,
+} from '@/lib/storage';
 import { useThemeColors } from '@/lib/theme-provider';
 import { deviceUses24h, displayHhMm, parseHhMmToDate, toHhMm } from '@/lib/time-format';
 import { homeCard } from './home-styles';
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 /** Below this window width (iPhone SE / mini) the time drops from `display` to `hero`. */
 const NARROW_WIDTH = 390;
 
@@ -68,52 +81,66 @@ export function AlarmCard({
   const chipTone = (status: TodayStatus): string =>
     status === 'missed_morning' ? colors.warning : status === 'unlocked_today' ? colors.calm : colors.textMuted;
 
+  const reduce = useReduceMotion();
+  // Alarm off: the time dims smoothly rather than snapping colour.
+  const dim = useSharedValue(alarm.enabled ? 1 : 0.42);
+  useEffect(() => {
+    dim.value = withTiming(alarm.enabled ? 1 : 0.42, { duration: DURATION.base, easing: EASE });
+  }, [alarm.enabled, dim]);
+  const dimStyle = useAnimatedStyle(() => ({ opacity: dim.value }));
+  const panelEnter = reduce
+    ? FadeIn.duration(DURATION.fast)
+    : FadeInDown.duration(DURATION.slow).easing(EASE).withInitialValues({ opacity: 0, transform: [{ translateY: -8 }] });
+  const cardLayout = reduce ? undefined : LinearTransition.springify().damping(SPRING_SOFT.damping ?? 22).stiffness(SPRING_SOFT.stiffness ?? 180);
+
   const onTimeValueChange = (_event: unknown, date?: Date) => {
     if (!date) return;
     if (Platform.OS === 'android') onPickerOpenChange(false);
-    onSetTime(toHhMm(date));
+    const next = toHhMm(date);
+    if (next !== alarm.time) hapticSelect();
+    onSetTime(next);
   };
 
   return (
-    <View style={styles.card}>
+    <Animated.View style={styles.card} layout={cardLayout}>
       {!unlockedToday && alarm.enabled ? (
-        <>
+        <Animated.View pointerEvents="none" style={StyleSheet.absoluteFill} entering={FadeIn.duration(DURATION.slow)} exiting={FadeOut.duration(DURATION.base)}>
           <View pointerEvents="none" style={styles.sunriseWashTop} />
           <View pointerEvents="none" style={styles.sunriseWashEdge} />
-        </>
+        </Animated.View>
       ) : null}
       <View style={styles.cardTop}>
         <Text style={styles.cardLabel}>{label}</Text>
         <Pressable
-          onPress={onToggleEnabled}
+          onPress={() => {
+            if (alarm.enabled) hapticSelect();
+            else hapticSoft();
+            onToggleEnabled();
+          }}
           hitSlop={8}
           style={styles.switchRow}
           accessibilityRole="switch"
           accessibilityLabel="Morning alarm"
           accessibilityState={{ checked: alarm.enabled }}
         >
-          <View style={[styles.switch, alarm.enabled && styles.switchOn]}>
-            <View style={[styles.thumb, alarm.enabled && styles.thumbOn]} />
-          </View>
+          <MiniSwitch on={alarm.enabled} size="lg" />
         </Pressable>
       </View>
 
       <Pressable
-        onPress={() => onPickerOpenChange(!pickerOpen)}
+        onPress={() => {
+          hapticSelect();
+          onPickerOpenChange(!pickerOpen);
+        }}
         style={styles.timeHit}
         accessibilityRole="button"
         accessibilityLabel={`Alarm time, ${timeText}`}
         accessibilityHint="Change the alarm time and days"
         accessibilityState={{ expanded: pickerOpen }}
       >
-        <Text
-          style={[styles.time, width < NARROW_WIDTH && styles.timeNarrow, !alarm.enabled && styles.timeOff]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          {timeText}
-        </Text>
+        <Animated.View style={dimStyle}>
+          <RollingText text={timeText} style={[styles.time, width < NARROW_WIDTH && styles.timeNarrow]} reduceMotion={reduce} />
+        </Animated.View>
       </Pressable>
 
       {rings ? (
@@ -130,7 +157,7 @@ export function AlarmCard({
       </Text>
 
       {pickerOpen ? (
-        <>
+        <Animated.View entering={panelEnter} exiting={FadeOut.duration(DURATION.fast)} style={styles.panel}>
           <View style={styles.timePickerWrap}>
             <DateTimePicker
               value={parseHhMmToDate(alarm.time)}
@@ -147,27 +174,30 @@ export function AlarmCard({
             />
           </View>
           <View style={styles.dayPills}>
-            {DAYS.map((dayLabel, i) => {
-              const day = (i + 1) as Weekday;
+            {WEEKDAY_DISPLAY_ORDER.map((day: Weekday) => {
+              const dayLabel = WEEKDAY_SHORT[day];
               const selected = alarm.weekdays.includes(day);
               return (
-                <Pressable
+                <SpringPill
                   key={day}
+                  selected={selected}
+                  label={dayLabel}
                   onPress={() => onToggleWeekday(day)}
-                  style={[styles.pill, selected && styles.pillSelected]}
+                  style={styles.pill}
+                  selectedStyle={styles.pillSelected}
+                  textStyle={styles.pillText}
+                  selectedTextStyle={styles.pillTextSelected}
                   accessibilityRole="button"
                   accessibilityLabel={dayLabel}
                   accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{dayLabel}</Text>
-                </Pressable>
+                />
               );
             })}
           </View>
           {Platform.OS === 'ios' ? (
             <PrimaryButton label="Done" variant="secondary" onPress={() => onPickerOpenChange(false)} />
           ) : null}
-        </>
+        </Animated.View>
       ) : null}
 
       {showChip && chip ? (
@@ -176,7 +206,7 @@ export function AlarmCard({
           <Text style={[styles.statusLabel, { color: chipTone(chip.status) }]}>{chip.label}</Text>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -217,6 +247,7 @@ function createStyles(colors: ColorTokens) {
     thumb: { width: 27, height: 27, borderRadius: radii.full, backgroundColor: colors.bg },
     thumbOn: { alignSelf: 'flex-end' },
     timeHit: { paddingVertical: spacing.sm },
+    panel: { gap: spacing.sm },
     time: { ...typography.display, color: colors.text },
     timeNarrow: { ...typography.hero },
     timeOff: { color: colors.textDim },

@@ -647,8 +647,8 @@ export async function isUnlockLate(): Promise<boolean> {
 }
 
 /**
- * Perfect week: every scheduled weekday in the current ISO week (Mon–Sun containing
- * `from`) has a completed morning. Only true once the week's last scheduled morning is
+ * Perfect week: every scheduled weekday in the current week (Sun–Sat containing `from`,
+ * matching the week strip) has a completed morning. Only true once the week's last scheduled morning is
  * done, so it's awarded at that completion. Uses the current alarm schedule; an empty
  * schedule never qualifies. Emergency-dismissed mornings aren't completed days.
  */
@@ -659,8 +659,11 @@ export function isPerfectWeek(
 ): boolean {
   if (scheduledWeekdays.length === 0) return false;
   const done = new Set(completedDays);
-  const mondayOffset = 1 - getIsoWeekday(from);
-  return scheduledWeekdays.every((wd) => done.has(dayKey(mondayOffset + (wd - 1), from)));
+  // Sunday-start week: column of `from` is getDay() (0=Sun); ISO weekday → column via display order.
+  const sundayOffset = -displayWeekdayIndex(from);
+  return scheduledWeekdays.every((wd) =>
+    done.has(dayKey(sundayOffset + WEEKDAY_DISPLAY_ORDER.indexOf(wd), from)),
+  );
 }
 
 async function checkAndAwardBadges(
@@ -699,15 +702,36 @@ export function getIsoWeekday(date: Date): Weekday {
   return ((dow + 6) % 7) + 1 as Weekday;
 }
 
+/**
+ * Display order for day pills, week strips and calendars: Sunday first … Saturday last.
+ * Values stay ISO weekdays (1=Mon … 7=Sun) — only the on-screen order changes.
+ */
+export const WEEKDAY_DISPLAY_ORDER: readonly Weekday[] = [7, 1, 2, 3, 4, 5, 6];
+export const WEEKDAY_SHORT: Readonly<Record<Weekday, string>> = {
+  1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun',
+};
+export const WEEKDAY_INITIAL: Readonly<Record<Weekday, string>> = {
+  1: 'M', 2: 'T', 3: 'W', 4: 'T', 5: 'F', 6: 'S', 7: 'S',
+};
+
+/** Column of a date in a Sunday-first week (0 = Sunday … 6 = Saturday). */
+export function displayWeekdayIndex(date: Date): number {
+  return date.getDay();
+}
+
+/** Sort ISO weekdays into display order (Sunday first). */
+export function sortWeekdaysForDisplay(weekdays: readonly Weekday[]): Weekday[] {
+  return [...weekdays].sort((a, b) => WEEKDAY_DISPLAY_ORDER.indexOf(a) - WEEKDAY_DISPLAY_ORDER.indexOf(b));
+}
+
 export function formatWeekdayHint(weekdays: Weekday[]): string {
   const sorted = [...weekdays].sort((a, b) => a - b);
   if (sorted.length === 7) return 'every day';
   if (sorted.length === 5 && sorted.every(d => d >= 1 && d <= 5)) return 'weekdays';
   if (sorted.length === 2 && sorted[0] === 6 && sorted[1] === 7) return 'weekends';
   
-  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   if (sorted.length <= 3) {
-    return sorted.map(d => names[d - 1]).join(', ');
+    return sortWeekdaysForDisplay(sorted).map((d) => WEEKDAY_SHORT[d]).join(', ');
   }
   
   return `${sorted.length} days`;

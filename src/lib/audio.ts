@@ -20,8 +20,8 @@ import { loadAlarmSoundId, loadMeditationSoundId, loadVoiceGuideId } from '@/lib
 // Session audio: harsh alarm → backtrack (selected tone / ambient) + optional voice layer.
 // ---------------------------------------------------------------------------
 
-/** Backtrack level during the meditation. */
-const BACKTRACK_VOLUME = 0.7;
+/** Backtrack level during the meditation: full volume, same as the alarm (only the voice duck lowers it). */
+const BACKTRACK_VOLUME = 1;
 /** Backtrack is ducked by this much while the voice guide speaks. */
 const VOICE_DUCK_DB = 7;
 const BACKTRACK_DUCKED = BACKTRACK_VOLUME * Math.pow(10, -VOICE_DUCK_DB / 20);
