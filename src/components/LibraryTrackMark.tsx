@@ -166,6 +166,59 @@ export function LibraryTrackMark({ trackId, kind, color, size = 56 }: Props) {
             <Line x1="16" y1="42" x2="48" y2="50" {...common} />
           </G>
         );
+      case 'music:deep-roots':
+        // Low, grounded tone: a trunk sinking into spreading roots.
+        return (
+          <G>
+            <Line x1="32" y1="12" x2="32" y2="34" {...common} />
+            <Line x1="10" y1="34" x2="54" y2="34" {...common} strokeOpacity={0.6} />
+            <Path d="M32 34 C30 42 24 46 16 52 M32 34 C34 42 40 46 48 52 M32 34 L32 54" {...common} />
+            <Path d="M26 44 C22 46 20 50 20 54 M38 44 C42 46 44 50 44 54" {...common} strokeOpacity={0.55} />
+          </G>
+        );
+      case 'music:valley-mist':
+        // Soft haze: two hills with mist bands drifting across.
+        return (
+          <G>
+            <Path d="M6 44 L22 26 L34 38 L42 30 L58 44" {...common} />
+            <Line x1="10" y1="38" x2="30" y2="38" {...common} strokeOpacity={0.55} />
+            <Line x1="20" y1="48" x2="54" y2="48" {...common} strokeOpacity={0.7} />
+            <Line x1="12" y1="54" x2="40" y2="54" {...common} strokeOpacity={0.45} />
+          </G>
+        );
+      case 'music:lantern-glow':
+        // A paper lantern floating over still water, with its reflection.
+        return (
+          <G>
+            <Line x1="32" y1="8" x2="32" y2="14" {...common} />
+            <Path d="M24 16 H40 M24 36 H40" {...common} />
+            <Path d="M24 16 C18 22 18 30 24 36 M40 16 C46 22 46 30 40 36" {...common} />
+            <Circle cx="32" cy="26" r="3" fill={stroke} stroke="none" opacity={0.5} />
+            <Line x1="10" y1="44" x2="54" y2="44" {...common} strokeOpacity={0.7} />
+            <Path d="M28 50 H36 M26 55 H38" {...common} strokeOpacity={0.45} />
+          </G>
+        );
+      case 'music:moonset':
+        // Crescent sinking to the horizon as the night lets go.
+        return (
+          <G>
+            <Path d="M34 12 A11 11 0 1 0 34 34 A13.5 13.5 0 0 1 34 12 Z" {...common} />
+            <Line x1="8" y1="42" x2="56" y2="42" {...common} />
+            <Line x1="16" y1="49" x2="48" y2="49" {...common} strokeOpacity={0.55} />
+            <Circle cx="50" cy="14" r="1.4" fill={stroke} stroke="none" />
+          </G>
+        );
+      case 'music:heartwood':
+        // Tree rings: slow warm swells, ring by ring.
+        return (
+          <G>
+            <Ellipse cx="32" cy="32" rx="22" ry="19" {...common} />
+            <Ellipse cx="31" cy="33" rx="15" ry="13" {...common} strokeOpacity={0.75} />
+            <Ellipse cx="30" cy="34" rx="8.5" ry="7" {...common} strokeOpacity={0.55} />
+            <Circle cx="29" cy="35" r="2" fill={stroke} stroke="none" />
+            <Line x1="46" y1="20" x2="40" y2="27" {...common} strokeOpacity={0.5} />
+          </G>
+        );
       case 'music:low-cloud':
         return (
           <G>

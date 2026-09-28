@@ -279,7 +279,9 @@ function createStyles(colors: ColorTokens) {
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   rowBody: { flex: 1, gap: 3 },
   rowTop: {

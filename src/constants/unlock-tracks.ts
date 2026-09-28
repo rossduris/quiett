@@ -1,5 +1,4 @@
 import { MORNING_GUIDE_TRACKS } from '@/constants/guides';
-import { libraryArtFor } from '@/constants/library-art';
 import { DEFAULT_MEDITATION_SOUND_ID, MEDITATION_SOUNDS } from '@/constants/sounds';
 
 export type UnlockTrackKind = 'guided' | 'music' | 'ambient';
@@ -17,8 +16,6 @@ export type UnlockTrack = {
   accent: string;
   accentSoft: string;
   mood: string;
-  /** Monotone cover art (bundled image). */
-  art?: number;
 };
 
 /** Backtrack under each guide's voice (voice layer: see voices.ts / audio.ts). */
@@ -372,10 +369,7 @@ const _UNLOCK_TRACKS_RAW: UnlockTrack[] = [
   ...AMBIENT_TRACKS,
 ];
 
-export const UNLOCK_TRACKS: readonly UnlockTrack[] = _UNLOCK_TRACKS_RAW.map((t) => ({
-  ...t,
-  art: libraryArtFor(t.id) ?? t.art,
-}));
+export const UNLOCK_TRACKS: readonly UnlockTrack[] = _UNLOCK_TRACKS_RAW;
 
 /** Free default for new installs (and the fallback when Premium lapses). */
 export const DEFAULT_UNLOCK_TRACK_ID = 'music:soft-pad';

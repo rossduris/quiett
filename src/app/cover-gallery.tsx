@@ -3,9 +3,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { SceneCover } from '@/components/SceneCover';
-import { TrackCover } from '@/components/TrackCover';
-import { Image } from 'expo-image';
-import { TRACK_COVER_IMAGES, trackCoverKeyFor, type TrackCoverKey } from '@/constants/track-covers';
 import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { sceneSpecFor } from '@/constants/scene-covers';
@@ -46,7 +43,7 @@ function randomSpecs(seed: number, count: number): { label: string; spec: SceneS
   });
 }
 
-/** Dev-only: art covers + generative scene covers (every track plus random seeds across types / times). */
+/** Dev-only: generative scene covers (every track plus random seeds across types / times). */
 export default function CoverGalleryScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -86,28 +83,6 @@ export default function CoverGalleryScreen() {
                 {m === 'theme' ? 'Current theme' : m === 'light' ? 'Peach' : 'Night'}
               </Text>
             </Pressable>
-          ))}
-        </View>
-
-        <Text style={styles.section}>Art covers · tracks</Text>
-        <View style={styles.grid}>
-          {trackItems.map((it) => (
-            <View key={`art-${it.key}`} style={{ width: cell }}>
-              <TrackCover trackId={it.key} size={cell} radius={radii.md} locked={it.locked} variant="art" />
-              <Text style={styles.label} numberOfLines={1}>
-                {it.label} · {trackCoverKeyFor(it.key)}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <Text style={styles.section}>All 20 art covers</Text>
-        <View style={styles.grid}>
-          {(Object.keys(TRACK_COVER_IMAGES) as TrackCoverKey[]).map((k) => (
-            <View key={`img-${k}`} style={{ width: cell }}>
-              <Image source={TRACK_COVER_IMAGES[k]} style={{ width: cell, height: cell, borderRadius: radii.md }} contentFit="cover" />
-              <Text style={styles.label}>cover-{k}</Text>
-            </View>
           ))}
         </View>
 

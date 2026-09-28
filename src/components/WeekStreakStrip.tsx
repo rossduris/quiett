@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { spacing } from '@/constants/theme';
 import { dayKey, type Weekday } from '@/lib/storage';
@@ -28,7 +28,7 @@ type Props = {
   todayKey?: string;
 };
 
-export function WeekStreakStrip({ completedDays, scheduledWeekdays, todayKey }: Props) {
+function WeekStreakStripBase({ completedDays, scheduledWeekdays, todayKey }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const today = todayKey ?? dayKey(0);
@@ -75,6 +75,8 @@ export function WeekStreakStrip({ completedDays, scheduledWeekdays, todayKey }: 
 }
 
 const DOT = 28;
+
+export const WeekStreakStrip = memo(WeekStreakStripBase);
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({

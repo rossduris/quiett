@@ -288,7 +288,7 @@ export default function SettingsScreen() {
                   accessibilityState={{ selected }}
                 >
                   <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>
-                    {cs === 'art' ? 'Art' : cs === 'scenes' ? 'Scenes' : 'Classic'}
+                    {cs === 'scenes' ? 'Scenes' : 'Classic'}
                   </Text>
                 </Pressable>
               );

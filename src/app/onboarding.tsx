@@ -41,6 +41,7 @@ import {
   loadAlarmPrefs,
   loadEveningReminderPrefs,
   saveAlarmPrefs,
+  DEFAULT_ALARM,
   saveEveningReminderPrefs,
   saveOnboardingComplete,
   type AlarmPrefs,
@@ -81,11 +82,10 @@ export default function OnboardingScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const step: StepId = STEPS[stepIndex]!;
 
-  const [alarm, setAlarm] = useState<AlarmPrefs>({
-    time: '07:00',
-    enabled: true,
-    weekdays: [1, 2, 3, 4, 5, 6, 7],
-  });
+  const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({
+    ...DEFAULT_ALARM,
+    weekdays: [...DEFAULT_ALARM.weekdays],
+  }));
   const [showAndroidPicker, setShowAndroidPicker] = useState(false);
   const [alarmPerm, setAlarmPerm] = useState<OsAlarmPermissionState>('notDetermined');
   const [camera, requestCamera, getCamera] = useCameraPermissions();

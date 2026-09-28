@@ -44,6 +44,7 @@ const KEYS = {
   testMorningCompleted: 'quiett.testMorningCompleted',
   libraryUsage: 'quiett.libraryUsage',
   onboardingComplete: 'quiett.onboardingComplete',
+  alarmPrefsSavedAt: 'quiett.alarmPrefsSavedAt',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -64,7 +65,8 @@ export type AccountData = {
 export const DEFAULT_SIT_MINUTES: SitMinutes = 2;
 export const SIT_MINUTE_OPTIONS: readonly SitMinutes[] = __DEV__ ? [0.5, 2] : [2];
 
-const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5] };
+/** Single source for alarm defaults (Home, onboarding and the storage fallback). */
+export const DEFAULT_ALARM: AlarmPrefs = { time: '07:00', enabled: true, weekdays: [1, 2, 3, 4, 5, 6, 7] };
 
 export const SIGNED_OUT_ACCOUNT: AccountData = {
   signedIn: false,
@@ -334,7 +336,7 @@ export async function loadAlarmPrefs(): Promise<AlarmPrefs> {
   return {
     time: time ?? DEFAULT_ALARM.time,
     enabled: enabled === null ? DEFAULT_ALARM.enabled : enabled === '1',
-    weekdays: weekdays === null ? [1, 2, 3, 4, 5, 6, 7] : parseWeekdays(weekdays),
+    weekdays: weekdays === null ? [...DEFAULT_ALARM.weekdays] : parseWeekdays(weekdays),
   };
 }
 
@@ -343,7 +345,18 @@ export async function saveAlarmPrefs(prefs: AlarmPrefs): Promise<void> {
     AsyncStorage.setItem(KEYS.alarmTime, prefs.time),
     AsyncStorage.setItem(KEYS.alarmEnabled, prefs.enabled ? '1' : '0'),
     AsyncStorage.setItem(KEYS.alarmWeekdays, JSON.stringify(prefs.weekdays)),
+    AsyncStorage.setItem(KEYS.alarmPrefsSavedAt, String(Date.now())),
   ]);
+}
+
+/**
+ * When the alarm prefs were last saved (ms), or null for installs that predate this key.
+ * Home uses it so a ring that was due before the alarm was set never counts as "missed".
+ */
+export async function loadAlarmPrefsSavedAt(): Promise<number | null> {
+  const raw = await AsyncStorage.getItem(KEYS.alarmPrefsSavedAt);
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) ? n : null;
 }
 
 async function loadStoredStreak(): Promise<StreakData> {
