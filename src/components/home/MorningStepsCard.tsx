@@ -8,6 +8,8 @@ import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById, type SoundOption } from '@/constants/sounds';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
 import { previewIds, usePreviewPlayer } from '@/lib/audio';
+import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
+import { SurpriseOffNote } from '@/components/SurpriseOffNote';
 import type { CoverStyle } from '@/lib/scene-cover-pref';
 import { useThemeColors } from '@/lib/theme-provider';
 import { homeCard, pressedStyle } from './home-styles';
@@ -19,6 +21,8 @@ type Props = {
   unlockTrack: UnlockTrack;
   isPremium: boolean;
   surpriseMe: boolean;
+  /** Bumps when a pick turned Surprise me off. */
+  surpriseOffTick: number;
   coverStyle: CoverStyle;
   onOpenAlarmSound: () => void;
   onOpenTrack: () => void;
@@ -31,6 +35,7 @@ export function MorningStepsCard({
   unlockTrack,
   isPremium,
   surpriseMe,
+  surpriseOffTick,
   coverStyle,
   onOpenAlarmSound,
   onOpenTrack,
@@ -59,7 +64,10 @@ export function MorningStepsCard({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.cardLabel}>Your morning</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.cardLabel}>Your morning</Text>
+        <SurpriseOffNote trigger={surpriseOffTick} style={styles.note} />
+      </View>
 
       <View>
         <StepRow
@@ -152,6 +160,7 @@ function StepRow({
       accessibilityLabel={a11yLabel}
       accessibilityHint={a11yHint}
       onPress={onPress}
+      {...previewA11yActions(previewPlaying, onPreview)}
       style={({ pressed }) => [styles.stepRow, pressed && pressedStyle]}
     >
       <View style={styles.artWrap}>
@@ -171,9 +180,7 @@ function StepRow({
       </View>
       {onPreview ? (
         <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={previewPlaying ? 'Stop preview' : `Preview ${title}`}
-          accessibilityState={{ selected: previewPlaying }}
+          {...previewButtonA11yHidden}
           hitSlop={8}
           onPress={onPreview}
           style={({ pressed }) => [styles.previewBtn, previewPlaying && styles.previewBtnActive, pressed && pressedStyle]}
@@ -241,6 +248,8 @@ function createStyles(colors: ColorTokens) {
     },
     previewBtnActive: { backgroundColor: colors.calmSoft, borderColor: colors.calm },
     surpriseRow: { flexDirection: 'row', paddingLeft: ART + spacing.md },
+    labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    note: { ...typography.eyebrow, color: colors.calm },
     surprisePill: {
       flexDirection: 'row',
       alignItems: 'center',

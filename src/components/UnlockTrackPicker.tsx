@@ -13,9 +13,11 @@ import { previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/au
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
 import { useShowGuided } from '@/lib/dev-flags';
+import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
 import {
   kindLabel,
   kindSectionHint,
+  orderTracksForUser,
   unlockTracksByKind,
   visibleKinds,
   type UnlockTrack,
@@ -94,7 +96,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
           showsVerticalScrollIndicator={false}
         >
           {visibleKinds(guidedOn).map((kind) => {
-            const tracks = unlockTracksByKind(kind);
+            const tracks = orderTracksForUser(unlockTracksByKind(kind), isPremium);
             return (
               <View key={kind} style={styles.section}>
                 <View style={styles.sectionHead}>
@@ -117,6 +119,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                           disabled ? ', premium, opens Quiett Premium' : ''
                         }`}
                         accessibilityState={{ selected }}
+                        {...previewA11yActions(playing, disabled ? undefined : () => preview(track))}
                         onPress={() => {
                           if (disabled) openPaywall();
                           else onSelect(track);
@@ -178,9 +181,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                         </View>
                         {!disabled ? (
                           <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={playing ? 'Stop preview' : `Preview ${track.title}`}
-                            accessibilityState={{ selected: playing }}
+                            {...previewButtonA11yHidden}
                             hitSlop={8}
                             onPress={() => preview(track)}
                             style={({ pressed }) => [

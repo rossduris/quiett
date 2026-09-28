@@ -70,6 +70,8 @@ export function useHomeState() {
   const [now, setNow] = useState(() => new Date());
   const [loaded, setLoaded] = useState(false);
   const [focusTick, setFocusTick] = useState(0);
+  /** Bumps when picking a track turns Surprise me off (drives a brief note). */
+  const [surpriseOffTick, setSurpriseOffTick] = useState(0);
 
   const alarmSoundIdRef = useRef(alarmSoundId);
   alarmSoundIdRef.current = alarmSoundId;
@@ -209,6 +211,7 @@ export function useHomeState() {
     setUnlockTrackId(id);
     if (surpriseMe) {
       setSurpriseMe(false);
+      setSurpriseOffTick((t) => t + 1);
       await saveSurpriseMe(false);
     }
     void syncEveningReminder();
@@ -232,6 +235,7 @@ export function useHomeState() {
     }
     setSurpriseMe(next);
     await saveSurpriseMe(next);
+    void syncEveningReminder();
   };
 
   const persistAlarm = async (next: AlarmPrefs) => {
@@ -287,6 +291,7 @@ export function useHomeState() {
     alarmSoundId,
     unlockTrackId,
     surpriseMe,
+    surpriseOffTick,
     wakeIntention,
     getStarted,
     getStartedProgress,

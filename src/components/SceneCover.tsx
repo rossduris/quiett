@@ -169,7 +169,6 @@ export function SceneLockBadge({ size = 22, style }: { size?: number; style?: St
 }
 
 function createBadgeStyles(colors: ColorTokens, size: number) {
-  const dark = colors.statusBarStyle === 'light';
   return StyleSheet.create({
     badge: {
       width: size,
@@ -177,9 +176,9 @@ function createBadgeStyles(colors: ColorTokens, size: number) {
       borderRadius: size / 2,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: dark ? 'rgba(18,28,42,0.72)' : 'rgba(255,248,244,0.78)',
+      backgroundColor: colors.frostBg,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: dark ? 'rgba(232,238,245,0.28)' : 'rgba(42,24,16,0.14)',
+      borderColor: colors.frostBorder,
       shadowColor: '#000',
       shadowOpacity: 0.12,
       shadowRadius: 4,

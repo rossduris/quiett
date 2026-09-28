@@ -45,6 +45,10 @@ export type ColorTokens = {
   sunriseSoft: string;
   /** Sunrise deep / shadow. */
   sunriseDeep: string;
+  /** Frosted badge fill that stays readable over any scene cover. */
+  frostBg: string;
+  /** Hairline border for frosted badges. */
+  frostBorder: string;
   /** Status bar style for this theme. */
   statusBarStyle: 'light' | 'dark';
 
@@ -107,6 +111,8 @@ export const PEACH_CREAM: Theme = {
     sunrise: '#E8A06A',
     sunriseSoft: 'rgba(232,160,106,0.15)',
     sunriseDeep: 'rgba(200,120,80,0.20)',
+    frostBg: 'rgba(255,248,244,0.78)',
+    frostBorder: 'rgba(42,24,16,0.14)',
     statusBarStyle: 'dark',
     sessionBgTop: '#26151D',
     sessionBgMid: '#4A2530',
@@ -147,6 +153,8 @@ export const NIGHT_TEAL: Theme = {
     sunrise: '#E8A06A',
     sunriseSoft: 'rgba(232,160,106,0.18)',
     sunriseDeep: 'rgba(180,90,40,0.28)',
+    frostBg: 'rgba(18,28,42,0.72)',
+    frostBorder: 'rgba(232,238,245,0.28)',
     statusBarStyle: 'light',
     sessionBgTop: '#150E18',
     sessionBgMid: '#36202D',

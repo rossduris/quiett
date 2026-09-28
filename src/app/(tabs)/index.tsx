@@ -95,6 +95,7 @@ export default function HomeScreen() {
           unlockTrack={unlockTrack}
           isPremium={home.isPremium}
           surpriseMe={home.surpriseMe}
+          surpriseOffTick={home.surpriseOffTick}
           coverStyle={coverStyle}
           onOpenAlarmSound={() => setShowAlarmSoundPicker(true)}
           onOpenTrack={() => setShowTrackPicker(true)}
