@@ -1,26 +1,46 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { radii, spacing } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
-import { type Weekday } from '@/lib/storage';
 import {
   buildMonthGrid,
+  dayKeyLabel,
   isCurrentMonth,
   shiftMonth,
   type CalendarCell,
+  type Schedule,
 } from '@/lib/streak-calendar';
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
 
 type Props = {
   completedDays: readonly string[];
-  scheduledWeekdays: readonly Weekday[];
+  /** Weekdays, or a resolver over the schedule history (so past months keep their old schedule). */
+  schedule: Schedule;
   year: number;
   month: number;
+  /** Earliest month with history; Previous is disabled here (and with no history at all). */
+  firstMonth: { year: number; month: number } | null;
+  now: Date;
   onChangeMonth: (next: { year: number; month: number }) => void;
 };
+
+function cellA11yLabel(cell: CalendarCell): string {
+  const status = cell.completed
+    ? 'unlocked'
+    : cell.missed
+      ? 'missed'
+      : !cell.scheduled
+        ? 'off day'
+        : cell.isToday
+          ? 'today'
+          : cell.isFuture
+            ? 'scheduled'
+            : null;
+  return status ? `${dayKeyLabel(cell.key)}, ${status}` : dayKeyLabel(cell.key);
+}
 
 type Styles = ReturnType<typeof createStyles>;
 
@@ -34,7 +54,8 @@ function CellView({ cell, styles }: { cell: CalendarCell; styles: Styles }) {
         cell.missed && styles.cellMissed,
         cell.isToday && styles.cellToday,
       ]}
-      accessibilityLabel={`${cell.key}${cell.completed ? ', unlocked' : cell.missed ? ', missed' : cell.scheduled ? '' : ', off'}`}
+      accessible
+      accessibilityLabel={cellA11yLabel(cell)}
     >
       {cell.completed ? (
         <Text style={styles.check}>✓</Text>
@@ -57,28 +78,35 @@ function CellView({ cell, styles }: { cell: CalendarCell; styles: Styles }) {
 
 export function StreakCalendar({
   completedDays,
-  scheduledWeekdays,
+  schedule,
   year,
   month,
+  firstMonth,
+  now,
   onChangeMonth,
 }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const grid = buildMonthGrid(year, month, completedDays, scheduledWeekdays);
-  const canGoForward = !isCurrentMonth(year, month);
+  const grid = useMemo(
+    () => buildMonthGrid(year, month, completedDays, schedule, now),
+    [year, month, completedDays, schedule, now],
+  );
+  const canGoForward = !isCurrentMonth(year, month, now);
+  const canGoBack =
+    firstMonth !== null && year * 12 + month > firstMonth.year * 12 + firstMonth.month;
   const prev = shiftMonth(year, month, -1);
   const next = shiftMonth(year, month, 1);
 
-  const padded: (CalendarCell | null)[] = [
-    ...Array.from({ length: grid.leadingBlanks }, () => null),
-    ...grid.cells,
-  ];
-  while (padded.length % 7 !== 0) padded.push(null);
-
-  const weeks: (CalendarCell | null)[][] = [];
-  for (let i = 0; i < padded.length; i += 7) {
-    weeks.push(padded.slice(i, i + 7));
-  }
+  const weeks = useMemo(() => {
+    const padded: (CalendarCell | null)[] = [
+      ...Array.from({ length: grid.leadingBlanks }, () => null),
+      ...grid.cells,
+    ];
+    while (padded.length % 7 !== 0) padded.push(null);
+    const rows: (CalendarCell | null)[][] = [];
+    for (let i = 0; i < padded.length; i += 7) rows.push(padded.slice(i, i + 7));
+    return rows;
+  }, [grid]);
 
   return (
     <View
@@ -90,16 +118,31 @@ export function StreakCalendar({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Previous month"
-          onPress={() => onChangeMonth(prev)}
+          accessibilityState={{ disabled: !canGoBack }}
+          disabled={!canGoBack}
+          onPress={() => {
+            if (canGoBack) onChangeMonth(prev);
+          }}
           hitSlop={10}
-          style={({ pressed }) => [styles.navBtn, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.navBtn,
+            !canGoBack && styles.navDisabled,
+            pressed && canGoBack && styles.pressed,
+          ]}
         >
-          <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
+          <Ionicons
+            name="chevron-back"
+            size={18}
+            color={canGoBack ? colors.textMuted : colors.border}
+          />
         </Pressable>
-        <Text style={styles.title}>{grid.title}</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          {grid.title}
+        </Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Next month"
+          accessibilityState={{ disabled: !canGoForward }}
           disabled={!canGoForward}
           onPress={() => {
             if (canGoForward) onChangeMonth(next);
@@ -169,14 +212,14 @@ function createStyles(colors: ColorTokens) {
     marginBottom: spacing.xs,
   },
   title: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 16,
     fontWeight: '600',
   },
   navBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: radii.full,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bgElevated,
@@ -193,9 +236,9 @@ function createStyles(colors: ColorTokens) {
   dow: {
     width: CELL,
     textAlign: 'center',
+    ...typography.eyebrow,
     color: colors.textDim,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 0.4,
   },
   week: {
@@ -207,7 +250,7 @@ function createStyles(colors: ColorTokens) {
   cell: {
     width: CELL,
     height: CELL,
-    borderRadius: CELL / 2,
+    borderRadius: radii.full,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: 'transparent',
@@ -241,6 +284,7 @@ function createStyles(colors: ColorTokens) {
     marginTop: -1,
   },
   dayNum: {
+    ...typography.caption,
     color: colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
@@ -255,14 +299,14 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.md,
     marginTop: spacing.xs,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   legendDot: {
     width: 10,
     height: 10,
-    borderRadius: 5,
+    borderRadius: radii.full,
     borderWidth: 1.5,
     borderColor: colors.border,
   },
-  legendText: { color: colors.textDim, fontSize: 11, fontWeight: '600' },
+  legendText: { ...typography.caption, color: colors.textDim, fontSize: 11, fontWeight: '600' },
 });
 }

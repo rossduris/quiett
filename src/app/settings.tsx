@@ -11,6 +11,7 @@ import { ThemePicker } from '@/components/ThemePicker';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { COVER_STYLES, setCoverStyle, useCoverStyle } from '@/lib/scene-cover-pref';
 import { setDevFlag, useDevFlag } from '@/lib/dev-flags';
+import { SetupTips } from '@/components/SetupTips';
 import { isBody3DPoseAvailable } from 'quiett-pose';
 import {
   POSE_DETECTOR_LABELS,
@@ -41,6 +42,7 @@ export default function SettingsScreen() {
   const premium = usePremium();
   const devShowGuided = useDevFlag('showGuided');
   const devVoiceGuides = useDevFlag('voiceGuides');
+  const devAccountUi = useDevFlag('accountUi');
   const coverStyle = useCoverStyle();
   const poseDetectorMode = usePoseDetectorMode();
   const poseDebugOverlay = usePoseDebugOverlay();
@@ -266,6 +268,20 @@ export default function SettingsScreen() {
               <View style={[styles.miniThumb, devVoiceGuides && styles.miniThumbOn]} />
             </View>
           </Pressable>
+          <Pressable
+            onPress={() => void setDevFlag('accountUi', !devAccountUi)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: devAccountUi }}
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="person-circle-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Account row on Profile (dev)</Text>
+            </View>
+            <View style={[styles.miniSwitch, devAccountUi && styles.miniSwitchOn]}>
+              <View style={[styles.miniThumb, devAccountUi && styles.miniThumbOn]} />
+            </View>
+          </Pressable>
           {devVoiceGuides ? (
             <Text style={[styles.hint, { color: colors.textMuted }]}>
               Pick a voice in Library → Voice (dev). It plays over your sound during the meditation.
@@ -361,7 +377,7 @@ export default function SettingsScreen() {
         ) : null}
 
         <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Support</Text>
+          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Help</Text>
           <Pressable
             onPress={() => router.push('/help')}
             style={({ pressed }) => [
@@ -372,7 +388,7 @@ export default function SettingsScreen() {
           >
             <View style={styles.linkLeft}>
               <Ionicons name="help-circle-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Help</Text>
+              <Text style={[styles.linkText, { color: colors.text }]}>Troubleshooting</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
           </Pressable>
@@ -390,6 +406,7 @@ export default function SettingsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
           </Pressable>
+          <SetupTips />
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>

@@ -7,6 +7,7 @@ import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { longestScheduledStreak, nextStreakGoal } from '@/lib/streak-calendar';
+import { loadLifetimeStats } from '@/lib/lifetime-stats';
 import {
   getIsoWeekday,
   loadStreakDeadlinePrefs,
@@ -147,12 +148,17 @@ export function StreakSheet({
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [deadline, setDeadline] = useState<StreakDeadlinePrefs>({ enabled: false, minutes: 30 });
+  const [storedBest, setStoredBest] = useState<number | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     let alive = true;
     void loadStreakDeadlinePrefs().then((prefs) => {
       if (alive) setDeadline(prefs);
+    });
+    // Same stored best as Profile (survives history trims and schedule changes).
+    void loadLifetimeStats().then((stats) => {
+      if (alive) setStoredBest(stats.bestStreak);
     });
     return () => {
       alive = false;
@@ -162,8 +168,8 @@ export function StreakSheet({
   const count = streak.count;
   const hasStreak = count > 0;
   const best = useMemo(
-    () => Math.max(longestScheduledStreak(completedDays, alarm.weekdays), count),
-    [completedDays, alarm.weekdays, count],
+    () => Math.max(storedBest ?? longestScheduledStreak(completedDays, alarm.weekdays), count),
+    [storedBest, completedDays, alarm.weekdays, count],
   );
   const goal = nextStreakGoal(count);
   const due = getStreakDue(alarm, deadline, unlockedToday, hasStreak, now);

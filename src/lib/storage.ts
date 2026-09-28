@@ -45,6 +45,9 @@ const KEYS = {
   libraryUsage: 'quiett.libraryUsage',
   onboardingComplete: 'quiett.onboardingComplete',
   alarmPrefsSavedAt: 'quiett.alarmPrefsSavedAt',
+  scheduleHistory: 'quiett.scheduleHistory',
+  lifetimeMornings: 'quiett.lifetimeMornings',
+  bestStreak: 'quiett.bestStreak',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -73,13 +76,6 @@ export const SIGNED_OUT_ACCOUNT: AccountData = {
   provider: null,
   displayName: null,
   email: null,
-};
-
-const STUB_APPLE_ACCOUNT: AccountData = {
-  signedIn: true,
-  provider: 'apple',
-  displayName: 'Ross',
-  email: 'r••••@icloud.com',
 };
 
 function parseSitMinutes(raw: string | null): SitMinutes {
@@ -341,12 +337,106 @@ export async function loadAlarmPrefs(): Promise<AlarmPrefs> {
 }
 
 export async function saveAlarmPrefs(prefs: AlarmPrefs): Promise<void> {
+  await recordScheduleChange(prefs);
   await Promise.all([
     AsyncStorage.setItem(KEYS.alarmTime, prefs.time),
     AsyncStorage.setItem(KEYS.alarmEnabled, prefs.enabled ? '1' : '0'),
     AsyncStorage.setItem(KEYS.alarmWeekdays, JSON.stringify(prefs.weekdays)),
     AsyncStorage.setItem(KEYS.alarmPrefsSavedAt, String(Date.now())),
   ]);
+}
+
+// ── Schedule history ─────────────────────────────────────────────────────────
+// Which weekdays were scheduled from which day on, so changing the schedule never
+// rewrites the past (calendar "missed" days, longest streak).
+
+export type ScheduleEntry = { from: string; weekdays: Weekday[] };
+/** Returns the scheduled weekdays that applied on a given day key. */
+export type ScheduleResolver = (key: string) => ReadonlySet<Weekday>;
+
+/** Seed entry for installs that predate the history: the current schedule, from forever. */
+const SCHEDULE_EPOCH = '0000-01-01';
+const MAX_SCHEDULE_ENTRIES = 100;
+
+function parseScheduleHistory(raw: string | null): ScheduleEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (e): e is ScheduleEntry =>
+          !!e &&
+          typeof (e as ScheduleEntry).from === 'string' &&
+          Array.isArray((e as ScheduleEntry).weekdays),
+      )
+      .map((e) => ({
+        from: e.from,
+        weekdays: e.weekdays.filter((d): d is Weekday => typeof d === 'number' && d >= 1 && d <= 7),
+      }))
+      .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  } catch {
+    return [];
+  }
+}
+
+/** Schedule history, oldest first. Never empty: falls back to the current weekdays from forever. */
+export async function loadScheduleHistory(): Promise<ScheduleEntry[]> {
+  const [raw, weekdaysRaw] = await Promise.all([
+    AsyncStorage.getItem(KEYS.scheduleHistory),
+    AsyncStorage.getItem(KEYS.alarmWeekdays),
+  ]);
+  const history = parseScheduleHistory(raw);
+  if (history.length > 0) return history;
+  const weekdays = weekdaysRaw === null ? [...DEFAULT_ALARM.weekdays] : parseWeekdays(weekdaysRaw);
+  return [{ from: SCHEDULE_EPOCH, weekdays }];
+}
+
+function sameWeekdays(a: readonly Weekday[], b: readonly Weekday[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((d) => set.has(d));
+}
+
+/**
+ * Appends a schedule entry when the weekdays change. The change applies from today if
+ * today's ring (at the new time) is still ahead, otherwise from tomorrow.
+ */
+async function recordScheduleChange(prefs: AlarmPrefs, now: Date = new Date()): Promise<void> {
+  const history = await loadScheduleHistory();
+  const last = history[history.length - 1]!;
+  if (sameWeekdays(last.weekdays, prefs.weekdays)) {
+    // Seed the key so the implicit "from forever" entry is pinned before any change.
+    if (!(await AsyncStorage.getItem(KEYS.scheduleHistory))) {
+      await AsyncStorage.setItem(KEYS.scheduleHistory, JSON.stringify(history));
+    }
+    return;
+  }
+  const [h, m] = prefs.time.split(':').map((n) => parseInt(n, 10));
+  const ringToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h || 0, m || 0);
+  const effective = dayKey(ringToday.getTime() > now.getTime() ? 0 : 1, now);
+  const kept = history.filter((e) => e.from < effective);
+  const next = [...kept, { from: effective, weekdays: [...prefs.weekdays] }];
+  // Never drop the oldest entry entirely: collapse the head when trimming.
+  const trimmed =
+    next.length > MAX_SCHEDULE_ENTRIES
+      ? [{ ...next[next.length - MAX_SCHEDULE_ENTRIES]!, from: SCHEDULE_EPOCH }, ...next.slice(next.length - MAX_SCHEDULE_ENTRIES + 1)]
+      : next;
+  await AsyncStorage.setItem(KEYS.scheduleHistory, JSON.stringify(trimmed));
+}
+
+/** Resolver over a history (oldest first): the entry with the latest `from` ≤ key applies. */
+export function scheduleResolver(history: readonly ScheduleEntry[]): ScheduleResolver {
+  const sets = history.map((e) => ({ from: e.from, set: new Set(e.weekdays) as ReadonlySet<Weekday> }));
+  const empty: ReadonlySet<Weekday> = new Set();
+  return (key) => {
+    let found = sets[0]?.set ?? empty;
+    for (const e of sets) {
+      if (e.from <= key) found = e.set;
+      else break;
+    }
+    return found;
+  };
 }
 
 /**
@@ -456,6 +546,13 @@ async function addCompletedDay(key: string): Promise<string[]> {
   // Keep a rolling year of history — enough for week strip + future calendars
   const trimmed = next.length > 400 ? next.slice(next.length - 400) : next;
   await AsyncStorage.setItem(KEYS.completedDays, JSON.stringify(trimmed));
+  // Lifetime total survives the 400-day trim. Only counted once backfilled
+  // (lifetime-stats.ts); before that the backfill reads this history instead.
+  const lifetime = await AsyncStorage.getItem(KEYS.lifetimeMornings);
+  if (lifetime !== null) {
+    const n = parseInt(lifetime, 10);
+    await AsyncStorage.setItem(KEYS.lifetimeMornings, String((Number.isFinite(n) ? n : 0) + 1));
+  }
   return trimmed;
 }
 
@@ -504,6 +601,10 @@ export async function recordSuccessfulSit(): Promise<StreakData> {
     AsyncStorage.setItem(KEYS.streak, String(next)),
     AsyncStorage.setItem(KEYS.lastCompletedDate, today),
   ]);
+  const best = await AsyncStorage.getItem(KEYS.bestStreak);
+  if (best !== null && next > (parseInt(best, 10) || 0)) {
+    await AsyncStorage.setItem(KEYS.bestStreak, String(next));
+  }
   await checkAndAwardBadges(next, await loadCompletedDays(), prefs.weekdays);
   return { count: next, lastCompletedDate: today };
 }
@@ -617,6 +718,11 @@ export function nextAlarmDate(time: string, weekdays: Weekday[], from = new Date
 }
 
 export async function loadAccount(): Promise<AccountData> {
+  if (!__DEV__) {
+    // No real sign-in ships yet: clear any stub account a dev/test build left behind.
+    await AsyncStorage.removeItem(KEYS.account);
+    return { ...SIGNED_OUT_ACCOUNT };
+  }
   const raw = await AsyncStorage.getItem(KEYS.account);
   if (!raw) return { ...SIGNED_OUT_ACCOUNT };
   try {
@@ -637,10 +743,38 @@ async function saveAccount(account: AccountData): Promise<void> {
 }
 
 /** Local UI stub — no real Apple SDK this pass. */
+/** Dev-only placeholder until Sign in with Apple is wired up. No-op in release. */
 export async function signInWithAppleStub(): Promise<AccountData> {
-  const account = { ...STUB_APPLE_ACCOUNT };
+  if (!__DEV__) return { ...SIGNED_OUT_ACCOUNT };
+  const account: AccountData = {
+    signedIn: true,
+    provider: 'apple',
+    displayName: 'Test user',
+    email: 't••••@example.com',
+  };
   await saveAccount(account);
   return account;
+}
+
+// ── Lifetime stats (backfilled in lifetime-stats.ts) ─────────────────────────
+
+export type StoredLifetimeStats = { mornings: number | null; bestStreak: number | null };
+
+export async function loadStoredLifetimeStats(): Promise<StoredLifetimeStats> {
+  const [[, m], [, b]] = await AsyncStorage.multiGet([KEYS.lifetimeMornings, KEYS.bestStreak]);
+  const num = (raw: string | null) => {
+    if (raw === null) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  return { mornings: num(m), bestStreak: num(b) };
+}
+
+export async function saveLifetimeStats(stats: { mornings: number; bestStreak: number }): Promise<void> {
+  await AsyncStorage.multiSet([
+    [KEYS.lifetimeMornings, String(stats.mornings)],
+    [KEYS.bestStreak, String(stats.bestStreak)],
+  ]);
 }
 
 export async function signOut(): Promise<AccountData> {
