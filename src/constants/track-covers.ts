@@ -46,7 +46,7 @@ export const TRACK_COVER_MAP: Record<string, TrackCoverKey> = {
   'guided:warm-window': '10',
   'guided:quiet-rise': '11',
   'guided:clear-morning': '08',
-  // Healing tones
+  // Tones & music
   'music:soft-pad': '30',
   'music:dawn-keys': '29',
   'music:warm-drone': '31',

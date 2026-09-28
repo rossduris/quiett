@@ -118,8 +118,8 @@ const ALL_BADGES: Badge[] = [
   {
     id: 'tried-healing',
     icon: 'pulse',
-    label: 'Frequency',
-    description: 'Tried a healing frequency',
+    label: 'Tones',
+    description: 'Tried a track from Tones & music',
     category: 'variety',
   },
 ];

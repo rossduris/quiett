@@ -10,6 +10,7 @@ import { describeUnavailableReason } from '@/lib/purchases';
 import { ThemePicker } from '@/components/ThemePicker';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { COVER_STYLES, setCoverStyle, useCoverStyle } from '@/lib/scene-cover-pref';
+import { setDevFlag, useDevFlag } from '@/lib/dev-flags';
 import { isBody3DPoseAvailable } from 'quiett-pose';
 import {
   POSE_DETECTOR_LABELS,
@@ -38,6 +39,8 @@ export default function SettingsScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const premium = usePremium();
+  const devShowGuided = useDevFlag('showGuided');
+  const devVoiceGuides = useDevFlag('voiceGuides');
   const coverStyle = useCoverStyle();
   const poseDetectorMode = usePoseDetectorMode();
   const poseDebugOverlay = usePoseDebugOverlay();
@@ -235,6 +238,39 @@ export default function SettingsScreen() {
               <View style={[styles.miniThumb, premium.devForcePremium && styles.miniThumbOn]} />
             </View>
           </Pressable>
+          <Pressable
+            onPress={() => void setDevFlag('showGuided', !devShowGuided)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: devShowGuided }}
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="person-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Show guided shelf (dev)</Text>
+            </View>
+            <View style={[styles.miniSwitch, devShowGuided && styles.miniSwitchOn]}>
+              <View style={[styles.miniThumb, devShowGuided && styles.miniThumbOn]} />
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => void setDevFlag('voiceGuides', !devVoiceGuides)}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: devVoiceGuides }}
+          >
+            <View style={styles.linkLeft}>
+              <Ionicons name="mic-outline" size={20} color={colors.text} />
+              <Text style={[styles.linkText, { color: colors.text }]}>Voice guides (dev)</Text>
+            </View>
+            <View style={[styles.miniSwitch, devVoiceGuides && styles.miniSwitchOn]}>
+              <View style={[styles.miniThumb, devVoiceGuides && styles.miniThumbOn]} />
+            </View>
+          </Pressable>
+          {devVoiceGuides ? (
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              Pick a voice in Library → Voice (dev). It plays over your sound during the meditation.
+            </Text>
+          ) : null}
           <Text style={[styles.hint, { color: colors.textMuted }]}>Cover style (dev)</Text>
           <View style={styles.row}>
             {COVER_STYLES.map((cs) => {

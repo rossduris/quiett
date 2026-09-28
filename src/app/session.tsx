@@ -17,6 +17,7 @@ import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
 import {
   crossfadeToMeditation,
+  handoffBacktrackToSuccess,
   playHarshAlarm,
   releaseAudio,
   stopAllAudio,
@@ -322,7 +323,9 @@ export default function SessionScreen() {
     if (phase === 'completed') {
       void (async () => {
         missionDone.current = true;
-        await stopAllAudio();
+        // The backtrack keeps playing into /success (fades out when the user leaves it);
+        // only the alarm and voice stop here.
+        handoffBacktrackToSuccess();
         const streak = await recordSuccessfulSit();
         const prefs = await loadAlarmPrefs();
         await completeOsAlarmAndReschedule(prefs);

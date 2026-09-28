@@ -25,6 +25,21 @@ const MORNING_POND: SceneSpec = { type: 'pond', timeOfDay: 'sunrise', sunX: 0.7,
 /** Campfire — crossed logs in a stone ring, flames, sparks and smoke at dawn. */
 const CAMPFIRE: SceneSpec = { type: 'campfire', timeOfDay: 'dawn', sunX: 0.24, sunY: 0.5, hueShift: 0, seed: 3607 };
 
+/** Night crickets — moonlit summer meadow, a cricket on a grass blade, fireflies. */
+const NIGHT_CRICKETS: SceneSpec = { type: 'crickets', timeOfDay: 'night', sunX: 0.22, sunY: 0.22, hueShift: 0, seed: 7101 };
+/** Snow morning — snowfall over drifts and snowy pines, a bird on a snow-capped branch. */
+const SNOW_MORNING: SceneSpec = { type: 'snow', timeOfDay: 'morning', sunX: 0.24, sunY: 0.3, hueShift: 0, seed: 7203, details: ['noSun'] };
+/** Night stream — a stream over stones between dark pines, moonlight on the water. */
+const NIGHT_STREAM: SceneSpec = { type: 'stream', timeOfDay: 'night', sunX: 0.56, sunY: 0.18, hueShift: 0, seed: 7307 };
+/** Distant thunder — far storm cell lit from within, rain curtains, a faint bolt. */
+const DISTANT_THUNDER: SceneSpec = { type: 'thunder', timeOfDay: 'dusk', sunX: 0.2, sunY: 0.5, hueShift: 0, seed: 7409, details: ['noSun'] };
+/** After the rain — glossy leaves beaded with drops, light breaking through. */
+const AFTER_THE_RAIN: SceneSpec = { type: 'afterrain', timeOfDay: 'morning', sunX: 0.7, sunY: 0.3, hueShift: 0, seed: 7511, details: ['rays'] };
+/** Hearth — stone fireplace indoors, logs burning under the mantel. */
+const HEARTH: SceneSpec = { type: 'hearth', timeOfDay: 'golden', sunX: 0.5, sunY: 0.5, hueShift: 0, seed: 7613, details: ['noGrain'] };
+/** Rain on the eaves — rain streaming off a porch roof and gutter, garden beyond. */
+const RAIN_ON_EAVES: SceneSpec = { type: 'eaves', timeOfDay: 'dawn', sunX: 0.6, sunY: 0.5, hueShift: 0, seed: 7717 };
+
 export const SCENE_COVERS: Record<string, SceneSpec> = {
   // ── Guided — landscapes that match the title ─────────────────────────────
   /** First Light — sunrise over rolling hills. */
@@ -40,15 +55,39 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   /** Mountain Bloom — snowy peaks behind a flowering meadow. */
   'guided:clear-morning': { type: 'meadow', timeOfDay: 'morning', sunX: 0.7, sunY: 0.3, hueShift: 0, seed: 1601 },
 
-  // ── Healing tones — the sound source ─────────────────────────────────────
-  /** Clear Bell — singing bowl on a cushion, resonance rings. */
+  // ── Tones & music — the sound source ─────────────────────────────────────
+  /** Clear Bell (852 Hz) — singing bowl on a cushion, resonance rings. */
   'music:clear-bell': { type: 'bowl', timeOfDay: 'morning', sunX: 0.3, sunY: 0.36, hueShift: 0, seed: 2411 },
   /** Soft Pad — soft puffy clouds. */
   'music:soft-pad': { type: 'puffs', timeOfDay: 'dawn', sunX: 0.46, sunY: 0.56, hueShift: 6, seed: 2113 },
-  /** Dawn Keys — piano keys at dawn. */
-  'music:dawn-keys': { type: 'piano', timeOfDay: 'dawn', sunX: 0.66, sunY: 0.47, hueShift: 0, seed: 2207 },
+  /** Dawn Wash (639 Hz) — watercolour bands of dawn colour washing over a still sea. */
+  'music:dawn-keys': { type: 'wash', timeOfDay: 'dawn', sunX: 0.38, sunY: 0.58, hueShift: 0, seed: 2207 },
   /** Warm Drone — tanpura with warm resonant waves. */
   'music:warm-drone': { type: 'strings', timeOfDay: 'golden', sunX: 0.74, sunY: 0.5, hueShift: 0, seed: 2309 },
+  /** Deep Roots (174 Hz) — broad tree, roots spreading deep through layered soil. */
+  'music:deep-roots': { type: 'roots', timeOfDay: 'golden', sunX: 0.8, sunY: 0.2, hueShift: 0, seed: 2503 },
+  /** Valley Mist (285 Hz) — spurs folding into a valley, mist pooling in every fold. */
+  'music:valley-mist': { type: 'valley', timeOfDay: 'sunrise', sunX: 0.5, sunY: 0.42, hueShift: 0, seed: 2609 },
+  /** Lantern Glow (417 Hz) — paper lanterns drifting on still water at dusk. */
+  'music:lantern-glow': { type: 'lanterns', timeOfDay: 'dusk', sunX: 0.7, sunY: 0.5, hueShift: 0, seed: 2707, details: ['noSun'] },
+  /** Moonset (963 Hz) — big moon sinking behind a far ridge before dawn. */
+  'music:moonset': { type: 'moonset', timeOfDay: 'predawn', sunX: 0.64, sunY: 0.56, hueShift: 0, seed: 2801 },
+  /** Heartwood — cut stump on the forest floor, growth rings from the heart. */
+  'music:heartwood': { type: 'rings', timeOfDay: 'morning', sunX: 0.26, sunY: 0.14, hueShift: 0, seed: 2903 },
+
+  // ── Library expansion (music beds) ───────────────────────────────────────
+  /** Low Cloud — heavy, soft cloud deck low over flat fields, a thin seam of light beneath. */
+  'music:low-cloud': { type: 'lowcloud', timeOfDay: 'dawn', sunX: 0.62, sunY: 0.66, hueShift: 0, seed: 6101 },
+  /** Quiet Hours — hourglass on a sill at first light, sand still falling. */
+  'music:quiet-hours': { type: 'hours', timeOfDay: 'dawn', sunX: 0.3, sunY: 0.5, hueShift: 0, seed: 6203 },
+  /** Golden Hour — big amber sun low behind soft ridges, rim-lit grass in front. */
+  'music:golden-hour': { type: 'goldenhour', timeOfDay: 'golden', sunX: 0.62, sunY: 0.56, hueShift: 0, seed: 6307 },
+  /** Velvet Night — thin crescent over folded velvet hills. */
+  'music:velvet-night': { type: 'velvet', timeOfDay: 'night', sunX: 0.7, sunY: 0.24, hueShift: 0, seed: 6409 },
+  /** Starlit — dense star field and galactic band over a lake mirroring the stars. */
+  'music:starlit': { type: 'starlit', timeOfDay: 'night', sunX: 0.5, sunY: 0.3, hueShift: 0, seed: 6511, details: ['noSun'] },
+  /** Drift — small empty rowboat drifting on calm, misty water, a long soft wake. */
+  'music:drift': { type: 'drift', timeOfDay: 'morning', sunX: 0.3, sunY: 0.34, hueShift: 0, seed: 6613 },
 
   // ── Ambient / meditation sounds — the sound source ───────────────────────
   'ambient:calm_waves': CALM_WAVES,
@@ -57,6 +96,13 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   'ambient:wind_in_trees': WIND_IN_TREES,
   'ambient:morning_pond': MORNING_POND,
   'ambient:campfire': CAMPFIRE,
+  'ambient:night_crickets': NIGHT_CRICKETS,
+  'ambient:snow_morning': SNOW_MORNING,
+  'ambient:night_stream': NIGHT_STREAM,
+  'ambient:distant_thunder': DISTANT_THUNDER,
+  'ambient:after_the_rain': AFTER_THE_RAIN,
+  'ambient:hearth': HEARTH,
+  'ambient:rain_on_eaves': RAIN_ON_EAVES,
   // Raw playback ids (same sound → same cover)
   'sound:calm_waves': CALM_WAVES,
   'sound:morning_birds': MORNING_BIRDS,
@@ -64,6 +110,13 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   'sound:wind_in_trees': WIND_IN_TREES,
   'sound:morning_pond': MORNING_POND,
   'sound:campfire': CAMPFIRE,
+  'sound:night_crickets': NIGHT_CRICKETS,
+  'sound:snow_morning': SNOW_MORNING,
+  'sound:night_stream': NIGHT_STREAM,
+  'sound:distant_thunder': DISTANT_THUNDER,
+  'sound:after_the_rain': AFTER_THE_RAIN,
+  'sound:hearth': HEARTH,
+  'sound:rain_on_eaves': RAIN_ON_EAVES,
 
   // ── Alarm tones — picture the name ───────────────────────────────────────
   /** Quiett harsh — jagged dark peaks before dawn. */

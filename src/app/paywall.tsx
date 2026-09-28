@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useSafeBack } from '@/components/ScreenHeader';
-import { VOICE_GUIDE_TRACKS } from '@/constants/guides';
+import { premiumUnlockTracks } from '@/constants/unlock-tracks';
 import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
@@ -24,41 +24,52 @@ import { useThemeColors } from '@/lib/theme-provider';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
-/** Human names of the premium tracks, straight from the catalog (never hard-coded copy). */
-function premiumTrackNames(): string {
-  const names = VOICE_GUIDE_TRACKS.map((t) => t.title);
+/** "A, B and C" */
+function listNames(names: string[]): string {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
+const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
 
-/** Benefits = only what Premium unlocks in the code today. */
+function countTitle(n: number, noun: string): string {
+  return `${NUMBER_WORDS[n] ?? String(n)} more ${noun}`;
+}
+
+/**
+ * "Keep going" past the 2:00 unlock is planned for Premium. Flip this on when it ships so the
+ * paywall only ever lists what Premium unlocks in the code today.
+ */
+const KEEP_GOING_AVAILABLE = false;
+
+/** Benefits = only what Premium unlocks in the code today (names straight from the catalog). */
 function benefitLines(): { icon: IoniconName; title: string; detail: string }[] {
-  const count = VOICE_GUIDE_TRACKS.length;
-  const countWord = NUMBER_WORDS[count] ?? String(count);
-  return [
-    {
-      icon: 'musical-notes-outline',
-      title: `${countWord} more guided morning tracks`,
-      detail: `${premiumTrackNames()}.`,
-    },
-    {
-      icon: 'sunny-outline',
-      title: 'Choose them for any morning',
-      detail: 'Set any premium track to play after the camera check, from Home or Library.',
-    },
+  const premium = premiumUnlockTracks();
+  const tones = premium.filter((t) => t.kind === 'music').map((t) => t.title);
+  const ambient = premium.filter((t) => t.kind === 'ambient').map((t) => t.title);
+  const lines: { icon: IoniconName; title: string; detail: string }[] = [];
+  if (tones.length) {
+    lines.push({ icon: 'musical-notes-outline', title: countTitle(tones.length, 'tones and music beds'), detail: `${listNames(tones)}.` });
+  }
+  if (ambient.length) {
+    lines.push({ icon: 'leaf-outline', title: countTitle(ambient.length, 'ambient sounds'), detail: `${listNames(ambient)}.` });
+  }
+  if (KEEP_GOING_AVAILABLE) {
+    lines.push({ icon: 'time-outline', title: 'Keep going past 2:00', detail: 'Stay with your sound after the unlock for as long as you like.' });
+  }
+  lines.push(
     {
       icon: 'shuffle-outline',
-      title: 'Surprise me uses the full shelf',
-      detail: 'The daily rotation picks from every track, not only the free ones.',
+      title: 'Surprise me uses the full library',
+      detail: 'The daily rotation picks from every sound, not only the free ones.',
     },
     {
       icon: 'heart-outline',
       title: 'Keep Quiett growing',
-      detail: 'The alarm, camera check, streaks and free tracks stay free either way.',
+      detail: 'The alarm, camera check, streaks and free sounds stay free either way.',
     },
-  ];
+  );
+  return lines;
 }
 
 type PlanInfo = {
@@ -261,7 +272,7 @@ export default function PaywallScreen() {
           <Text style={styles.kicker}>Quiett Premium</Text>
           <Text style={styles.title}>More ways to begin the morning</Text>
           <Text style={styles.lead}>
-            Unlock the rest of the guided shelf for the quiet minutes after you wake.
+            Open the full sound library for the quiet minutes after you wake.
           </Text>
         </View>
 
@@ -288,7 +299,7 @@ export default function PaywallScreen() {
                 : 'You\u2019re Premium'}
             </Text>
             <Text style={styles.stateBody}>
-              Every track is open in Library and in the morning track picker.
+              Every sound is open in Library and in the morning meditation picker.
             </Text>
           </View>
         ) : loading ? (

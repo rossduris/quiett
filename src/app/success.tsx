@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -7,6 +7,7 @@ import { spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import type { ColorTokens } from '@/constants/themes';
 import { dayKey, loadWakeIntentionsByDay } from '@/lib/storage';
+import { fadeOutBacktrack, stopBacktrack } from '@/lib/audio';
 
 export default function SuccessScreen() {
   const router = useRouter();
@@ -32,6 +33,23 @@ export default function SuccessScreen() {
     };
   }, [intentionParam]);
 
+  // The meditation backtrack carries on here after the unlock; it fades out when the user
+  // leaves this screen, taps to begin the day, or backgrounds the app.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background') stopBacktrack();
+    });
+    return () => {
+      sub.remove();
+      fadeOutBacktrack();
+    };
+  }, []);
+
+  const beginDay = () => {
+    fadeOutBacktrack();
+    router.replace('/');
+  };
+
   return (
     <View
       style={[
@@ -50,8 +68,8 @@ export default function SuccessScreen() {
         <Text style={styles.streakLabel}>day streak</Text>
       </View>
       <PrimaryButton
-        label="Back home"
-        onPress={() => router.replace('/')}
+        label="Begin your day"
+        onPress={beginDay}
         style={styles.cta}
       />
     </View>

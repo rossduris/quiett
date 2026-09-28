@@ -12,15 +12,16 @@ import { meditationSoundById } from '@/constants/sounds';
 import { previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
+import { useShowGuided } from '@/lib/dev-flags';
 import {
   kindLabel,
   kindSectionHint,
   unlockTracksByKind,
+  visibleKinds,
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
 
-const KINDS: UnlockTrackKind[] = ['guided', 'music', 'ambient'];
 
 type Props = {
   visible: boolean;
@@ -49,6 +50,8 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
   const router = useRouter();
   const { isPremium } = usePremium();
   const coverStyle = useCoverStyle();
+  // Guided shelf is hidden for launch (dev switch brings it back).
+  const guidedOn = useShowGuided();
 
   /** Locked premium row → close this sheet, then open the paywall (RN Modal sits above nav). */
   const openPaywall = () => {
@@ -71,7 +74,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
             <Text style={styles.sheetEyebrow}>Step 2</Text>
             <Text style={styles.sheetTitle}>Meditation</Text>
             <Text style={styles.sheetLead}>
-              Your 2-minute meditation, once you're still. Guided, healing tones, or ambient.
+              Your 2-minute meditation, once you're still. {guidedOn ? 'Guided, tones & music' : 'Tones & music'} or ambient.
               Tap play to preview.
             </Text>
           </View>
@@ -90,7 +93,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
         >
-          {KINDS.map((kind) => {
+          {visibleKinds(guidedOn).map((kind) => {
             const tracks = unlockTracksByKind(kind);
             return (
               <View key={kind} style={styles.section}>

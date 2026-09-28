@@ -192,7 +192,158 @@ export const MEDITATION_SOUNDS: readonly SoundOption[] = [
     url: require('../../assets/audio/ambient/campfire.m4a'),
     section: 'laid_back',
   },
+  {
+    id: 'night_crickets',
+    label: 'Night crickets',
+    url: require('../../assets/audio/ambient/night-crickets.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'snow_morning',
+    label: 'Snow morning',
+    url: require('../../assets/audio/ambient/snow-morning.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'night_stream',
+    label: 'Night stream',
+    url: require('../../assets/audio/ambient/night-stream.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'distant_thunder',
+    label: 'Distant thunder',
+    url: require('../../assets/audio/ambient/distant-thunder.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'after_the_rain',
+    label: 'After the rain',
+    url: require('../../assets/audio/ambient/after-the-rain.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'hearth',
+    label: 'Hearth',
+    url: require('../../assets/audio/ambient/hearth.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'rain_on_eaves',
+    label: 'Rain on the eaves',
+    url: require('../../assets/audio/ambient/rain-on-eaves.m4a'),
+    section: 'laid_back',
+  },
 ] as const;
+
+/**
+ * Healing-tone / solfeggio beds and calm music beds: 5-min seamless loops (cut from the middle of the source,
+ * tail crossfaded into the head over 9 s, no file-level fades, -21 LUFS, 96 kbps AAC) that loop
+ * in session; audio.ts fades the first play in. Playback-only:
+ * healing-tone (and guided) tracks point at these via `playbackSoundId`; they are not
+ * listed as Ambient tracks. Sessions start them at a random point (see audio.ts).
+ */
+export const MUSIC_SOUNDS: readonly SoundOption[] = [
+  {
+    id: 'tone_432_pad',
+    label: '432 Hz soft pad',
+    url: require('../../assets/audio/music/432hz-soft-pad.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_432_drone',
+    label: '432 Hz warm drone',
+    url: require('../../assets/audio/music/432hz-warm-drone.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_639_wash',
+    label: '639 Hz dawn wash',
+    url: require('../../assets/audio/music/639hz-dawn-wash.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_174_roots',
+    label: '174 Hz deep roots',
+    url: require('../../assets/audio/music/174hz-deep-roots.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_285_mist',
+    label: '285 Hz valley mist',
+    url: require('../../assets/audio/music/285hz-valley-mist.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_417_lantern',
+    label: '417 Hz lantern glow',
+    url: require('../../assets/audio/music/417hz-lantern-glow.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_852_bell',
+    label: '852 Hz clear bell',
+    url: require('../../assets/audio/music/852hz-clear-bell.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_963_moon',
+    label: '963 Hz moonset',
+    url: require('../../assets/audio/music/963hz-moonset.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'tone_heartwood',
+    label: 'Heartwood',
+    url: require('../../assets/audio/music/heartwood.m4a'),
+    section: 'laid_back',
+  },
+  // Calm music beds (no solfeggio tuning): same 5-min seamless-loop treatment.
+  {
+    id: 'music_low_cloud',
+    label: 'Low Cloud',
+    url: require('../../assets/audio/music/low-cloud.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'music_quiet_hours',
+    label: 'Quiet Hours',
+    url: require('../../assets/audio/music/quiet-hours.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'music_golden_hour',
+    label: 'Golden Hour',
+    url: require('../../assets/audio/music/golden-hour.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'music_velvet_night',
+    label: 'Velvet Night',
+    url: require('../../assets/audio/music/velvet-night.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'music_starlit',
+    label: 'Starlit',
+    url: require('../../assets/audio/music/starlit.m4a'),
+    section: 'laid_back',
+  },
+  {
+    id: 'music_drift',
+    label: 'Drift',
+    url: require('../../assets/audio/music/drift.m4a'),
+    section: 'laid_back',
+  },
+] as const;
+
+/** Tone clips are long one-shot cuts: sessions start at a random offset instead of 0. */
+export function isToneSound(id: string): boolean {
+  return MUSIC_SOUNDS.some((s) => s.id === id);
+}
+
+/** Every in-app playback source (ambient + music beds). */
+const PLAYBACK_SOUNDS: readonly SoundOption[] = [...MEDITATION_SOUNDS, ...MUSIC_SOUNDS];
 
 export const DEFAULT_ALARM_SOUND_ID = 'quiett_harsh';
 export const DEFAULT_MEDITATION_SOUND_ID = MEDITATION_SOUNDS[0]!.id;
@@ -202,7 +353,7 @@ export function alarmSoundById(id: string): SoundOption {
 }
 
 export function meditationSoundById(id: string): SoundOption {
-  return MEDITATION_SOUNDS.find((s) => s.id === id) ?? MEDITATION_SOUNDS[0]!;
+  return PLAYBACK_SOUNDS.find((s) => s.id === id) ?? MEDITATION_SOUNDS[0]!;
 }
 
 export function alarmSoundsBySection(section: SoundOption['section']): SoundOption[] {

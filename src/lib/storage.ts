@@ -3,7 +3,9 @@ import {
   DEFAULT_ALARM_SOUND_ID,
   DEFAULT_MEDITATION_SOUND_ID,
 } from '@/constants/sounds';
-import { DEFAULT_UNLOCK_TRACK_ID, unlockTrackById } from '@/constants/unlock-tracks';
+import { DEFAULT_UNLOCK_TRACK_ID, launchTrackId, unlockTrackById } from '@/constants/unlock-tracks';
+import { VOICE_NONE, voiceOptionById } from '@/constants/voices';
+import { loadDevFlags, showGuided } from '@/lib/dev-flags';
 import { DEFAULT_THEME_ID, type ThemeId } from '@/constants/themes';
 
 const KEYS = {
@@ -15,6 +17,7 @@ const KEYS = {
   meditationSoundId: 'quiett.meditationSoundId',
   unlockTrackId: 'quiett.unlockTrackId',
   surpriseMe: 'quiett.surpriseMe',
+  voiceGuideId: 'quiett.voiceGuideId',
   surpriseTrackDate: 'quiett.surpriseTrackDate',
   streak: 'quiett.streak',
   lastCompletedDate: 'quiett.lastCompletedDate',
@@ -107,6 +110,10 @@ export async function saveAlarmSoundId(id: string): Promise<void> {
 }
 
 export async function loadMeditationSoundId(): Promise<string> {
+  // Follow the selected unlock track so playback remaps (e.g. placeholder → real audio)
+  // reach users whose saved sound id predates the change.
+  const trackId = await loadStoredUnlockTrackId();
+  if (trackId) return unlockTrackById(trackId).playbackSoundId;
   const raw = await AsyncStorage.getItem(KEYS.meditationSoundId);
   return raw || DEFAULT_MEDITATION_SOUND_ID;
 }
@@ -115,10 +122,15 @@ export async function saveMeditationSoundId(id: string): Promise<void> {
   await AsyncStorage.setItem(KEYS.meditationSoundId, id);
 }
 
+/** Saved unlock track, mapped off the Guided shelf while it is hidden (launch). */
+async function loadStoredUnlockTrackId(): Promise<string | null> {
+  const [raw] = await Promise.all([AsyncStorage.getItem(KEYS.unlockTrackId), loadDevFlags()]);
+  if (!raw) return null;
+  return launchTrackId(raw, showGuided());
+}
+
 export async function loadUnlockTrackId(): Promise<string> {
-  const raw = await AsyncStorage.getItem(KEYS.unlockTrackId);
-  if (!raw) return DEFAULT_UNLOCK_TRACK_ID;
-  return unlockTrackById(raw).id;
+  return (await loadStoredUnlockTrackId()) ?? DEFAULT_UNLOCK_TRACK_ID;
 }
 
 /** Persist next-morning unlock selection and keep session calm audio in sync. */
@@ -151,6 +163,16 @@ export async function enforceFreeUnlockTrack(): Promise<boolean> {
   await AsyncStorage.setItem(KEYS.unlockTrackId, fallback.id);
   await saveMeditationSoundId(fallback.playbackSoundId);
   return true;
+}
+
+/** Voice layer over the backtrack: a guide script id, or 'none' (default). */
+export async function loadVoiceGuideId(): Promise<string> {
+  const raw = await AsyncStorage.getItem(KEYS.voiceGuideId);
+  return raw ? voiceOptionById(raw).id : VOICE_NONE;
+}
+
+export async function saveVoiceGuideId(id: string): Promise<void> {
+  await AsyncStorage.setItem(KEYS.voiceGuideId, voiceOptionById(id).id);
 }
 
 const DEV_FORCE_PREMIUM_KEY = 'quiett.devForcePremium';

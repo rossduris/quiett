@@ -25,9 +25,12 @@ import {
   pickSurpriseTrack,
   unlockTrackById,
   unlockTracksByKind,
+  visibleKinds,
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
+import { VOICE_OPTIONS } from '@/constants/voices';
+import { useShowGuided, useVoiceGuidesEnabled } from '@/lib/dev-flags';
 import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   loadSurpriseMe,
@@ -36,6 +39,8 @@ import {
   saveSurpriseTrackDate,
   saveUnlockTrackId,
   markLibraryCategoryUsed,
+  loadVoiceGuideId,
+  saveVoiceGuideId,
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 
@@ -44,11 +49,10 @@ type Filter = 'all' | UnlockTrackKind;
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'guided', label: 'Guided' },
-  { id: 'music', label: 'Healing' },
+  { id: 'music', label: 'Tones & music' },
   { id: 'ambient', label: 'Ambient' },
 ];
 
-const SECTION_ORDER: UnlockTrackKind[] = ['guided', 'music', 'ambient'];
 
 const CARD_W = 156;
 const CARD_H = 196;
@@ -182,6 +186,10 @@ export default function LibraryScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
+  // Guided shelf is hidden for launch (dev switch brings it back); voice picker is dev-only.
+  const guidedOn = useShowGuided();
+  const voiceOn = useVoiceGuidesEnabled();
+  const [voiceId, setVoiceId] = useState<string>(VOICE_OPTIONS[0]!.id);
   const { playingId, toggle: togglePreview } = usePreviewPlayer();
   const isPreviewing = (trackId: string) => playingId === previewIds.track(trackId);
 
@@ -189,16 +197,21 @@ export default function LibraryScreen() {
     useCallback(() => {
       let alive = true;
       (async () => {
-        const [id, surprise] = await Promise.all([loadUnlockTrackId(), loadSurpriseMe()]);
+        const [id, surprise, voice] = await Promise.all([
+          loadUnlockTrackId(),
+          loadSurpriseMe(),
+          loadVoiceGuideId(),
+        ]);
         if (!alive) return;
         setSelectedId(id);
         setSurpriseMe(surprise);
+        setVoiceId(voice);
       })();
       return () => {
         alive = false;
         stopPreview();
       };
-    }, []),
+    }, [guidedOn]),
   );
 
   // Premium lapsed while this tab was open → show the free fallback the provider saved.
@@ -242,7 +255,7 @@ export default function LibraryScreen() {
     setSurpriseMe(next);
     await saveSurpriseMe(next);
     if (next) {
-      const picked = pickSurpriseTrack(selectedId, isPremium);
+      const picked = pickSurpriseTrack(selectedId, isPremium, guidedOn);
       const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
       await saveSurpriseTrackDate();
       setSelectedId(id);
@@ -256,10 +269,20 @@ export default function LibraryScreen() {
     togglePreview(previewIds.track(track.id), sound.url, 'track');
   };
 
+  const onSelectVoice = async (id: string) => {
+    setVoiceId(id);
+    await saveVoiceGuideId(id);
+  };
+
+  const kinds = useMemo(() => visibleKinds(guidedOn), [guidedOn]);
+  const filters = useMemo(
+    () => FILTERS.filter((f) => f.id === 'all' || kinds.includes(f.id)),
+    [kinds],
+  );
   const sections = useMemo(() => {
-    if (filter === 'all') return SECTION_ORDER;
+    if (filter === 'all' || !kinds.includes(filter)) return kinds;
     return [filter];
-  }, [filter]);
+  }, [filter, kinds]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg, paddingTop: insets.top + spacing.md }]}>
@@ -291,8 +314,8 @@ export default function LibraryScreen() {
             ) : null}
           </View>
           <Text style={[styles.lead, { color: colors.textMuted }]}>
-            Guided, healing tones, and ambient for tomorrow morning. Swipe each shelf —
-            pick freely, nothing locked behind finishing another track.
+            {guidedOn ? 'Guided, tones & music' : 'Tones & music'} and ambient sound for tomorrow
+            morning. Swipe each shelf — pick freely, nothing locked behind finishing another track.
           </Text>
         </View>
 
@@ -324,7 +347,9 @@ export default function LibraryScreen() {
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              if (!lockedForUser(selectedTrack)) setFilter(selectedTrack.kind);
+              if (!lockedForUser(selectedTrack) && kinds.includes(selectedTrack.kind)) {
+                setFilter(selectedTrack.kind);
+              }
             }}
             style={({ pressed }) => [styles.heroCard, pressed && styles.pressed]}
           >
@@ -391,13 +416,49 @@ export default function LibraryScreen() {
           </Pressable>
         </View>
 
+        {voiceOn ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Voice (dev)</Text>
+            </View>
+            <Text style={styles.sectionLead}>
+              A voice guide over your sound; the sound dips while it speaks. Placeholder clip for now.
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filters}
+            >
+              {VOICE_OPTIONS.map((v) => {
+                const active = v.id === voiceId;
+                return (
+                  <Pressable
+                    key={v.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Voice: ${v.title}`}
+                    accessibilityState={{ selected: active }}
+                    onPress={() => void onSelectVoice(v.id)}
+                    style={({ pressed }) => [
+                      styles.filterChip,
+                      active && styles.filterChipActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.filterText, active && styles.filterTextActive]}>{v.title}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filters}
         >
-          {FILTERS.map((item) => {
-            const active = filter === item.id;
+          {filters.map((item) => {
+            const active = filter === item.id || (item.id === 'all' && !kinds.includes(filter as UnlockTrackKind));
             return (
               <Pressable
                 key={item.id}

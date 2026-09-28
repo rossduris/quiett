@@ -40,7 +40,7 @@ export default function ManageSubscriptionScreen() {
 
   let planName = 'Free';
   let planNote = available
-    ? 'The alarm, camera check, streaks and free tracks are yours to keep. Premium opens the rest of the guided shelf.'
+    ? 'The alarm, camera check, streaks and free sounds are yours to keep. Premium opens the full sound library.'
     : 'Subscriptions aren\u2019t available in this version yet. Everything free keeps working as usual.';
   if (entitlement) {
     planName = 'Premium';

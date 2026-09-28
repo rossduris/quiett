@@ -12,12 +12,14 @@ import { WeekStreakStrip } from '@/components/WeekStreakStrip';
 import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
+import { showGuided } from '@/lib/dev-flags';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { UnlockTrackPicker } from '@/components/UnlockTrackPicker';
 import { StreakSheet } from '@/components/StreakSheet';
 import { alarmSoundById, DEFAULT_ALARM_SOUND_ID, meditationSoundById } from '@/constants/sounds';
 import {
+  DEFAULT_UNLOCK_TRACK_ID,
   kindLabel,
   pickSurpriseTrack,
   unlockTrackById,
@@ -108,7 +110,7 @@ export default function HomeScreen() {
   const [showAlarmSoundPicker, setShowAlarmSoundPicker] = useState(false);
   const [showStreakSheet, setShowStreakSheet] = useState(false);
   const [alarmSoundId, setAlarmSoundId] = useState(DEFAULT_ALARM_SOUND_ID);
-  const [unlockTrackId, setUnlockTrackId] = useState(() => unlockTrackById('guided:first-light').id);
+  const [unlockTrackId, setUnlockTrackId] = useState(DEFAULT_UNLOCK_TRACK_ID);
   const [surpriseMe, setSurpriseMe] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [reliabilityChecked, setReliabilityChecked] = useState(false);
@@ -152,7 +154,7 @@ export default function HomeScreen() {
         let nextUnlock = unlockId;
         if (surprise && (await loadSurpriseTrackDate()) !== dayKey(0)) {
           const premium = isPremiumRef.current;
-          const picked = pickSurpriseTrack(unlockId, premium);
+          const picked = pickSurpriseTrack(unlockId, premium, showGuided());
           nextUnlock = await saveUnlockTrackId(picked.id, { premium });
           await saveSurpriseTrackDate();
         }

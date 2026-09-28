@@ -2,7 +2,7 @@ export type GuideTrack = {
   id: string;
   title: string;
   durationLabel: string;
-  /** Free now vs premium voice (coming soon) — not progress-gated. */
+  /** Legacy premium flag — guided voices are free now (Premium gates the sound library). */
   locked: boolean;
   blurb: string;
   /** Short mood tag shown on the card. */
@@ -39,7 +39,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'still-horizon',
     title: 'Still Horizon',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Steady',
     blurb: 'Steady voice guiding a calm start.',
     accent: '#5B8CFF',
@@ -49,7 +49,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'warm-window',
     title: 'Warm Window',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Soft',
     blurb: 'Light tone for mornings that feel heavy.',
     accent: '#F0B429',
@@ -60,7 +60,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'quiet-rise',
     title: 'Drifting Up',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Light',
     blurb: 'Rise slowly and let the heaviness fall away.',
     accent: '#9B8CFF',
@@ -71,7 +71,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'clear-morning',
     title: 'Mountain Bloom',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Grounded',
     blurb: 'Steady as the peaks, soft as the flowers.',
     accent: '#3DCFB0',
