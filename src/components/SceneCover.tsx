@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactElement } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, {
   Circle,
@@ -24,6 +24,8 @@ import {
 } from '@/lib/scene-gen';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
+import { useMotionActive } from '@/lib/use-motion-active';
+import { SceneMotionLayers, segmentScene } from '@/components/scene-motion-layers';
 
 type Props = {
   scene: SceneSpec;
@@ -35,6 +37,12 @@ type Props = {
   mode?: SceneMode;
   /** Defaults to 'lite' below 72pt (no grain, bolder detail). */
   lod?: 'full' | 'lite';
+  /**
+   * Animate the scene's tagged layers (rain falls, flames flicker…). Pass a boolean only where a
+   * cover can ever animate: the previewing track or the selected main sound. Motion runs only while
+   * the screen is focused, the app is foregrounded and Reduce Motion is off.
+   */
+  animate?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -121,7 +129,7 @@ function renderDef(d: SvgDef): ReactElement {
  * Gradient ids derive from a hash of the spec/options, so instances never collide
  * with a *different* scene; identical scenes share identical defs.
  */
-function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, style }: Props) {
+function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, animate, style }: Props) {
   const colors = useThemeColors();
   const h = height ?? size;
   const sceneMode = mode ?? sceneModeFor(colors);
@@ -131,14 +139,18 @@ function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, style }: P
 
   const tokens = useMemo(() => sceneTokensFor(colors), [colors]);
 
-  const content = useMemo(() => {
-    const model = buildSceneCached(scene, { mode: sceneMode, aspect, lod: level, accent: colors.accent, tokens });
-    return {
+  const model = useMemo(
+    () => buildSceneCached(scene, { mode: sceneMode, aspect, lod: level, accent: colors.accent, tokens }),
+    [scene, sceneMode, aspect, level, colors.accent, tokens],
+  );
+  const content = useMemo(
+    () => ({
       vb: `0 0 ${model.w} ${model.h}`,
       defs: model.defs.map(renderDef),
       nodes: model.nodes.map((n, i) => renderNode(n, i)),
-    };
-  }, [scene, sceneMode, aspect, level, colors.accent, tokens]);
+    }),
+    [model],
+  );
 
   const frame = useMemo(
     () => [styles.frame, { width: size, height: h, borderRadius: radius }, style],
@@ -147,12 +159,52 @@ function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, style }: P
 
   return (
     <View style={frame} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <Svg width={size} height={h} viewBox={content.vb} preserveAspectRatio="xMidYMid slice">
-        <Defs>{content.defs}</Defs>
-        {content.nodes}
-      </Svg>
+      {animate !== undefined ? (
+        <AnimatedLayers model={model} defs={content.defs} width={size} height={h} animate={animate}>
+          <Svg width={size} height={h} viewBox={content.vb} preserveAspectRatio="xMidYMid slice">
+            <Defs>{content.defs}</Defs>
+            {content.nodes}
+          </Svg>
+        </AnimatedLayers>
+      ) : (
+        <Svg width={size} height={h} viewBox={content.vb} preserveAspectRatio="xMidYMid slice">
+          <Defs>{content.defs}</Defs>
+          {content.nodes}
+        </Svg>
+      )}
     </View>
   );
+}
+
+/**
+ * Static SVG until the cover first goes live; from then on the scene is drawn as layers (static
+ * runs + moving groups) so starting/stopping only eases transforms — no redraw, no flash.
+ */
+function AnimatedLayers({
+  model,
+  defs,
+  width,
+  height,
+  animate,
+  children,
+}: {
+  model: ReturnType<typeof buildSceneCached>;
+  defs: ReactElement[];
+  width: number;
+  height: number;
+  animate: boolean;
+  children: ReactElement;
+}) {
+  const live = useMotionActive(animate);
+  const [layered, setLayered] = useState(false);
+  useEffect(() => {
+    if (live) setLayered(true);
+  }, [live]);
+  const segments = useMemo(() => segmentScene(model.nodes), [model]);
+  const hasMotion = segments.some((s) => s.kind === 'motion');
+  const frame = useMemo(() => ({ width, height, vbW: model.w, vbH: model.h }), [width, height, model]);
+  if (!layered || !hasMotion) return children;
+  return <SceneMotionLayers frame={frame} defs={defs} segments={segments} render={renderNode} playing={live} />;
 }
 
 export const SceneCover = memo(SceneCoverBase);

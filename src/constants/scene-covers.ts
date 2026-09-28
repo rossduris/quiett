@@ -62,8 +62,8 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   'music:soft-pad': { type: 'puffs', timeOfDay: 'dawn', sunX: 0.46, sunY: 0.56, hueShift: 6, seed: 2113 },
   /** Dawn Wash (639 Hz) — watercolour bands of dawn colour washing over a still sea. */
   'music:dawn-keys': { type: 'wash', timeOfDay: 'dawn', sunX: 0.38, sunY: 0.58, hueShift: 0, seed: 2207 },
-  /** Warm Drone — tanpura with warm resonant waves. */
-  'music:warm-drone': { type: 'strings', timeOfDay: 'golden', sunX: 0.74, sunY: 0.5, hueShift: 0, seed: 2309 },
+  /** Warm Drone — a string held in one long vibration over a dusk sky, big warm sun on still water, slow ripples. */
+  'music:warm-drone': { type: 'drone', timeOfDay: 'dusk', sunX: 0.5, sunY: 0.68, hueShift: 0, seed: 2309 },
   /** Deep Roots (174 Hz) — broad tree, roots spreading deep through layered soil. */
   'music:deep-roots': { type: 'roots', timeOfDay: 'golden', sunX: 0.8, sunY: 0.2, hueShift: 0, seed: 2503 },
   /** Valley Mist (285 Hz) — spurs folding into a valley, mist pooling in every fold. */

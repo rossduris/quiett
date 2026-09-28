@@ -214,3 +214,81 @@ export function miniLayout(kind: 'ring' | 'still' | 'calm', s: number, p: ArtPal
     ],
   };
 }
+
+/**
+ * Premium hero backdrop: warm glow and breathing rings behind the fanned sound covers,
+ * slow rays, a few motes drifting up and layered hills. The covers themselves are real
+ * SceneCover thumbnails rendered on top by PremiumHero.
+ */
+export function premiumLayout(w: number, h: number, p: ArtPalette): SceneLayout {
+  const cx = w / 2;
+  const cy = h * 0.5;
+  const glow = Math.max(w, h) * 1.05;
+  const rays = Math.min(w, h) * 1.25;
+  const r1 = Math.min(w, h) * 0.78;
+  const r2 = Math.min(w, h) * 1.02;
+  const motes: [number, number, number, number][] = [
+    [0.14, 0.62, 6, 0],
+    [0.24, 0.3, 4, 1400],
+    [0.8, 0.56, 5, 700],
+    [0.88, 0.26, 4, 2100],
+    [0.66, 0.16, 3, 2800],
+  ];
+  return {
+    w,
+    h,
+    layers: [
+      { key: 'sky', x: 0, y: 0, w, h, node: <SkyLayer w={w} h={h} p={p} id="premium-sky" /> },
+      { key: 'glow', x: cx - glow / 2, y: cy - glow / 2, w: glow, h: glow, node: <GlowLayer size={glow} color={p.glow} id="premium-glow" />, anim: { type: 'breathe', period: 6000, min: 0.92, max: 1.06 } },
+      { key: 'rays', x: cx - rays / 2, y: cy - rays / 2, w: rays, h: rays, node: <RaysLayer size={rays} p={p} />, anim: { type: 'rotate', period: 90000 } },
+      { key: 'ring-1', x: cx - r1 / 2, y: cy - r1 / 2, w: r1, h: r1, node: <RingLayer size={r1} stroke={p.sun} width={1.5} opacity={0.5} />, anim: { type: 'breathe', period: 5000, min: 0.93, max: 1.05 } },
+      { key: 'ring-2', x: cx - r2 / 2, y: cy - r2 / 2, w: r2, h: r2, node: <RingLayer size={r2} stroke={p.sun} width={1.2} opacity={0.26} />, anim: { type: 'breathe', period: 5000, min: 0.95, max: 1.04, delay: 500 } },
+      ...motes.map(([fx, fy, s, delay], i) => ({
+        key: `mote-${i}`,
+        x: w * fx,
+        y: h * fy,
+        w: s,
+        h: s,
+        node: <DiscLayer size={s} fill={p.sunCore} opacity={0.9} />,
+        anim: { type: 'floatUp', dy: 22, period: 4200, delay } as AnimSpec,
+      })),
+      ...hills(w, h, p, [0.78, 0.85, 0.92]),
+    ],
+  };
+}
+
+/** Profile hero: a quiet dawn — sun rising off-centre right, slow rays, drifting motes, low hills. */
+export function profileHeroLayout(w: number, h: number, p: ArtPalette): SceneLayout {
+  const sun = Math.min(w, h) * 0.62;
+  const sx = w * 0.8;
+  const sy = h * 0.5;
+  const glow = Math.max(w, h) * 0.95;
+  // Kept short so the slow-turning rays stay clear of the streak number on the left.
+  const rays = sun * 1.3;
+  const motes: [number, number, number, number][] = [
+    [0.52, 0.5, 4, 0],
+    [0.64, 0.24, 3, 1500],
+    [0.9, 0.3, 4, 800],
+    [0.72, 0.62, 5, 2300],
+  ];
+  return {
+    w,
+    h,
+    layers: [
+      { key: 'sky', x: 0, y: 0, w, h, node: <SkyLayer w={w} h={h} p={p} id="profile-sky" /> },
+      { key: 'glow', x: sx - glow / 2, y: sy - glow / 2, w: glow, h: glow, node: <GlowLayer size={glow} color={p.glow} id="profile-glow" />, anim: { type: 'breathe', period: 7000, min: 0.94, max: 1.05 } },
+      { key: 'rays', x: sx - rays / 2, y: sy - rays / 2, w: rays, h: rays, node: <RaysLayer size={rays} p={p} />, anim: { type: 'rotate', period: 120000 } },
+      { key: 'sun', x: sx - sun / 2, y: sy - sun / 2, w: sun, h: sun, node: <SunLayer size={sun} p={p} id="profile-sun" />, anim: { type: 'rise', from: h * 0.3, duration: 2400 } },
+      ...motes.map(([fx, fy, s, delay], i) => ({
+        key: `mote-${i}`,
+        x: w * fx,
+        y: h * fy,
+        w: s,
+        h: s,
+        node: <DiscLayer size={s} fill={p.sunCore} opacity={0.85} />,
+        anim: { type: 'floatUp', dy: 20, period: 4600, delay } as AnimSpec,
+      })),
+      ...hills(w, h, p, [0.8, 0.87, 0.94]),
+    ],
+  };
+}

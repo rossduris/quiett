@@ -13,11 +13,13 @@ type Props = {
   radius?: number;
   /** Premium and not unlocked: shows a small frosted lock badge. */
   locked?: boolean;
+  /** Animate the scene (previewing / selected main sound). See SceneCover. */
+  animate?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 /** Track cover: the generative scene for this track (recolours with the theme). */
-function TrackCoverBase({ trackId, size, height, radius = 0, locked, style }: Props) {
+function TrackCoverBase({ trackId, size, height, radius = 0, locked, animate, style }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const h = height ?? size;
@@ -26,7 +28,7 @@ function TrackCoverBase({ trackId, size, height, radius = 0, locked, style }: Pr
 
   return (
     <View style={[styles.frame, { width: size, height: h, borderRadius: radius }, style]}>
-      <SceneCover scene={sceneSpecFor(trackId)} size={size} height={h} />
+      <SceneCover scene={sceneSpecFor(trackId)} size={size} height={h} animate={locked ? undefined : animate} />
       {locked ? (
         <SceneLockBadge size={badge} style={[styles.lock, { right: inset, bottom: inset }]} />
       ) : null}

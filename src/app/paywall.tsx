@@ -2,25 +2,29 @@ import { useMemo, useState, type ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useSafeBack } from '@/components/ScreenHeader';
-import { premiumUnlockTracks } from '@/constants/unlock-tracks';
+import { PremiumHero } from '@/components/premium/PremiumHero';
+import { premiumUnlockTracks, UNLOCK_TRACKS } from '@/constants/unlock-tracks';
 import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { describeUnavailableReason, hasPremiumEntitlement, type PurchasesPackage } from '@/lib/purchases';
 import { usePremium } from '@/lib/premium-provider';
 import { useThemeColors } from '@/lib/theme-provider';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -41,6 +45,29 @@ function countTitle(n: number, noun: string): string {
  * paywall only ever lists what Premium unlocks in the code today.
  */
 const KEEP_GOING_AVAILABLE = false;
+
+/** Real counts straight from the catalog (sound library = every non-guided track). */
+function libraryCounts() {
+  const sounds = UNLOCK_TRACKS.filter((t) => t.kind !== 'guided');
+  return {
+    total: sounds.length,
+    music: sounds.filter((t) => t.kind === 'music').length,
+    ambient: sounds.filter((t) => t.kind === 'ambient').length,
+    free: sounds.filter((t) => !t.locked).length,
+  };
+}
+
+/** Covers for the hero fan: a varied handful of Premium sounds, falling back to any Premium track. */
+const HERO_PREFS = ['ambient:campfire', 'music:lantern-glow', 'music:golden-hour', 'music:moonset', 'ambient:snow_morning'];
+function heroTrackIds(): string[] {
+  const premium = premiumUnlockTracks();
+  const picked = HERO_PREFS.filter((id) => premium.some((t) => t.id === id));
+  for (const t of premium) {
+    if (picked.length >= 5) break;
+    if (!picked.includes(t.id)) picked.push(t.id);
+  }
+  return picked.slice(0, 5);
+}
 
 /** Benefits = only what Premium unlocks in the code today (names straight from the catalog). */
 function benefitLines(): { icon: IoniconName; title: string; detail: string }[] {
@@ -160,6 +187,14 @@ export default function PaywallScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const close = useSafeBack('/');
+  const { width } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
+  const counts = useMemo(() => libraryCounts(), []);
+  const heroIds = useMemo(() => heroTrackIds(), []);
+  const heroW = Math.min(width - spacing.lg * 2, 460);
+  const heroH = Math.round(Math.min(230, heroW * 0.62));
+  /** Section entrance: gentle rise, or a plain fade under Reduce Motion. */
+  const enter = (i: number) => (reduceMotion ? FadeIn.duration(200) : FadeInDown.delay(120 + i * 90).duration(420));
   const {
     available,
     unavailableReason,
@@ -170,6 +205,7 @@ export default function PaywallScreen() {
     restore,
     isPremium,
     devForcePremium,
+    setDevForcePremium,
   } = usePremium();
 
   const packages = useMemo(
@@ -261,22 +297,24 @@ export default function PaywallScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <View style={styles.markGlow}>
-            <Image
-              source={require('../../assets/images/icon.png')}
-              style={styles.mark}
-              accessibilityIgnoresInvertColors
-            />
-          </View>
-          <Text style={styles.kicker}>Quiett Premium</Text>
-          <Text style={styles.title}>More ways to begin the morning</Text>
-          <Text style={styles.lead}>
-            Open the full sound library for the quiet minutes after you wake.
-          </Text>
-        </View>
+        <PremiumHero width={heroW} height={heroH} trackIds={heroIds} reduceMotion={reduceMotion} />
 
-        <View style={styles.benefits}>
+        <Animated.View entering={enter(0)} style={styles.hero}>
+          <Text style={styles.kicker}>Quiett Premium</Text>
+          <Text style={styles.title} accessibilityRole="header">
+            Open the full sound library
+          </Text>
+          <Text style={styles.lead}>
+            All {counts.total} sounds for the two calm minutes after you wake. {counts.free} of them stay free either way.
+          </Text>
+          <View style={styles.chips} accessibilityLabel={`${counts.total} sounds: ${counts.music} tones and music beds, ${counts.ambient} ambient sounds`}>
+            <CountChip value={counts.total} label="sounds" styles={styles} strong />
+            <CountChip value={counts.music} label="tones & music" styles={styles} />
+            <CountChip value={counts.ambient} label="ambient" styles={styles} />
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={enter(1)} style={styles.benefits}>
           {benefits.map((b) => (
             <View key={b.title} style={styles.benefitRow}>
               <View style={styles.benefitIcon}>
@@ -288,7 +326,7 @@ export default function PaywallScreen() {
               </View>
             </View>
           ))}
-        </View>
+        </Animated.View>
 
         {showActive ? (
           <View style={styles.stateCard}>
@@ -299,15 +337,23 @@ export default function PaywallScreen() {
                 : 'You\u2019re Premium'}
             </Text>
             <Text style={styles.stateBody}>
-              Every sound is open in Library and in the morning meditation picker.
+              All {counts.total} sounds are open in Library and in your morning sound picker.
             </Text>
+            {entitled ? (
+              <PrimaryButton
+                label="Manage subscription"
+                variant="secondary"
+                onPress={() => router.push('/manage-subscription')}
+                style={styles.stateBtn}
+              />
+            ) : null}
           </View>
         ) : loading ? (
           <View style={styles.stateCard}>
             <ActivityIndicator color={colors.calm} />
           </View>
         ) : available && packages.length > 0 ? (
-          <View style={styles.plans} accessibilityRole="radiogroup">
+          <Animated.View entering={enter(2)} style={styles.plans} accessibilityRole="radiogroup">
             {packages.map((pkg) => {
               const info = planInfo(pkg);
               const isSelected = selected?.identifier === pkg.identifier;
@@ -329,7 +375,9 @@ export default function PaywallScreen() {
                   ]}
                 >
                   <View style={[styles.radio, isSelected && styles.radioOn]}>
-                    {isSelected ? <View style={styles.radioDot} /> : null}
+                    {isSelected ? (
+                      <Animated.View entering={reduceMotion ? undefined : ZoomIn.duration(180)} style={styles.radioDot} />
+                    ) : null}
                   </View>
                   <View style={styles.planText}>
                     <View style={styles.planTitleRow}>
@@ -337,6 +385,10 @@ export default function PaywallScreen() {
                       {isAnnual && savings ? (
                         <View style={styles.badge}>
                           <Text style={styles.badgeText}>Save {savings}%</Text>
+                        </View>
+                      ) : isAnnual && packages.length > 1 ? (
+                        <View style={styles.badge}>
+                          <Text style={styles.badgeText}>Best value</Text>
                         </View>
                       ) : null}
                     </View>
@@ -349,7 +401,7 @@ export default function PaywallScreen() {
                 </Pressable>
               );
             })}
-          </View>
+          </Animated.View>
         ) : (
           <View style={styles.stateCard}>
             <Ionicons name="moon-outline" size={24} color={colors.textMuted} />
@@ -382,7 +434,7 @@ export default function PaywallScreen() {
           <PrimaryButton label="Done" onPress={close} />
         ) : (
           <PrimaryButton
-            label={busy === 'purchase' ? 'One moment\u2026' : 'Continue'}
+            label={busy === 'purchase' ? 'One moment\u2026' : `Unlock all ${counts.total} sounds`}
             onPress={() => void onPurchase()}
             disabled={!canBuy}
           />
@@ -414,7 +466,37 @@ export default function PaywallScreen() {
             <Text style={styles.link}>Privacy Policy</Text>
           </Pressable>
         </View>
+        {__DEV__ ? (
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: devForcePremium }}
+            onPress={() => void setDevForcePremium(!devForcePremium)}
+            hitSlop={6}
+            style={styles.devRow}
+          >
+            <Text style={styles.devLink}>Force premium (dev): {devForcePremium ? 'On' : 'Off'}</Text>
+          </Pressable>
+        ) : null}
       </View>
+    </View>
+  );
+}
+
+function CountChip({
+  value,
+  label,
+  strong,
+  styles,
+}: {
+  value: number;
+  label: string;
+  strong?: boolean;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={[styles.chip, strong && styles.chipStrong]}>
+      <Text style={[styles.chipValue, strong && styles.chipValueStrong]}>{value}</Text>
+      <Text style={[styles.chipLabel, strong && styles.chipLabelStrong]}>{label}</Text>
     </View>
   );
 }
@@ -444,17 +526,27 @@ function createStyles(colors: ColorTokens) {
       paddingBottom: spacing.lg,
       gap: spacing.lg,
     },
-    hero: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xs },
-    markGlow: {
-      width: 104,
-      height: 104,
-      borderRadius: 52,
-      backgroundColor: colors.sunriseSoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: spacing.sm,
+    hero: { alignItems: 'center', gap: spacing.sm },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.xs },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 5,
+      paddingHorizontal: spacing.md - 4,
+      paddingVertical: 6,
+      borderRadius: radii.full,
+      backgroundColor: colors.bgCard,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
-    mark: { width: 80, height: 80, borderRadius: 20 },
+    chipStrong: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
+    chipValue: { color: colors.text, fontSize: 15, fontWeight: '700' },
+    chipValueStrong: { color: colors.onAccent },
+    chipLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
+    chipLabelStrong: { color: colors.onAccent },
+    stateBtn: { alignSelf: 'stretch', marginTop: spacing.xs },
+    devRow: { alignSelf: 'center', paddingVertical: 4 },
+    devLink: { color: colors.textDim, fontSize: 12, fontWeight: '500' },
     kicker: {
       color: colors.calm,
       fontSize: 12,
@@ -484,9 +576,9 @@ function createStyles(colors: ColorTokens) {
     },
     benefitRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
     benefitIcon: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
       backgroundColor: colors.calmSoft,
       alignItems: 'center',
       justifyContent: 'center',
@@ -508,7 +600,8 @@ function createStyles(colors: ColorTokens) {
     },
     planCardSelected: {
       borderColor: colors.calm,
-      backgroundColor: colors.sunriseSoft,
+      borderWidth: 2,
+      backgroundColor: colors.calmSoft,
     },
     radio: {
       width: 22,
@@ -526,12 +619,12 @@ function createStyles(colors: ColorTokens) {
     planTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
     planSub: { color: colors.textMuted, fontSize: 13 },
     badge: {
-      backgroundColor: colors.calm,
+      backgroundColor: colors.accentStrong,
       borderRadius: radii.full,
       paddingHorizontal: spacing.sm,
       paddingVertical: 2,
     },
-    badgeText: { color: colors.bg, fontSize: 11, fontWeight: '700' },
+    badgeText: { color: colors.onAccent, fontSize: 11, fontWeight: '700' },
     planPriceCol: { alignItems: 'flex-end' },
     planPrice: { color: colors.text, fontSize: 16, fontWeight: '600' },
     planPer: { color: colors.textDim, fontSize: 12 },

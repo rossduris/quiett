@@ -26,6 +26,7 @@ export type SceneType =
   | 'bowl'
   | 'piano'
   | 'strings'
+  | 'drone'
   | 'waves'
   | 'branch'
   | 'raincloud'
@@ -84,6 +85,7 @@ export const MOTIF_TYPES: readonly SceneType[] = [
   'bowl',
   'piano',
   'strings',
+  'drone',
   'waves',
   'branch',
   'raincloud',
@@ -211,6 +213,38 @@ export type SvgDef =
     }
   | { t: 'clip'; id: string; children: SvgNode[] };
 
+/**
+ * Optional motion for a top-level group, in viewBox units (W = 100). Static renders ignore it;
+ * an animated cover moves only these groups (transform + opacity on the UI thread).
+ * - wave: sine ping-pong. dx/dy translate ±, deg rotates ±, s/sx/sy scale ±, min dips opacity.
+ * - loop: linear 0→(dx,dy), repeating; the group is tiled at −(dx,dy) so it never shows a seam.
+ * - ripple: expands by s and fades out, two copies half a period apart.
+ * - rise: travels (dx,dy) while fading in and out (sparks, drips).
+ * - flicker: irregular scale/opacity jitter (flames).
+ * - flash: long rest, then a quick double flash (distant lightning).
+ * pri: 1 hero motion, 2 ambient, 3 extra — renderers cap how many groups animate by priority.
+ */
+export type SceneMotion = {
+  k: 'wave' | 'loop' | 'ripple' | 'rise' | 'flicker' | 'flash';
+  /** Full cycle in ms. */
+  period: number;
+  delay?: number;
+  dx?: number;
+  dy?: number;
+  deg?: number;
+  s?: number;
+  sx?: number;
+  sy?: number;
+  /** Lowest opacity reached (wave, flicker, flash). */
+  min?: number;
+  /** Transform origin (viewBox units). Defaults to the frame centre. */
+  ox?: number;
+  oy?: number;
+  /** Clip rect [x, y, w, h] for the moving group (loop). */
+  clip?: [number, number, number, number];
+  pri?: 1 | 2 | 3;
+};
+
 export type SvgNode =
   | { t: 'rect'; x: number; y: number; w: number; h: number; rx?: number; fill: string; opacity?: number }
   | {
@@ -223,7 +257,7 @@ export type SvgNode =
     }
   | { t: 'circle'; cx: number; cy: number; r: number; fill: string; opacity?: number }
   | { t: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fill: string; opacity?: number }
-  | { t: 'g'; opacity?: number; clip?: string; children: SvgNode[] };
+  | { t: 'g'; opacity?: number; clip?: string; children: SvgNode[]; motion?: SceneMotion };
 
 export type SceneModel = { w: number; h: number; defs: SvgDef[]; nodes: SvgNode[] };
 
@@ -593,6 +627,14 @@ function softFill(ctx: Ctx, color: string, core = 0.85): string {
 
 // ─── Shared layers ───────────────────────────────────────────────────────────
 
+/** Wraps whatever `draw` pushes into one motion group (no effect on static renders or RNG order). */
+function moving(ctx: Ctx, motion: SceneMotion, draw: () => void, target: SvgNode[] = ctx.nodes) {
+  const start = target.length;
+  draw();
+  const kids = target.splice(start);
+  if (kids.length) target.push({ t: 'g', motion: { pri: 1, ...motion }, children: kids });
+}
+
 function drawSky(ctx: Ctx, hy: number, target: SvgNode[] = ctx.nodes, box?: { x: number; y: number; w: number; h: number }) {
   const { pal } = ctx;
   const b = box ?? { x: 0, y: 0, w: ctx.W, h: ctx.H };
@@ -623,6 +665,11 @@ function drawGlow(ctx: Ctx, target: SvgNode[] = ctx.nodes, strength = 1) {
 }
 
 function drawStars(ctx: Ctx, hy: number, target: SvgNode[] = ctx.nodes) {
+  if (target !== ctx.nodes) return drawStarsBase(ctx, hy, target);
+  moving(ctx, { k: 'wave', period: 3600, min: 0.4, pri: 2 }, () => drawStarsBase(ctx, hy, target));
+}
+
+function drawStarsBase(ctx: Ctx, hy: number, target: SvgNode[]) {
   const { pal, W, rng } = ctx;
   const vis = Math.max(pal.stars, ctx.has('stars') ? 0.6 : 0);
   if (vis <= 0.05) return;
@@ -657,6 +704,12 @@ function sunRadius(ctx: Ctx) {
 }
 
 function drawSun(ctx: Ctx, target: SvgNode[] = ctx.nodes, at?: Pt, scale = 1) {
+  if (target !== ctx.nodes) return drawSunBase(ctx, target, at, scale);
+  const [ox, oy] = at ?? sunPos(ctx);
+  moving(ctx, { k: 'wave', period: 7000, s: 0.04, ox, oy, pri: 3 }, () => drawSunBase(ctx, target, at, scale));
+}
+
+function drawSunBase(ctx: Ctx, target: SvgNode[], at: Pt | undefined, scale: number) {
   const { pal } = ctx;
   const [sx, sy] = at ?? sunPos(ctx);
   const r = sunRadius(ctx) * scale;
@@ -696,10 +749,15 @@ function drawRays(ctx: Ctx) {
     { o: 0, c: rayCol, a: ctx.mode === 'dark' ? 0.2 : 0.3 },
     { o: 1, c: rayCol, a: 0 },
   ]);
-  ctx.nodes.push({ t: 'path', d, fill });
+  moving(ctx, { k: 'wave', period: 14000, deg: 2, min: 0.7, ox: sx, oy: sy, pri: 2 }, () => ctx.nodes.push({ t: 'path', d, fill }));
 }
 
 function drawCloudWisps(ctx: Ctx, hy: number, count: number, target: SvgNode[] = ctx.nodes, box?: { x: number; w: number; y0: number; y1: number }) {
+  if (target !== ctx.nodes) return drawCloudWispsBase(ctx, hy, count, target, box);
+  moving(ctx, { k: 'wave', period: 16000, dx: 3.5, pri: 2 }, () => drawCloudWispsBase(ctx, hy, count, target, box));
+}
+
+function drawCloudWispsBase(ctx: Ctx, hy: number, count: number, target: SvgNode[], box?: { x: number; w: number; y0: number; y1: number }) {
   const { rng, pal, W } = ctx;
   const bx = box ?? { x: 0, w: W, y0: hy * 0.14, y1: hy * 0.8 };
   const lit = mix(pal.cloud, pal.glow, 0.25);
@@ -738,7 +796,9 @@ function drawBirds(ctx: Ctx, cx: number, cy: number, color: string, scale = 1) {
       x + s * 0.5,
     )} ${f(y - s * lift)} ${f(x + s)} ${f(y - s * 0.1)}`;
   }
-  ctx.nodes.push({ t: 'path', d, stroke: color, sw: f((ctx.lite ? 0.9 : 0.55) * scale), fill: 'none', opacity: 0.8 });
+  moving(ctx, { k: 'wave', period: 8000, dx: 2.6, dy: -1.2, sy: 0.12, ox: cx, oy: cy, pri: 2 }, () =>
+    ctx.nodes.push({ t: 'path', d, stroke: color, sw: f((ctx.lite ? 0.9 : 0.55) * scale), fill: 'none', opacity: 0.8 }),
+  );
 }
 
 function drawMist(ctx: Ctx, y: number, strength = 1, target: SvgNode[] = ctx.nodes) {
@@ -849,7 +909,7 @@ function buildHills(ctx: Ctx) {
     const fn = rollingRidge(rng, W, base, amp, 1 - t * 0.35);
     const pts = sample(fn, -6, W + 6, 10);
     ridgeLayer(ctx, pts, layerColor(ctx, i, n), (i + 1) / n);
-    if (i === 0 && (ctx.has('mist') || !ctx.lite)) drawMist(ctx, base + amp * 0.6, ctx.has('mist') ? 1 : 0.55);
+    if (i === 0 && (ctx.has('mist') || !ctx.lite)) moving(ctx, { k: 'wave', period: 13000, dx: 4, pri: 2 }, () => drawMist(ctx, base + amp * 0.6, ctx.has('mist') ? 1 : 0.55));
     if (i === 1 && ctx.has('mist')) drawMist(ctx, base + amp * 0.8, 0.8);
     if (i === n - 1) nearPts = pts;
   }
@@ -858,7 +918,7 @@ function buildHills(ctx: Ctx) {
     // Place a lone tree on the highest point of the nearest ridge (within frame).
     const inFrame = nearPts.filter((p) => p[0] > 12 && p[0] < W - 12);
     const top = inFrame.reduce((a, b) => (b[1] < a[1] ? b : a), inFrame[0]!);
-    drawLoneTree(ctx, top[0], top[1] + 1.2, H * 0.13, layerColor(ctx, n - 1, n));
+    moving(ctx, { k: 'wave', period: 6000, deg: 1.2, ox: top[0], oy: top[1] + 1.2, pri: 2 }, () => drawLoneTree(ctx, top[0], top[1] + 1.2, H * 0.13, layerColor(ctx, n - 1, n)));
   }
   if (ctx.has('birds')) {
     const [sx, sy] = sunPos(ctx);
@@ -907,8 +967,10 @@ function drawWater(ctx: Ctx, hy: number, calm: boolean) {
       }
     }
     const glint = mix(pal.sun, '#FFFFFF', 0.3);
-    ctx.nodes.push({ t: 'path', d: dFar, fill: glint, opacity: 0.85 * sunVis });
-    ctx.nodes.push({ t: 'path', d: dNear, fill: glint, opacity: 0.5 * sunVis });
+    moving(ctx, { k: 'wave', period: 2600, min: 0.35, dx: 0.6, pri: 2 }, () => {
+      ctx.nodes.push({ t: 'path', d: dFar, fill: glint, opacity: 0.85 * sunVis });
+      ctx.nodes.push({ t: 'path', d: dNear, fill: glint, opacity: 0.5 * sunVis });
+    });
   }
   // Swell lines
   const lines = calm ? 4 : ctx.lite ? 4 : 8;
@@ -925,14 +987,16 @@ function drawWater(ctx: Ctx, hy: number, calm: boolean) {
     const seg = pts.slice(start, start + 5 + Math.floor(rng() * 6));
     if (seg.length > 1) d += smoothLine(seg);
   }
-  ctx.nodes.push({
-    t: 'path',
-    d,
-    stroke: mix(pal.horizon, '#FFFFFF', 0.3),
-    sw: ctx.lite ? 0.8 : 0.45,
-    fill: 'none',
-    opacity: calm ? 0.22 : 0.32,
-  });
+  moving(ctx, { k: 'wave', period: 7000, dx: 1.8, dy: 0.3, pri: 3 }, () =>
+    ctx.nodes.push({
+      t: 'path',
+      d,
+      stroke: mix(pal.horizon, '#FFFFFF', 0.3),
+      sw: ctx.lite ? 0.8 : 0.45,
+      fill: 'none',
+      opacity: calm ? 0.22 : 0.32,
+    }),
+  );
   // Crisp horizon line
   ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.15), w: W + 2, h: 0.4, fill: mix(pal.horizon, '#FFFFFF', 0.4), opacity: 0.55 });
 }
@@ -977,7 +1041,7 @@ function buildLake(ctx: Ctx) {
   for (const [i, L] of layers.entries()) {
     if (L.smooth) ridgeLayer(ctx, L.pts, L.color, (i + 1) / 4, true);
     else ctx.nodes.push({ t: 'path', d: closeTo(polyLine(L.pts), L.pts, hy + 0.5), fill: layerFill(ctx, L.color, Math.min(...L.pts.map((p) => p[1])), hy, (i + 1) / 4) });
-    if (i === 0) drawMist(ctx, hy - H * 0.03, 0.7);
+    if (i === 0) moving(ctx, { k: 'wave', period: 13000, dx: 4, pri: 2 }, () => drawMist(ctx, hy - H * 0.03, 0.7));
   }
 
   // Water with mirrored reflection.
@@ -1265,8 +1329,13 @@ function buildRain(ctx: Ctx) {
     return d;
   };
   const rainCol = mix(pal.skyLow, '#FFFFFF', 0.6);
-  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 30 : 80, 2.5, 5), stroke: rainCol, sw: ctx.lite ? 0.45 : 0.25, fill: 'none', opacity: 0.35 });
-  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 12 : 28, 6, 12), stroke: rainCol, sw: ctx.lite ? 0.7 : 0.4, fill: 'none', opacity: 0.4 });
+  const fallY = H + 5;
+  moving(ctx, { k: 'loop', period: 1500, dx: -fallY * slant, dy: fallY }, () =>
+    ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 30 : 80, 2.5, 5), stroke: rainCol, sw: ctx.lite ? 0.45 : 0.25, fill: 'none', opacity: 0.35 }),
+  );
+  moving(ctx, { k: 'loop', period: 950, dx: -fallY * slant, dy: fallY }, () =>
+    ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 12 : 28, 6, 12), stroke: rainCol, sw: ctx.lite ? 0.7 : 0.4, fill: 'none', opacity: 0.4 }),
+  );
 }
 
 function buildWindow(ctx: Ctx) {
@@ -1484,7 +1553,9 @@ function drawBreeze(ctx: Ctx, count: number, y0: number, y1: number, color: stri
     d += `M${f(x)} ${f(y)}C${f(x + len * 0.35)} ${f(y - 2.5)} ${f(x + len * 0.65)} ${f(y + 2.5)} ${f(x + len)} ${f(y)}`;
     d += `a${f(c)} ${f(c)} 0 1 0 ${f(-c)} ${f(-c)}`;
   }
-  ctx.nodes.push({ t: 'path', d, stroke: color, sw: sw(ctx, 0.6, 1.1), fill: 'none', opacity: 0.7 });
+  moving(ctx, { k: 'wave', period: 7000, dx: 3, min: 0.6, pri: 2 }, () =>
+    ctx.nodes.push({ t: 'path', d, stroke: color, sw: sw(ctx, 0.6, 1.1), fill: 'none', opacity: 0.7 }),
+  );
 }
 
 /** Five-petal flower head. */
@@ -1544,7 +1615,9 @@ function buildBalloons(ctx: Ctx) {
     [W * 0.68, H * 0.2, H * 0.08, tok.warning, 0.65],
     [W * 0.32, H * 0.3, H * 0.13, tok.calm, 1],
   ];
-  for (const [x, y, r, c, depth] of balloons) drawBalloon(ctx, x, y, r, c, depth);
+  balloons.forEach(([x, y, r, c, depth], i) =>
+    moving(ctx, { k: 'wave', period: 7000 + i * 1300, delay: i * 900, dy: -1.6 * (0.5 + depth), dx: 0.6 }, () => drawBalloon(ctx, x, y, r, c, depth)),
+  );
 }
 
 function buildBowl(ctx: Ctx) {
@@ -1568,7 +1641,9 @@ function buildBowl(ctx: Ctx) {
     const s = 1.35 + 0.38 * k;
     rings += ell(cx, rimY + depth * 0.3, rx * s, (ry + depth * 0.5) * s);
   }
-  ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.3), sw: sw(ctx, 0.55, 0.9), fill: 'none', opacity: dark ? 0.45 : 0.6 });
+  moving(ctx, { k: 'ripple', period: 3800, s: 0.16, ox: cx, oy: rimY + depth * 0.3 }, () =>
+    ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.3), sw: sw(ctx, 0.55, 0.9), fill: 'none', opacity: dark ? 0.45 : 0.6 }),
+  );
   // Cushion + shadow
   ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(surfY + ry * 0.4), rx: f(rx * 1.15), ry: f(ry * 0.9), fill: softFill(ctx, pal.land, 0.6) });
   const cush = mix(tok.calm, pal.land, dark ? 0.55 : 0.3);
@@ -1681,7 +1756,9 @@ function buildStrings(ctx: Ctx) {
       rings += `M${f(bx + Math.cos(a0) * rr)} ${f(by + Math.sin(a0) * rr)}A${f(rr)} ${f(rr)} 0 0 1 ${f(bx + Math.cos(a1) * rr)} ${f(by + Math.sin(a1) * rr)}`;
     }
   }
-  ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.25), sw: sw(ctx, 0.6, 1), fill: 'none', opacity: dark ? 0.5 : 0.65 });
+  moving(ctx, { k: 'ripple', period: 3400, s: 0.12, ox: bx, oy: by }, () =>
+    ctx.nodes.push({ t: 'path', d: rings, stroke: mix(pal.sun, pal.glow, 0.25), sw: sw(ctx, 0.6, 1), fill: 'none', opacity: dark ? 0.5 : 0.65 }),
+  );
   // Neck
   const neck = `M${f(p0[0] - (nrm[0] * wN) / 2)} ${f(p0[1] - (nrm[1] * wN) / 2)}L${f(p1[0] - (nrm[0] * wT) / 2)} ${f(p1[1] - (nrm[1] * wT) / 2)}L${f(p1[0] + (nrm[0] * wT) / 2)} ${f(p1[1] + (nrm[1] * wT) / 2)}L${f(p0[0] + (nrm[0] * wN) / 2)} ${f(p0[1] + (nrm[1] * wN) / 2)}Z`;
   ctx.nodes.push({ t: 'path', d: neck, fill: linear(ctx, p0[0] - nrm[0] * wN, p0[1] - nrm[1] * wN, p0[0] + nrm[0] * wN, p0[1] + nrm[1] * wN, [{ o: 0, c: mix(wood, pal.land, 0.4) }, { o: 0.5, c: mix(wood, pal.glow, 0.25) }, { o: 1, c: mix(wood, pal.land, 0.45) }]) });
@@ -1715,6 +1792,95 @@ function buildStrings(ctx: Ctx) {
   }
   ctx.nodes.push({ t: 'path', d: strings, stroke: mix(pal.sun, '#FFFFFF', 0.3), sw: sw(ctx, 0.22, 0.4), fill: 'none', opacity: 0.85 });
   ctx.nodes.push({ t: 'path', d: `M${f(bridge[0] - nrm[0] * wN * 0.45)} ${f(bridge[1] - nrm[1] * wN * 0.45)}L${f(bridge[0] + nrm[0] * wN * 0.45)} ${f(bridge[1] + nrm[1] * wN * 0.45)}`, stroke: mix(pal.sun, wood, 0.2), sw: f(R * 0.08), fill: 'none' });
+}
+
+/**
+ * Warm Drone — one long, low, sustained note. A string vibrating in slow motion across a dusk
+ * sky (standing-wave snapshots fanning between two far nodes), a big warm sun half-sunk on still
+ * water, and wide, slow ripples spreading from its reflection.
+ */
+function buildDrone(ctx: Ctx) {
+  const { W, H, pal, tok, mode } = ctx;
+  const dark = mode === 'dark';
+  const hy = H * 0.68;
+  skyAndSun(ctx, hy, { sun: false });
+  const sx = ctx.spec.sunX * W;
+  const warm = dark ? mix(tok.warning, pal.glow, 0.35) : mix(tok.warning, pal.glow, 0.25);
+  const hot = mix(pal.sun, warm, 0.35);
+  // Low far ridge so the horizon reads as land meeting water at the edges only
+  const ridge: Pt[] = [];
+  for (let x = -6; x <= W + 6; x += 4) {
+    const edge = Math.abs(x - sx) / W;
+    ridge.push([x, hy - H * 0.06 * Math.max(0, edge - 0.18) * (1 + 0.25 * Math.sin(x / 7))]);
+  }
+  ctx.nodes.push({ t: 'path', d: closeTo(smoothLine(ridge), ridge, hy + 1), fill: mix(pal.land, pal.haze, dark ? 0.35 : 0.45) });
+  // Sun: large, half-sunk on the horizon, extra warm halo
+  const r = sunRadius(ctx) * 1.55;
+  ctx.nodes.push({ t: 'circle', cx: f(sx), cy: f(hy), r: f(r * 3.4), fill: softFill(ctx, warm, dark ? 0.45 : 0.55) });
+  const sunClip = newId(ctx, 'c');
+  ctx.defs.push({ t: 'clip', id: sunClip, children: [{ t: 'rect', x: -1, y: -1, w: W + 2, h: f(hy + 1), fill: '#000' }] });
+  const disc = radial(ctx, sx, hy - r * 0.2, r, [
+    { o: 0, c: mix(pal.sun, '#FFFFFF', 0.35), a: 1 },
+    { o: 0.65, c: hot, a: 1 },
+    { o: 1, c: mix(warm, pal.glow, 0.4), a: 1 },
+  ]);
+  ctx.nodes.push({ t: 'g', clip: sunClip, children: [{ t: 'circle', cx: f(sx), cy: f(hy), r: f(r), fill: disc }] });
+  // Still water
+  const waterTop = mix(pal.horizon, warm, 0.3);
+  ctx.nodes.push({
+    t: 'rect', x: -1, y: f(hy), w: W + 2, h: f(H - hy + 1),
+    fill: linear(ctx, 0, hy, 0, H, [{ o: 0, c: waterTop }, { o: 0.45, c: mix(pal.water, warm, 0.18) }, { o: 1, c: mix(pal.water, pal.land, 0.45) }]),
+  });
+  // Reflection column
+  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(hy + (H - hy) * 0.3), rx: f(r * 1.1), ry: f((H - hy) * 0.42), fill: softFill(ctx, hot, dark ? 0.55 : 0.7) });
+  ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.2), w: W + 2, h: 0.5, fill: mix(pal.sun, '#FFFFFF', 0.3), opacity: 0.7 });
+  // Slow ripples spreading from the reflection — wide, flat, evenly spaced (a sustained tone)
+  let ripples = '';
+  const nRip = ctx.lite ? 3 : 5;
+  for (let k = 1; k <= nRip; k++) {
+    const t = k / nRip;
+    ripples += ell(sx, hy + (H - hy) * (0.12 + 0.62 * t * t), r * (1.2 + 3.8 * t), (H - hy) * (0.04 + 0.1 * t));
+  }
+  moving(ctx, { k: 'ripple', period: 5600, s: 0.07, ox: sx, oy: hy }, () =>
+    ctx.nodes.push({ t: 'path', d: ripples, stroke: mix(hot, '#FFFFFF', dark ? 0.05 : 0.2), sw: sw(ctx, 0.45, 0.8), fill: 'none', opacity: dark ? 0.5 : 0.6 }),
+  );
+  // The drone: a string vibrating between two nodes beyond the frame, drawn as fanned snapshots
+  const x0 = W * 0.07;
+  const x1 = W * 0.93;
+  const y0 = hy - H * 0.33;
+  const amp = H * 0.12;
+  const snap = (a: number, harmonic = 1) => {
+    const pts: Pt[] = [];
+    for (let x = x0; x <= x1 + 0.1; x += (x1 - x0) / 40) pts.push([x, y0 + a * Math.sin((harmonic * Math.PI * (x - x0)) / (x1 - x0))]);
+    return smoothLine(pts);
+  };
+  // Soft glow filling the vibration envelope — envelope + snapshots vibrate together (one held note)
+  moving(ctx, { k: 'wave', period: 1100, sy: 0.3, ox: W / 2, oy: y0 }, () => {
+  const env: Pt[] = [];
+  for (let x = x0; x <= x1 + 0.1; x += (x1 - x0) / 40) env.push([x, y0 - amp * Math.sin((Math.PI * (x - x0)) / (x1 - x0))]);
+  for (let x = x1; x >= x0 - 0.1; x -= (x1 - x0) / 40) env.push([x, y0 + amp * Math.sin((Math.PI * (x - x0)) / (x1 - x0))]);
+  ctx.nodes.push({ t: 'path', d: `${polyLine(env)}Z`, fill: linear(ctx, 0, y0 - amp, 0, y0 + amp, [{ o: 0, c: warm, a: 0 }, { o: 0.5, c: warm, a: dark ? 0.22 : 0.26 }, { o: 1, c: warm, a: 0 }]) });
+  // Faint second harmonic underneath
+  ctx.nodes.push({ t: 'path', d: snap(amp * 0.35, 2) + snap(-amp * 0.35, 2), stroke: mix(warm, pal.skyMid, 0.35), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.45 });
+  // Fundamental: brightest at the extremes (where a string lingers), fading through the middle
+  const n = ctx.lite ? 5 : 9;
+  const buckets: [string, string, string] = ['', '', ''];
+  for (let i = 0; i < n; i++) {
+    const c = Math.cos((Math.PI * i) / (n - 1));
+    const b = Math.abs(c) > 0.9 ? 0 : Math.abs(c) > 0.5 ? 1 : 2;
+    buckets[b] += snap(amp * c);
+  }
+  const strokeC = mix(hot, warm, 0.25);
+  ctx.nodes.push({ t: 'path', d: buckets[2], stroke: strokeC, sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: 0.35 });
+  ctx.nodes.push({ t: 'path', d: buckets[1], stroke: strokeC, sw: sw(ctx, 0.55, 0.9), fill: 'none', opacity: 0.6 });
+  ctx.nodes.push({ t: 'path', d: buckets[0], stroke: mix(hot, '#FFFFFF', 0.2), sw: sw(ctx, 0.9, 1.3), fill: 'none', opacity: 0.95 });
+  });
+  // Rest line + the two fixed ends (nodes), so it reads as one held string
+  ctx.nodes.push({ t: 'path', d: `M${f(x0)} ${f(y0)}L${f(x1)} ${f(y0)}`, stroke: mix(hot, '#FFFFFF', 0.3), sw: sw(ctx, 0.3, 0.5), fill: 'none', opacity: 0.5 });
+  for (const x of [x0, x1]) {
+    ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y0), r: f(W * 0.035), fill: softFill(ctx, hot, 0.7) });
+    ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y0), r: f(W * (ctx.lite ? 0.018 : 0.012)), fill: mix(pal.sun, '#FFFFFF', 0.4) });
+  }
 }
 
 function buildWaves(ctx: Ctx) {
@@ -1938,9 +2104,11 @@ function buildMeadow(ctx: Ctx) {
     heads[i % 4] += flowerHead(x, top, r);
     centres.push(dot(x, top, r * 0.28));
   }
-  ctx.nodes.push({ t: 'path', d: stems, stroke: mix(green, pal.land, 0.4), sw: sw(ctx, 0.45, 0.8), fill: 'none' });
-  heads.forEach((d, i) => d && ctx.nodes.push({ t: 'path', d, fill: petals[i]! }));
-  ctx.nodes.push({ t: 'path', d: centres.join(''), fill: mix(tok.warning, pal.land, 0.35) });
+  moving(ctx, { k: 'wave', period: 5600, deg: 1.1, ox: W / 2, oy: H + 2 }, () => {
+    ctx.nodes.push({ t: 'path', d: stems, stroke: mix(green, pal.land, 0.4), sw: sw(ctx, 0.45, 0.8), fill: 'none' });
+    heads.forEach((d, i) => d && ctx.nodes.push({ t: 'path', d, fill: petals[i]! }));
+    ctx.nodes.push({ t: 'path', d: centres.join(''), fill: mix(tok.warning, pal.land, 0.35) });
+  });
 }
 
 function buildHaze(ctx: Ctx) {
@@ -2263,11 +2431,14 @@ function buildPuffs(ctx: Ctx) {
     [W * 0.7, H * 0.66, 58, 0.7],
     [W * 0.28, H * 0.9, 70, 1],
   ];
-  for (const [cx, by, w, dp] of layers) {
+  const puff = ([cx, by, w, dp]: [number, number, number, number]) => {
     const l = mix(pal.haze, lit, 0.35 + 0.65 * dp);
     const s = mix(pal.haze, mix(pal.cloudShade, pal.skyMid, 0.3), 0.3 + 0.7 * dp);
     cloudPuff(ctx, cx, by, w * Math.max(0.8, H / 100), l, s, { lumps: 5, tall: 1.25 });
-  }
+  };
+  // Far puffs drift slowly one way, near puffs a little further the other (parallax).
+  moving(ctx, { k: 'wave', period: 16000, dx: 2.5, dy: -0.6 }, () => layers.slice(0, 2).forEach(puff));
+  moving(ctx, { k: 'wave', period: 12000, delay: 2000, dx: -3.5, dy: 0.5 }, () => layers.slice(2).forEach(puff));
   // Soft bank along the bottom
   const bank = cloudBank(ctx, H * 0.97, 3, 6);
   ctx.nodes.push({ t: 'path', d: bank.d, fill: linear(ctx, 0, bank.minY, 0, H, [{ o: 0, c: lit }, { o: 1, c: pal.cloudShade }]) });
@@ -2322,17 +2493,19 @@ function buildWindtree(ctx: Ctx) {
     { o: 0.5, c: leafBase },
     { o: 1, c: mix(leafBase, '#000000', dark ? 0.3 : 0.15) },
   ]);
-  ctx.nodes.push({ t: 'path', d: crown, fill: crownFill });
-  // Leaf texture on the lit side
-  if (!ctx.lite) {
-    let tex = '';
-    for (let i = 0; i < 26; i++) {
-      const a = range(rng, 0, Math.PI * 2);
-      const rr = range(rng, 0.05, 0.42) * th;
-      tex += leafShape(ccx + th * 0.14 + Math.cos(a) * rr * 1.3, ccy - th * 0.02 + Math.sin(a) * rr * 0.7, th * 0.05, range(rng, -0.6, 0.6));
+  moving(ctx, { k: 'wave', period: 5200, deg: 1.8, sx: 0.015, ox: kx + th * 0.12, oy: base[1] - th * 0.62 }, () => {
+    ctx.nodes.push({ t: 'path', d: crown, fill: crownFill });
+    // Leaf texture on the lit side
+    if (!ctx.lite) {
+      let tex = '';
+      for (let i = 0; i < 26; i++) {
+        const a = range(rng, 0, Math.PI * 2);
+        const rr = range(rng, 0.05, 0.42) * th;
+        tex += leafShape(ccx + th * 0.14 + Math.cos(a) * rr * 1.3, ccy - th * 0.02 + Math.sin(a) * rr * 0.7, th * 0.05, range(rng, -0.6, 0.6));
+      }
+      ctx.nodes.push({ t: 'path', d: tex, fill: mix(leafBase, pal.glow, 0.45), opacity: dark ? 0.45 : 0.55 });
     }
-    ctx.nodes.push({ t: 'path', d: tex, fill: mix(leafBase, pal.glow, 0.45), opacity: dark ? 0.45 : 0.55 });
-  }
+  });
   // Leaves carried off on the wind
   const flyC = mix(tok.sunrise, tok.warning, 0.4);
   let fly = '';
@@ -2344,7 +2517,9 @@ function buildWindtree(ctx: Ctx) {
     if (x > W + 2) continue;
     fly += leafShape(x, y, H * range(rng, 0.022, 0.034) * (ctx.lite ? 1.5 : 1), range(rng, -1.2, 1.2));
   }
-  ctx.nodes.push({ t: 'path', d: fly, fill: mix(flyC, pal.land, dark ? 0.35 : 0.12), opacity: 0.9 });
+  moving(ctx, { k: 'wave', period: 4200, dx: 3.5, dy: -1.6, min: 0.55 }, () =>
+    ctx.nodes.push({ t: 'path', d: fly, fill: mix(flyC, pal.land, dark ? 0.35 : 0.12), opacity: 0.9 }),
+  );
   // Bent grass tufts on the knoll
   let grass = '';
   for (let i = 0; i < (ctx.lite ? 8 : 18); i++) {
@@ -2374,7 +2549,9 @@ function buildPond(ctx: Ctx) {
   const fy = H * 0.8;
   let rip = '';
   for (let k = 0; k < 3; k++) rip += ell(fx, fy + H * 0.005, H * (0.14 + 0.07 * k), H * (0.03 + 0.016 * k));
-  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.sun, pal.horizon, 0.3), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: dark ? 0.4 : 0.6 });
+  moving(ctx, { k: 'ripple', period: 4400, s: 0.2, ox: fx, oy: fy }, () =>
+    ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.sun, pal.horizon, 0.3), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: dark ? 0.4 : 0.6 }),
+  );
   // Lily pads (notched ellipses), perspective-scaled
   const pad = (x: number, y: number, r: number) => {
     const ry = r * 0.34;
@@ -2407,6 +2584,7 @@ function buildPond(ctx: Ctx) {
   const reedC = mix(pal.land, pal.haze, dark ? 0.05 : 0.1);
   const headC = mix(tok.sunrise, pal.land, dark ? 0.6 : 0.45);
   const nReeds = ctx.lite ? 4 : 7;
+  moving(ctx, { k: 'wave', period: 6200, deg: 1.4, ox: W * 0.14, oy: H + 1, pri: 2 }, () => {
   for (let i = 0; i < nReeds; i++) {
     const x = W * (0.02 + i * 0.045) + range(rng, -1, 1);
     const y0 = H + 1;
@@ -2422,6 +2600,7 @@ function buildPond(ctx: Ctx) {
       ctx.nodes.push({ t: 'path', d: taper([[x, y0], [x + lean + 4, y0 - h * 0.6], [x + lean + 9, y0 - h * 0.75]], H * 0.01, H * 0.001), fill: reedC });
     }
   }
+  });
   if (ctx.has('birds')) {
     const [sx, sy] = sunPos(ctx);
     drawBirds(ctx, clamp(sx - 16, 18, 80), clamp(sy - 14, 10, 36), pal.land, 0.8);
@@ -2442,17 +2621,19 @@ function buildCampfire(ctx: Ctx) {
   const fire = tok.sunrise;
   const hot = tok.warning;
   // Warm light pooled on the ground
-  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(baseY), rx: f(W * 0.42), ry: f(H * 0.1), fill: softFill(ctx, mix(hot, pal.glow, 0.3), dark ? 0.55 : 0.5) });
+  moving(ctx, { k: 'flicker', period: 1400, min: 0.7, s: 0.03, ox: cx, oy: baseY, pri: 3 }, () =>
+    ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(baseY), rx: f(W * 0.42), ry: f(H * 0.1), fill: softFill(ctx, mix(hot, pal.glow, 0.3), dark ? 0.55 : 0.5) }),
+  );
   // Smoke curling up
   const smokeX = cx + H * 0.02;
-  ctx.nodes.push({
+  moving(ctx, { k: 'wave', period: 5200, deg: 4, dx: 1, min: 0.6, ox: smokeX, oy: baseY - H * 0.3, pri: 2 }, () => ctx.nodes.push({
     t: 'path',
     d: `M${f(smokeX)} ${f(baseY - H * 0.3)}C${f(smokeX + 6)} ${f(baseY - H * 0.4)} ${f(smokeX - 5)} ${f(baseY - H * 0.48)} ${f(smokeX + 3)} ${f(baseY - H * 0.58)}S${f(smokeX + 10)} ${f(baseY - H * 0.7)} ${f(smokeX + 6)} ${f(baseY - H * 0.78)}`,
     stroke: mix(pal.haze, pal.cloud, 0.5),
     sw: sw(ctx, 1.6, 2.2),
     fill: 'none',
     opacity: dark ? 0.35 : 0.45,
-  });
+  }));
   // Flames — outer, middle, core
   const flame = (w: number, h: number, dx: number, lean: number) => {
     const x0 = cx + dx;
@@ -2460,9 +2641,14 @@ function buildCampfire(ctx: Ctx) {
     return `M${f(x0 - w)} ${f(y0)}C${f(x0 - w * 1.05)} ${f(y0 - h * 0.45)} ${f(x0 - w * 0.2 + lean * 0.5)} ${f(y0 - h * 0.6)} ${f(x0 + lean)} ${f(y0 - h)}C${f(x0 + w * 0.35 + lean * 0.4)} ${f(y0 - h * 0.62)} ${f(x0 + w * 1.05)} ${f(y0 - h * 0.42)} ${f(x0 + w)} ${f(y0)}Z`;
   };
   const fh = H * 0.3;
-  ctx.nodes.push({ t: 'path', d: flame(W * 0.12, fh, 0, 2) + flame(W * 0.07, fh * 0.7, -W * 0.08, -3) + flame(W * 0.07, fh * 0.66, W * 0.08, 4), fill: mix(fire, pal.land, dark ? 0.08 : 0.04), opacity: 0.95 });
-  ctx.nodes.push({ t: 'path', d: flame(W * 0.08, fh * 0.72, W * 0.005, 1.5) + flame(W * 0.045, fh * 0.48, -W * 0.06, -2), fill: mix(hot, fire, 0.2) });
-  ctx.nodes.push({ t: 'path', d: flame(W * 0.04, fh * 0.42, W * 0.01, 1), fill: mix(pal.sun, hot, 0.25) });
+  const flameBase = baseY - H * 0.03;
+  moving(ctx, { k: 'flicker', period: 1300, s: 0.07, min: 0.85, ox: cx, oy: flameBase }, () =>
+    ctx.nodes.push({ t: 'path', d: flame(W * 0.12, fh, 0, 2) + flame(W * 0.07, fh * 0.7, -W * 0.08, -3) + flame(W * 0.07, fh * 0.66, W * 0.08, 4), fill: mix(fire, pal.land, dark ? 0.08 : 0.04), opacity: 0.95 }),
+  );
+  moving(ctx, { k: 'flicker', period: 1000, delay: 350, s: 0.1, min: 0.9, ox: cx, oy: flameBase }, () => {
+    ctx.nodes.push({ t: 'path', d: flame(W * 0.08, fh * 0.72, W * 0.005, 1.5) + flame(W * 0.045, fh * 0.48, -W * 0.06, -2), fill: mix(hot, fire, 0.2) });
+    ctx.nodes.push({ t: 'path', d: flame(W * 0.04, fh * 0.42, W * 0.01, 1), fill: mix(pal.sun, hot, 0.25) });
+  });
   // Logs (crossed)
   const wood = mix(pal.land, tok.sunrise, dark ? 0.22 : 0.3);
   const L = W * 0.24;
@@ -2479,7 +2665,7 @@ function buildCampfire(ctx: Ctx) {
   for (let i = 0; i < (ctx.lite ? 4 : 9); i++) {
     sparks += dot(cx + range(rng, -W * 0.14, W * 0.16), baseY - fh * range(rng, 1.05, 1.7), range(rng, 0.35, 0.7) * (ctx.lite ? 1.6 : 1));
   }
-  ctx.nodes.push({ t: 'path', d: sparks, fill: mix(hot, pal.sun, 0.4), opacity: 0.9 });
+  moving(ctx, { k: 'rise', period: 2600, dy: -H * 0.12, dx: 1 }, () => ctx.nodes.push({ t: 'path', d: sparks, fill: mix(hot, pal.sun, 0.4), opacity: 0.9 }));
   // Ring of stones in front
   const stone = mix(pal.land, pal.haze, dark ? 0.22 : 0.35);
   const nS = ctx.lite ? 5 : 8;
@@ -2539,13 +2725,13 @@ function buildForestBirds(ctx: Ctx) {
   let canopy = '';
   const clumps: [number, number, number][] = [[0.02, 0.02, 0.2], [0.2, -0.02, 0.16], [0.36, 0.04, 0.12], [0.1, 0.14, 0.12], [0.5, -0.01, 0.1]];
   for (const [u, v, r] of clumps) canopy += dot(W * u, H * v, H * r * range(rng, 0.9, 1.1));
-  ctx.nodes.push({ t: 'path', d: canopy, fill: leafC });
+  moving(ctx, { k: 'wave', period: 6400, dx: 0.8, deg: 0.8, ox: 0, oy: 0, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: canopy, fill: leafC }));
   let leaves = '';
   const tips: Pt[] = [limb[limb.length - 1]!, twig[2]!, limb[3]!];
   for (const tip of tips) {
     for (let j = 0; j < (ctx.lite ? 2 : 4); j++) leaves += leafShape(tip[0] + range(rng, -2, 3), tip[1] - range(rng, 0, 3), H * 0.05, range(rng, -2.4, -0.4));
   }
-  ctx.nodes.push({ t: 'path', d: leaves, fill: mix(leafC, pal.glow, 0.2) });
+  moving(ctx, { k: 'wave', period: 5000, dy: 0.5, deg: 0.6, ox: W * 0.5, oy: H * 0.5, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: leaves, fill: mix(leafC, pal.glow, 0.2) }));
   // Songbirds perched along the limb
   const at = (x: number) => limb.reduce((a, p) => (Math.abs(p[0] - x) < Math.abs(a[0] - x) ? p : a), limb[0]!);
   const b = H * 0.062;
@@ -2592,7 +2778,9 @@ function buildSoftRain(ctx: Ctx) {
   for (const [u, v] of rings) {
     for (let k = 0; k < 2; k++) rip += ell(px + u * prx, py + v * pry, H * (0.018 + 0.02 * k), H * (0.005 + 0.005 * k));
   }
-  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.5), sw: sw(ctx, 0.3, 0.55), fill: 'none', opacity: 0.75 });
+  moving(ctx, { k: 'wave', period: 1500, min: 0.3, s: 0.06, ox: px, oy: py, pri: 2 }, () =>
+    ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.5), sw: sw(ctx, 0.3, 0.55), fill: 'none', opacity: 0.75 }),
+  );
   // Rain curtain — soft translucent sheets, then dense fine streaks, nearly vertical
   const sheetC = mix(pal.cloud, pal.skyLow, 0.4);
   for (let i = 0; i < 3; i++) {
@@ -2612,8 +2800,15 @@ function buildSoftRain(ctx: Ctx) {
     return d;
   };
   const rainC = dark ? mix(pal.cloud, tok.accent, 0.2) : mix(pal.cloudShade, pal.water, 0.35);
-  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 40 : 140, 3, 6, H * 0.92), stroke: rainC, sw: ctx.lite ? 0.5 : 0.28, fill: 'none', opacity: dark ? 0.45 : 0.55 });
-  ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 12 : 36, 7, 13, H * 0.9), stroke: rainC, sw: ctx.lite ? 0.8 : 0.45, fill: 'none', opacity: dark ? 0.5 : 0.6 });
+  // Rain falls: each layer loops by its own height (tiled, clipped above the puddle); near drops fall faster.
+  const farY = H * 0.92 + 6;
+  const nearY = H * 0.9 + 6;
+  moving(ctx, { k: 'loop', period: 1700, dx: -farY * slant, dy: farY, clip: [-12, -6, W + 24, farY + 4] }, () =>
+    ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 40 : 140, 3, 6, H * 0.92), stroke: rainC, sw: ctx.lite ? 0.5 : 0.28, fill: 'none', opacity: dark ? 0.45 : 0.55 }),
+  );
+  moving(ctx, { k: 'loop', period: 1050, dx: -nearY * slant, dy: nearY, clip: [-12, -6, W + 24, nearY + 8] }, () =>
+    ctx.nodes.push({ t: 'path', d: streaks(ctx.lite ? 12 : 36, 7, 13, H * 0.9), stroke: rainC, sw: ctx.lite ? 0.8 : 0.45, fill: 'none', opacity: dark ? 0.5 : 0.6 }),
+  );
 }
 
 /** Shoreline — low view over a sandy beach, gentle waves lapping in, foam lines on wet sand. */
@@ -2636,7 +2831,7 @@ function buildShoreline(ctx: Ctx) {
     const x0 = range(rng, -10, W * 0.4);
     swell += `M${f(x0)} ${f(y)}Q${f(x0 + 20)} ${f(y - 0.8)} ${f(x0 + range(rng, 35, 60))} ${f(y)}`;
   }
-  ctx.nodes.push({ t: 'path', d: swell, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.55 });
+  moving(ctx, { k: 'wave', period: 9000, dx: 3, min: 0.5, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: swell, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.55 }));
   // Sand (dry at the bottom), sloping gently toward the right
   const sand = dark ? mix(tok.sunrise, pal.land, 0.62) : mix(mix(tok.sunrise, '#FFFFFF', 0.3), pal.haze, 0.3);
   const slope = (x: number) => (x / W) * H * 0.04;
@@ -2645,6 +2840,8 @@ function buildShoreline(ctx: Ctx) {
   ctx.nodes.push({ t: 'path', d: closeTo(smoothLine(sandPts), sandPts, H + 2), fill: linear(ctx, 0, sandTop, 0, H, [{ o: 0, c: mix(sand, pal.land, dark ? 0.35 : 0.3) }, { o: 0.5, c: mix(sand, pal.land, dark ? 0.2 : 0.12) }, { o: 0.75, c: mix(sand, pal.glow, 0.15) }, { o: 1, c: mix(sand, pal.land, dark ? 0.3 : 0.15) }]) });
   // Wash sheets: thin water sliding up the sand, each with a scalloped foam edge
   const washes: [number, number, number][] = [[0.72, 0.08, 0.75], [0.8, 0.05, 0.6]];
+  // Waves roll: the wash sheets and the shore break slide up the sand and back.
+  moving(ctx, { k: 'wave', period: 5400, dy: 1.3, sy: 0.02, ox: W / 2, oy: H * 0.64 }, () => {
   for (const [yb, amp, op] of washes) {
     const ph = range(rng, 0, Math.PI * 2);
     const edge = (x: number) => H * yb + slope(x) + Math.sin(x / 9 + ph) * H * 0.012 + Math.sin(x / 3.2 + ph * 2) * H * 0.004;
@@ -2663,6 +2860,7 @@ function buildShoreline(ctx: Ctx) {
   const under = sample((x) => H * 0.665 + slope(x) * 0.5, -6, W + 6, 10);
   ctx.nodes.push({ t: 'path', d: smoothLine(crest) + smoothLine([...under].reverse()).replace(/^M/, 'L') + 'Z', fill: mix(pal.water, pal.land, 0.25) });
   ctx.nodes.push({ t: 'path', d: smoothLine(crest), stroke: foam, sw: sw(ctx, 1.4, 2), fill: 'none', opacity: 0.95 });
+  });
   // Wet-sand glint below the last wash
   ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(H * 0.86), rx: 18, ry: f(H * 0.02), fill: softFill(ctx, pal.sun, dark ? 0.35 : 0.5) });
   // Foam lace left on the wet sand
@@ -2733,13 +2931,17 @@ function buildWash(ctx: Ctx) {
     [0.44, 0.09, mix(pal.skyLow, tok.calm, 0.3), dark ? 0.28 : 0.38],
     [0.55, 0.07, mix(pal.horizon, pal.sun, 0.4), dark ? 0.35 : 0.5],
   ];
-  for (const [y, t, c, a] of bands) washStroke(ctx, H * y, H * t, c, a);
+  moving(ctx, { k: 'wave', period: 14000, dx: 4, dy: 0.5 }, () => {
+    for (const [y, t, c, a] of bands) washStroke(ctx, H * y, H * t, c, a);
+  });
   drawWater(ctx, hy, true);
   // The same washes, faint and stretched, in the water.
-  for (const [y, t, c, a] of bands.slice(1)) {
-    const ry = hy + (hy - H * y) * 0.55;
-    if (ry < H) washStroke(ctx, ry, H * t * 0.5, c, a * 0.45);
-  }
+  moving(ctx, { k: 'wave', period: 14000, delay: 1200, dx: -3 }, () => {
+    for (const [y, t, c, a] of bands.slice(1)) {
+      const ry = hy + (hy - H * y) * 0.55;
+      if (ry < H) washStroke(ctx, ry, H * t * 0.5, c, a * 0.45);
+    }
+  });
 }
 
 /** Branching tapered roots (recursive), heading downward. */
@@ -2824,7 +3026,9 @@ function buildRoots(ctx: Ctx) {
   const crown =
     dot(tx, cy, cr) + dot(tx - cr * 0.9, cy + cr * 0.25, cr * 0.72) + dot(tx + cr * 0.95, cy + cr * 0.2, cr * 0.7) +
     dot(tx - cr * 0.4, cy - cr * 0.45, cr * 0.66) + dot(tx + cr * 0.45, cy - cr * 0.4, cr * 0.62);
-  ctx.nodes.push({ t: 'path', d: crown, fill: linear(ctx, 0, cy - cr * 1.2, 0, cy + cr, [{ o: 0, c: mix(crownC, pal.glow, 0.3) }, { o: 1, c: mix(crownC, pal.land, 0.35) }]) });
+  moving(ctx, { k: 'wave', period: 6800, deg: 1.3, ox: tx, oy: gy - th * 0.7 }, () =>
+    ctx.nodes.push({ t: 'path', d: crown, fill: linear(ctx, 0, cy - cr * 1.2, 0, cy + cr, [{ o: 0, c: mix(crownC, pal.glow, 0.3) }, { o: 1, c: mix(crownC, pal.land, 0.35) }]) }),
+  );
 }
 
 /** Valley Mist — steep slopes folding into a valley floor filled with layered mist. */
@@ -2835,7 +3039,7 @@ function buildValley(ctx: Ctx) {
   const [sx] = sunPos(ctx);
   // Far range, then alternating spurs that step down toward the valley floor.
   mountainRange(ctx, 0, 6, H * 0.5, H * 0.22, clamp(sx + 22, 20, 85), false, 16);
-  drawMist(ctx, H * 0.5, 1);
+  moving(ctx, { k: 'wave', period: 13000, dx: 5 }, () => drawMist(ctx, H * 0.5, 1));
   const n = ctx.lite ? 3 : 4;
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
@@ -2868,7 +3072,7 @@ function buildValley(ctx: Ctx) {
   // Valley floor: a thin river of mist
   const floor = sample(rollingRidge(rng, W, H * 0.9, H * 0.02), -6, W + 6, 10);
   ridgeLayer(ctx, floor, layerColor(ctx, n + 1, n + 2), 1);
-  drawMist(ctx, H * 0.88, 0.9);
+  moving(ctx, { k: 'wave', period: 11000, delay: 1500, dx: -6, min: 0.75 }, () => drawMist(ctx, H * 0.88, 0.9));
 }
 
 /** One floating paper lantern: body, cap, glow and optional reflection. */
@@ -2905,12 +3109,16 @@ function buildLanterns(ctx: Ctx) {
     lanterns.push([x, y, (1.4 + 4.4 * u) * (H / 100) * (ctx.lite ? 1.3 : 1)]);
   }
   lanterns.sort((a, b) => a[1] - b[1]);
-  for (const [x, y, s] of lanterns) drawLantern(ctx, x, y, s, body, glow, dark ? 0.55 : 0.4);
+  moving(ctx, { k: 'wave', period: 5000, dy: 0.7, dx: 0.4, min: 0.85 }, () => {
+    for (const [x, y, s] of lanterns) drawLantern(ctx, x, y, s, body, glow, dark ? 0.55 : 0.4);
+  });
   // A few lifting into the sky
   const nS = ctx.lite ? 2 : 4;
-  for (let i = 0; i < nS; i++) {
-    drawLantern(ctx, range(rng, 12, W - 12), hy * range(rng, 0.2, 0.8), range(rng, 1.2, 2.2) * (H / 100) * (ctx.lite ? 1.4 : 1), body, glow, null);
-  }
+  moving(ctx, { k: 'wave', period: 9000, delay: 800, dy: -2.4, dx: 0.8, min: 0.75 }, () => {
+    for (let i = 0; i < nS; i++) {
+      drawLantern(ctx, range(rng, 12, W - 12), hy * range(rng, 0.2, 0.8), range(rng, 1.2, 2.2) * (H / 100) * (ctx.lite ? 1.4 : 1), body, glow, null);
+    }
+  });
 }
 
 /** Moonset — a large moon sinking toward a far ridge before dawn, its light laid across water. */
@@ -2956,7 +3164,7 @@ function buildMoonset(ctx: Ctx) {
     const x = mx + (rng() - 0.5) * spread - len / 2;
     path += `M${f(x)} ${f(y)}h${f(len)}v${f((0.25 + 0.4 * u) * (ctx.lite ? 1.6 : 1))}h${f(-len)}Z`;
   }
-  ctx.nodes.push({ t: 'path', d: path, fill: moonC, opacity: 0.75 });
+  moving(ctx, { k: 'wave', period: 2600, min: 0.45, dx: 0.6 }, () => ctx.nodes.push({ t: 'path', d: path, fill: moonC, opacity: 0.75 }));
   ctx.nodes.push({ t: 'rect', x: -1, y: f(hy - 0.15), w: W + 2, h: 0.4, fill: mix(pal.horizon, '#FFFFFF', 0.4), opacity: 0.4 });
   drawMist(ctx, hy + H * 0.03, 0.5);
 }
@@ -3019,7 +3227,9 @@ function buildRings(ctx: Ctx) {
     pts[pts.length - 1] = pts[0]!;
     rings += smoothLine(pts);
   }
-  ctx.nodes.push({ t: 'path', d: rings, stroke: mix(wood, bark, 0.55), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: 0.75 });
+  moving(ctx, { k: 'wave', period: 5400, s: 0.03, min: 0.75, ox: hx, oy: hyy }, () =>
+    ctx.nodes.push({ t: 'path', d: rings, stroke: mix(wood, bark, 0.55), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: 0.75 }),
+  );
   ctx.nodes.push({ t: 'ellipse', cx: f(hx), cy: f(hyy), rx: f(rx * 0.05), ry: f(ry * 0.06), fill: mix(bark, tok.sunrise, 0.3) });
   // A radial check crack from the heart
   ctx.nodes.push({ t: 'path', d: `M${f(hx)} ${f(hyy)}L${f(hx - rx * 0.35)} ${f(hyy - ry * 0.55)}`, stroke: mix(bark, '#000000', 0.3), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.6 });
@@ -3027,8 +3237,10 @@ function buildRings(ctx: Ctx) {
   const sprout = mix(tok.calm, pal.land, dark ? 0.35 : 0.2);
   const bx = cx + rx * 1.12;
   const by = topY + sideH * 0.95;
-  ctx.nodes.push({ t: 'path', d: taper([[bx, by], [bx + 0.6, by - H * 0.05], [bx + 1.8, by - H * 0.09]], H * 0.008, H * 0.003), fill: sprout });
-  ctx.nodes.push({ t: 'path', d: leafShape(bx + 3.2, by - H * 0.1, H * 0.05, -0.5) + leafShape(bx - 0.6, by - H * 0.075, H * 0.04, -2.6), fill: sprout });
+  moving(ctx, { k: 'wave', period: 4400, deg: 4, ox: bx, oy: by, pri: 2 }, () => {
+    ctx.nodes.push({ t: 'path', d: taper([[bx, by], [bx + 0.6, by - H * 0.05], [bx + 1.8, by - H * 0.09]], H * 0.008, H * 0.003), fill: sprout });
+    ctx.nodes.push({ t: 'path', d: leafShape(bx + 3.2, by - H * 0.1, H * 0.05, -0.5) + leafShape(bx - 0.6, by - H * 0.075, H * 0.04, -2.6), fill: sprout });
+  });
   let moss = '';
   for (let i = 0; i < (ctx.lite ? 4 : 9); i++) {
     const a = Math.PI * range(rng, 0.1, 0.9);
@@ -3087,6 +3299,7 @@ function buildLowCloud(ctx: Ctx) {
   const deckTop = mix(pal.cloudShade, pal.skyTop, 0.4);
   ctx.nodes.push({ t: 'rect', x: -1, y: -1, w: W + 2, h: f(H * 0.34), fill: linear(ctx, 0, 0, 0, H * 0.34, [{ o: 0, c: deckTop, a: 0.95 }, { o: 1, c: deckTop, a: 0 }]) });
   const rows = ctx.lite ? 3 : 4;
+  moving(ctx, { k: 'wave', period: 17000, dx: 3, dy: 0.4 }, () => {
   for (let k = 0; k < rows; k++) {
     const u = k / (rows - 1);
     const baseY = H * (0.2 + 0.4 * u);
@@ -3099,8 +3312,11 @@ function buildLowCloud(ctx: Ctx) {
       x += w * range(rng, 0.55, 0.72);
     }
   }
+  });
   // Glowing seam under the deck
-  ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(hy - H * 0.04), rx: f(W * 0.6), ry: f(H * 0.05), fill: softFill(ctx, mix(pal.sun, pal.glow, 0.4), dark ? 0.55 : 0.7) });
+  moving(ctx, { k: 'wave', period: 6000, min: 0.65, sx: 0.05, ox: sx, oy: hy - H * 0.04 }, () =>
+    ctx.nodes.push({ t: 'ellipse', cx: f(sx), cy: f(hy - H * 0.04), rx: f(W * 0.6), ry: f(H * 0.05), fill: softFill(ctx, mix(pal.sun, pal.glow, 0.4), dark ? 0.55 : 0.7) }),
+  );
   // Flat fields with a thin far treeline
   const far = sample(rollingRidge(rng, W, hy, H * 0.008, 3), -6, W + 6, 20);
   ridgeLayer(ctx, far, layerColor(ctx, 1, 4), 0.45);
@@ -3153,7 +3369,9 @@ function buildHours(ctx: Ctx) {
   ctx.nodes.push({ t: 'path', d: `M${f(cx - bw * 0.62)} ${f(sTop)}Q${f(cx)} ${f(sTop + hh * 0.03)} ${f(cx + bw * 0.62)} ${f(sTop)}C${f(cx + bw * 0.4)} ${f(neck - hh * 0.05)} ${f(cx + bw * 0.14)} ${f(neck - hh * 0.01)} ${f(cx + bw * 0.08)} ${f(neck)}L${f(cx - bw * 0.08)} ${f(neck)}C${f(cx - bw * 0.14)} ${f(neck - hh * 0.01)} ${f(cx - bw * 0.4)} ${f(neck - hh * 0.05)} ${f(cx - bw * 0.62)} ${f(sTop)}Z`, fill: sand });
   const mB = sill - capH;
   ctx.nodes.push({ t: 'path', d: `M${f(cx - bw * 0.97)} ${f(mB)}Q${f(cx - bw * 0.5)} ${f(mB - hh * 0.07)} ${f(cx)} ${f(mB - hh * 0.17)}Q${f(cx + bw * 0.5)} ${f(mB - hh * 0.07)} ${f(cx + bw * 0.97)} ${f(mB)}Z`, fill: linear(ctx, 0, mB - hh * 0.17, 0, mB, [{ o: 0, c: mix(sand, pal.sun, 0.3) }, { o: 1, c: mix(sand, '#000000', 0.15) }]) });
-  ctx.nodes.push({ t: 'path', d: `M${f(cx)} ${f(neck)}L${f(cx)} ${f(mB - hh * 0.17)}`, stroke: sand, sw: sw(ctx, 0.35, 0.6), fill: 'none' });
+  moving(ctx, { k: 'wave', period: 1200, min: 0.35, sx: 0.4, ox: cx, oy: neck }, () =>
+    ctx.nodes.push({ t: 'path', d: `M${f(cx)} ${f(neck)}L${f(cx)} ${f(mB - hh * 0.17)}`, stroke: sand, sw: sw(ctx, 0.35, 0.6), fill: 'none' }),
+  );
   // Glass outline + highlight
   ctx.nodes.push({ t: 'path', d: upper + lowerRaw, stroke: mix(glassC, pal.sun, 0.4), sw: sw(ctx, 0.4, 0.7), fill: 'none', opacity: 0.8 });
   ctx.nodes.push({ t: 'path', d: `M${f(cx - bw * 0.72)} ${f(top + capH + hh * 0.05)}Q${f(cx - bw * 0.7)} ${f(top + capH + hh * 0.2)} ${f(cx - bw * 0.35)} ${f(neck - hh * 0.08)}`, stroke: '#FFFFFF', sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: dark ? 0.35 : 0.6 });
@@ -3206,8 +3424,10 @@ function buildGoldenHour(ctx: Ctx) {
       rim += `M${f(tip[0] + H * 0.006)} ${f(tip[1] - H * 0.04)}L${f(tip[0] + H * 0.006)} ${f(tip[1])}`;
     }
   }
-  ctx.nodes.push({ t: 'path', d: stems + heads, fill: bankC });
-  ctx.nodes.push({ t: 'path', d: rim, stroke: mix(pal.sun, tok.warning, 0.3), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.7 });
+  moving(ctx, { k: 'wave', period: 5800, deg: 1, ox: W / 2, oy: H + 3 }, () => {
+    ctx.nodes.push({ t: 'path', d: stems + heads, fill: bankC });
+    ctx.nodes.push({ t: 'path', d: rim, stroke: mix(pal.sun, tok.warning, 0.3), sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.7 });
+  });
 }
 
 /** Velvet Night — a thin crescent over soft, folded hills with a velvet sheen along each crest. */
@@ -3220,8 +3440,10 @@ function buildVelvet(ctx: Ctx) {
   const [mx, my] = sunPos(ctx);
   const r = Math.min(W, H) * 0.11;
   const moonC = mix(pal.sun, '#FFFFFF', 0.25);
-  ctx.nodes.push({ t: 'circle', cx: f(mx), cy: f(my), r: f(r * 3.2), fill: softFill(ctx, mix(pal.glow, moonC, 0.4), dark ? 0.3 : 0.4) });
-  ctx.nodes.push({ t: 'path', d: crescent(mx, my, r, 1.3), fill: moonC });
+  moving(ctx, { k: 'wave', period: 6400, s: 0.04, min: 0.85, ox: mx, oy: my }, () => {
+    ctx.nodes.push({ t: 'circle', cx: f(mx), cy: f(my), r: f(r * 3.2), fill: softFill(ctx, mix(pal.glow, moonC, 0.4), dark ? 0.3 : 0.4) });
+    ctx.nodes.push({ t: 'path', d: crescent(mx, my, r, 1.3), fill: moonC });
+  });
   // Folded velvet hills: deep plum/indigo, each with a soft sheen line on its crest
   const velvet = mix(pal.land, tok.accent, dark ? 0.22 : 0.18);
   const n = ctx.lite ? 3 : 4;
@@ -3260,16 +3482,20 @@ function buildStarlit(ctx: Ctx) {
     if (i % 5 === 0) mid += dot(x, y, r * 1.4);
     else small += dot(x, y, r);
   }
-  ctx.nodes.push({ t: 'path', d: small, fill: starC, opacity: 0.75 });
-  ctx.nodes.push({ t: 'path', d: mid, fill: starC, opacity: 0.95 });
+  moving(ctx, { k: 'wave', period: 3400, min: 0.45 }, () => {
+    ctx.nodes.push({ t: 'path', d: small, fill: starC, opacity: 0.75 });
+    ctx.nodes.push({ t: 'path', d: mid, fill: starC, opacity: 0.95 });
+  });
   // Bright sparkle stars
   let spark = '';
   const sp: [number, number, number][] = [[0.22, 0.16, 2.6], [0.7, 0.1, 2], [0.84, 0.3, 1.6], [0.44, 0.34, 1.3]];
-  for (const [u, v, s] of sp) {
-    spark += sparkle(W * u, H * v, s * (ctx.lite ? 1.4 : 1));
-    ctx.nodes.push({ t: 'circle', cx: f(W * u), cy: f(H * v), r: f(s * 1.3), fill: softFill(ctx, mix(starC, tok.accent, 0.2), 0.5) });
-  }
-  ctx.nodes.push({ t: 'path', d: spark, fill: starC });
+  moving(ctx, { k: 'wave', period: 2300, delay: 700, min: 0.3 }, () => {
+    for (const [u, v, s] of sp) {
+      spark += sparkle(W * u, H * v, s * (ctx.lite ? 1.4 : 1));
+      ctx.nodes.push({ t: 'circle', cx: f(W * u), cy: f(H * v), r: f(s * 1.3), fill: softFill(ctx, mix(starC, tok.accent, 0.2), 0.5) });
+    }
+    ctx.nodes.push({ t: 'path', d: spark, fill: starC });
+  });
   // Far shore with pines
   const shore = pineRow(ctx, (x) => hy - Math.sin(x / 13) * H * 0.01, H * 0.05, H * 0.12, 4.5);
   const shoreC = dark ? mix(pal.land, '#000000', 0.1) : pal.land;
@@ -3292,7 +3518,9 @@ function buildStarlit(ctx: Ctx) {
     const x = range(rng, 0, W - 20);
     lines += `M${f(x)} ${f(y)}h${f(range(rng, 8, 22))}`;
   }
-  ctx.nodes.push({ t: 'path', d: lines, stroke: mix(pal.skyLow, '#FFFFFF', 0.3), sw: sw(ctx, 0.25, 0.45), fill: 'none', opacity: 0.4 });
+  moving(ctx, { k: 'wave', period: 8000, dx: 2, min: 0.5, pri: 2 }, () =>
+    ctx.nodes.push({ t: 'path', d: lines, stroke: mix(pal.skyLow, '#FFFFFF', 0.3), sw: sw(ctx, 0.25, 0.45), fill: 'none', opacity: 0.4 }),
+  );
 }
 
 /** Drift — a small empty rowboat drifting on calm, misty water, a long soft wake behind it. */
@@ -3304,8 +3532,10 @@ function buildDrift(ctx: Ctx) {
   const far = sample(rollingRidge(rng, W, hy - H * 0.01, H * 0.035, 1.1), -6, W + 6, 12);
   ridgeLayer(ctx, far, layerColor(ctx, 0, 5), 0.25);
   drawWater(ctx, hy, true);
-  drawMist(ctx, hy + H * 0.03, 1);
-  drawMist(ctx, hy + H * 0.12, 0.6);
+  moving(ctx, { k: 'wave', period: 12000, dx: 4, pri: 2 }, () => {
+    drawMist(ctx, hy + H * 0.03, 1);
+    drawMist(ctx, hy + H * 0.12, 0.6);
+  });
   // Boat
   const bx = W * 0.56;
   const by = H * 0.74;
@@ -3313,13 +3543,15 @@ function buildDrift(ctx: Ctx) {
   const d = H * 0.06;
   const hull = `M${f(bx - L / 2)} ${f(by - d * 0.9)}Q${f(bx - L * 0.3)} ${f(by + d * 0.2)} ${f(bx)} ${f(by + d * 0.25)}Q${f(bx + L * 0.35)} ${f(by + d * 0.2)} ${f(bx + L / 2)} ${f(by - d * 1.2)}L${f(bx + L * 0.42)} ${f(by - d * 0.7)}Q${f(bx)} ${f(by - d * 0.45)} ${f(bx - L * 0.44)} ${f(by - d * 0.55)}Z`;
   const wood = dark ? mix(tok.sunrise, pal.land, 0.62) : mix(tok.sunrise, pal.land, 0.5);
-  // Reflection first
+  // Reflection first — the boat group bobs gently on the water
+  moving(ctx, { k: 'wave', period: 5600, dx: 0.9, dy: 0.35, deg: 0.9, ox: bx, oy: by }, () => {
   ctx.nodes.push({ t: 'path', d: `M${f(bx - L * 0.45)} ${f(by + d * 0.3)}Q${f(bx)} ${f(by + d * 1.6)} ${f(bx + L * 0.46)} ${f(by + d * 0.3)}Z`, fill: mix(wood, pal.water, 0.55), opacity: 0.45 });
   ctx.nodes.push({ t: 'path', d: hull, fill: linear(ctx, 0, by - d * 1.2, 0, by + d * 0.3, [{ o: 0, c: mix(wood, pal.glow, 0.35) }, { o: 1, c: mix(wood, '#000000', 0.25) }]) });
   // Gunwale line + an oar resting across
   ctx.nodes.push({ t: 'path', d: `M${f(bx - L * 0.47)} ${f(by - d * 0.72)}Q${f(bx)} ${f(by - d * 0.35)} ${f(bx + L * 0.46)} ${f(by - d * 1.0)}`, stroke: mix(wood, pal.sun, 0.35), sw: sw(ctx, 0.45, 0.7), fill: 'none', opacity: 0.8 });
   ctx.nodes.push({ t: 'path', d: `M${f(bx - L * 0.18)} ${f(by - d * 0.95)}L${f(bx + L * 0.62)} ${f(by + d * 0.2)}`, stroke: mix(wood, '#000000', 0.2), sw: sw(ctx, 0.7, 1), fill: 'none' });
   ctx.nodes.push({ t: 'path', d: ell(bx + L * 0.6, by + d * 0.18, L * 0.07, d * 0.18), fill: mix(wood, '#000000', 0.2) });
+  });
   // Wake: long soft V trailing left, plus ripple rings
   const foam = mix(pal.sun, '#FFFFFF', dark ? 0.1 : 0.4);
   let wake = '';
@@ -3331,11 +3563,11 @@ function buildDrift(ctx: Ctx) {
   ctx.nodes.push({ t: 'path', d: wake, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.5 });
   let rip = '';
   for (let k = 0; k < 2; k++) rip += ell(bx, by + d * 0.3, L * (0.62 + 0.18 * k), d * (0.8 + 0.5 * k));
-  ctx.nodes.push({ t: 'path', d: rip, stroke: foam, sw: sw(ctx, 0.3, 0.5), fill: 'none', opacity: 0.3 });
+  moving(ctx, { k: 'ripple', period: 5600, s: 0.12, ox: bx, oy: by + d * 0.3, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: rip, stroke: foam, sw: sw(ctx, 0.3, 0.5), fill: 'none', opacity: 0.3 }));
   // A few drifting leaves
   let leaves = '';
   for (let i = 0; i < (ctx.lite ? 2 : 4); i++) leaves += leafShape(range(rng, 8, W - 8), H * range(rng, 0.6, 0.95), H * 0.03, range(rng, -0.5, 0.5));
-  ctx.nodes.push({ t: 'path', d: leaves, fill: mix(tok.sunrise, pal.land, 0.4), opacity: 0.7 });
+  moving(ctx, { k: 'wave', period: 9000, dx: 1.5, deg: 3, pri: 3 }, () => ctx.nodes.push({ t: 'path', d: leaves, fill: mix(tok.sunrise, pal.land, 0.4), opacity: 0.7 }));
 }
 
 /** Night crickets — a moonlit summer meadow, a cricket on a grass blade, fireflies drifting. */
@@ -3358,7 +3590,7 @@ function buildCrickets(ctx: Ctx) {
     const lean = range(rng, -5, 5);
     grass += taper([[x, H + 1], [x + lean * 0.3, H - h * 0.5], [x + lean, H - h]], H * 0.012, H * 0.001);
   }
-  ctx.nodes.push({ t: 'path', d: grass, fill: grassC });
+  moving(ctx, { k: 'wave', period: 6600, deg: 1, ox: W / 2, oy: H + 2, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: grass, fill: grassC }));
   // The perch: one long blade arcing in from the right
   const blade: Pt[] = [[W * 0.9, H + 2], [W * 0.78, H * 0.78], [W * 0.6, H * 0.64], [W * 0.4, H * 0.62]];
   ctx.nodes.push({ t: 'path', d: taper(blade, H * 0.03, H * 0.004), fill: grassC });
@@ -3382,12 +3614,17 @@ function buildCrickets(ctx: Ctx) {
   ctx.nodes.push({ t: 'path', d: `M${f(cx - s * 0.7)} ${f(cy - s * 0.78)}Q${f(cx + s * 0.4)} ${f(cy - s * 0.95)} ${f(cx + s * 1.5)} ${f(cy - s * 0.5)}`, stroke: rimC, sw: sw(ctx, 0.35, 0.55), fill: 'none', opacity: 0.6 });
   // Fireflies
   const fly = mix(tok.warning, pal.sun, 0.35);
-  for (let i = 0; i < (ctx.lite ? 4 : 9); i++) {
-    const x = range(rng, 4, W - 4);
-    const y = H * range(rng, 0.45, 0.85);
-    ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y), r: f(H * 0.025), fill: softFill(ctx, fly, 0.6) });
-    ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y), r: f(ctx.lite ? 0.8 : 0.5), fill: fly });
-  }
+  // Fireflies twinkle and drift in two out-of-step sets.
+  const flies: Pt[] = [];
+  for (let i = 0; i < (ctx.lite ? 4 : 9); i++) flies.push([range(rng, 4, W - 4), H * range(rng, 0.45, 0.85)]);
+  const drawFlies = (set: Pt[]) => {
+    for (const [x, y] of set) {
+      ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y), r: f(H * 0.025), fill: softFill(ctx, fly, 0.6) });
+      ctx.nodes.push({ t: 'circle', cx: f(x), cy: f(y), r: f(ctx.lite ? 0.8 : 0.5), fill: fly });
+    }
+  };
+  moving(ctx, { k: 'wave', period: 2600, min: 0.15, dy: -1.6, dx: 0.8 }, () => drawFlies(flies.filter((_, i) => i % 2 === 0)));
+  moving(ctx, { k: 'wave', period: 3100, delay: 1300, min: 0.15, dy: 1.4, dx: -1 }, () => drawFlies(flies.filter((_, i) => i % 2 === 1)));
 }
 
 /** Snow morning — soft snowfall over drifts and snowy pines, a small bird on a snow-capped branch. */
@@ -3432,10 +3669,13 @@ function buildSnow(ctx: Ctx) {
     else flakes += dot(x, y, r);
   }
   const flakeC = dark ? '#EEF4FF' : '#FFFFFF';
-  // A faint cool shadow keeps white flakes readable over white snow
-  if (!dark) ctx.nodes.push({ t: 'path', d: flakes + big, fill: pal.cloudShade, opacity: 0.35 });
-  ctx.nodes.push({ t: 'path', d: flakes, fill: flakeC, opacity: 0.9 });
-  ctx.nodes.push({ t: 'path', d: big, fill: flakeC, opacity: 0.65 });
+  // Snow falls: the flake field loops by the frame height, drifting a little sideways.
+  moving(ctx, { k: 'loop', period: 16000, dx: 3, dy: H }, () => {
+    // A faint cool shadow keeps white flakes readable over white snow
+    if (!dark) ctx.nodes.push({ t: 'path', d: flakes + big, fill: pal.cloudShade, opacity: 0.35 });
+    ctx.nodes.push({ t: 'path', d: flakes, fill: flakeC, opacity: 0.9 });
+    ctx.nodes.push({ t: 'path', d: big, fill: flakeC, opacity: 0.65 });
+  });
 }
 
 /** Night stream — a small stream running over stones between dark pines, moonlight glinting. */
@@ -3482,9 +3722,12 @@ function buildStream(ctx: Ctx) {
     ctx.nodes.push({ t: 'ellipse', cx: f(x), cy: f(y), rx: f(rx), ry: f(ry), fill: linear(ctx, 0, y - ry, 0, y + ry, [{ o: 0, c: mix(stone, pal.sun, 0.3) }, { o: 1, c: mix(stone, '#000000', 0.25) }]) });
     flecks += `M${f(x - rx * 1.3)} ${f(y + ry * 0.6)}q${f(rx * 0.4)} ${f(-ry * 0.4)} ${f(rx * 0.8)} 0M${f(x + rx * 0.5)} ${f(y + ry * 0.7)}q${f(rx * 0.4)} ${f(-ry * 0.3)} ${f(rx * 0.9)} 0`;
   }
-  ctx.nodes.push({ t: 'path', d: flecks, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.8 });
+  moving(ctx, { k: 'wave', period: 2200, dx: 0.9, dy: 0.4, min: 0.4 }, () => ctx.nodes.push({ t: 'path', d: flecks, stroke: foam, sw: sw(ctx, 0.35, 0.6), fill: 'none', opacity: 0.8 }));
   // Moon glint on the water
-  ctx.nodes.push({ t: 'ellipse', cx: f(clamp(sx, W * 0.35, W * 0.65)), cy: f(H * 0.7), rx: f(W * 0.12), ry: f(H * 0.03), fill: softFill(ctx, pal.sun, dark ? 0.4 : 0.55) });
+  const gx = clamp(sx, W * 0.35, W * 0.65);
+  moving(ctx, { k: 'wave', period: 3600, delay: 600, min: 0.55, sx: 0.12, ox: gx, oy: H * 0.7 }, () =>
+    ctx.nodes.push({ t: 'ellipse', cx: f(gx), cy: f(H * 0.7), rx: f(W * 0.12), ry: f(H * 0.03), fill: softFill(ctx, pal.sun, dark ? 0.4 : 0.55) }),
+  );
   // Near pines framing both sides
   const nearC = dark ? mix(pal.land, '#000000', 0.2) : pal.land;
   for (const side of [0, 1]) {
@@ -3517,7 +3760,9 @@ function buildThunder(ctx: Ctx) {
   for (const [u, v, w] of cells) cloudPuff(ctx, cx + u * W, H * v, w * (ctx.lite ? 1.1 : 1), lit, shade, { lumps: 5, tall: 1.1 });
   // Inner glow
   const flash = mix(tok.warning, pal.sun, 0.5);
-  ctx.nodes.push({ t: 'ellipse', cx: f(cx + W * 0.06), cy: f(H * 0.34), rx: f(W * 0.18), ry: f(H * 0.12), fill: softFill(ctx, flash, dark ? 0.45 : 0.5) });
+  moving(ctx, { k: 'flash', period: 5600, min: 0.35 }, () =>
+    ctx.nodes.push({ t: 'ellipse', cx: f(cx + W * 0.06), cy: f(H * 0.34), rx: f(W * 0.18), ry: f(H * 0.12), fill: softFill(ctx, flash, dark ? 0.45 : 0.5) }),
+  );
   // Rain curtains trailing under the cell
   const rainC = mix(pal.cloudShade, pal.skyLow, 0.3);
   for (let i = 0; i < 3; i++) {
@@ -3528,7 +3773,9 @@ function buildThunder(ctx: Ctx) {
   // Faint forked bolt, far away
   const bx = cx + W * 0.12;
   const bolt = `M${f(bx)} ${f(H * 0.44)}L${f(bx - 2)} ${f(H * 0.5)}L${f(bx + 1)} ${f(H * 0.52)}L${f(bx - 1.5)} ${f(H * 0.6)}M${f(bx + 1)} ${f(H * 0.52)}L${f(bx + 4)} ${f(H * 0.57)}`;
-  ctx.nodes.push({ t: 'path', d: bolt, stroke: mix(flash, '#FFFFFF', 0.5), sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: 0.85 });
+  moving(ctx, { k: 'flash', period: 5600, min: 0 }, () =>
+    ctx.nodes.push({ t: 'path', d: bolt, stroke: mix(flash, '#FFFFFF', 0.5), sw: sw(ctx, 0.5, 0.8), fill: 'none', opacity: 0.85 }),
+  );
   // Hills + quiet meadow in front
   for (let i = 0; i < 2; i++) {
     const pts = sample(rollingRidge(rng, W, hy + H * 0.05 * i, H * 0.04, 1), -6, W + 6, 10);
@@ -3545,7 +3792,10 @@ function buildThunder(ctx: Ctx) {
     const l = range(rng, 3, 6);
     streaks += `M${f(x)} ${f(y)}l${f(-l * 0.1)} ${f(l)}`;
   }
-  ctx.nodes.push({ t: 'path', d: streaks, stroke: dark ? mix(pal.cloud, tok.accent, 0.2) : mix(pal.cloudShade, pal.water, 0.35), sw: ctx.lite ? 0.5 : 0.28, fill: 'none', opacity: 0.45 });
+  const fallY = H * 0.9 + 4;
+  moving(ctx, { k: 'loop', period: 1300, dx: -fallY * 0.1, dy: fallY, clip: [-12, -4, W + 24, fallY + 6] }, () =>
+    ctx.nodes.push({ t: 'path', d: streaks, stroke: dark ? mix(pal.cloud, tok.accent, 0.2) : mix(pal.cloudShade, pal.water, 0.35), sw: ctx.lite ? 0.5 : 0.28, fill: 'none', opacity: 0.45 }),
+  );
 }
 
 /** After the rain — close glossy leaves beaded with drops, light breaking through the wet forest. */
@@ -3562,9 +3812,11 @@ function buildAfterRain(ctx: Ctx) {
     ctx.nodes.push({ t: 'circle', cx: f(range(rng, -5, W + 5)), cy: f(H * range(rng, 0.3, 0.95)), r: f(H * range(rng, 0.08, 0.2)), fill: softFill(ctx, bok, 0.7) });
   }
   const [sx, sy] = sunPos(ctx);
-  for (let i = 0; i < (ctx.lite ? 3 : 7); i++) {
-    ctx.nodes.push({ t: 'circle', cx: f(sx + range(rng, -25, 25)), cy: f(sy + range(rng, -10, 25)), r: f(H * range(rng, 0.02, 0.05)), fill: softFill(ctx, pal.sun, 0.55) });
-  }
+  moving(ctx, { k: 'wave', period: 3200, min: 0.45, dy: -0.8, pri: 2 }, () => {
+    for (let i = 0; i < (ctx.lite ? 3 : 7); i++) {
+      ctx.nodes.push({ t: 'circle', cx: f(sx + range(rng, -25, 25)), cy: f(sy + range(rng, -10, 25)), r: f(H * range(rng, 0.02, 0.05)), fill: softFill(ctx, pal.sun, 0.55) });
+    }
+  });
   // Big leaves from the lower-left and upper-right
   const leafC = dark ? mix(pal.land, tok.calm, 0.3) : mix(pal.land, tok.calm, 0.3);
   const leafLit = mix(leafC, pal.glow, dark ? 0.25 : 0.35);
@@ -3588,7 +3840,7 @@ function buildAfterRain(ctx: Ctx) {
     ctx.nodes.push({ t: 'circle', cx: f(x - r * 0.35), cy: f(y - r * 0.2), r: f(r * 0.3), fill: '#FFFFFF', opacity: 0.85 });
   };
   const dr = H * 0.028 * (ctx.lite ? 1.3 : 1);
-  drop(l1.tip[0] + dr * 0.3, l1.tip[1] + dr * 2, dr);
+  moving(ctx, { k: 'wave', period: 2800, sy: 0.12, ox: l1.tip[0] + dr * 0.3, oy: l1.tip[1] + dr * 0.2, pri: 2 }, () => drop(l1.tip[0] + dr * 0.3, l1.tip[1] + dr * 2, dr));
   drop(l3.tip[0], l3.tip[1] + dr * 2, dr * 0.85);
   let beads = '';
   for (let i = 0; i < (ctx.lite ? 4 : 10); i++) {
@@ -3599,7 +3851,7 @@ function buildAfterRain(ctx: Ctx) {
   }
   ctx.nodes.push({ t: 'path', d: beads, fill: dropC, opacity: 0.85 });
   // Falling drop
-  drop(W * 0.62, H * 0.9, dr * 0.6);
+  moving(ctx, { k: 'rise', period: 2400, dy: H * 0.09 }, () => drop(W * 0.62, H * 0.9, dr * 0.6));
 }
 
 /** Hearth — a stone fireplace indoors, logs burning low under the mantel, warm light on the floor. */
@@ -3642,8 +3894,10 @@ function buildHearth(ctx: Ctx) {
   // Candle on the mantel
   const cX = cx + sw0 * 0.4;
   ctx.nodes.push({ t: 'rect', x: f(cX - 1.2), y: f(top - H * 0.13), w: 2.4, h: f(H * 0.08), rx: 0.4, fill: mix('#FFFFFF', tok.sunrise, 0.15) });
-  ctx.nodes.push({ t: 'circle', cx: f(cX), cy: f(top - H * 0.15), r: f(H * 0.04), fill: softFill(ctx, tok.warning, 0.5) });
-  ctx.nodes.push({ t: 'path', d: leafShape(cX, top - H * 0.15, H * 0.035, -Math.PI / 2), fill: mix(tok.warning, pal.sun, 0.4) });
+  moving(ctx, { k: 'flicker', period: 1600, s: 0.12, min: 0.8, ox: cX, oy: top - H * 0.13, pri: 2 }, () => {
+    ctx.nodes.push({ t: 'circle', cx: f(cX), cy: f(top - H * 0.15), r: f(H * 0.04), fill: softFill(ctx, tok.warning, 0.5) });
+    ctx.nodes.push({ t: 'path', d: leafShape(cX, top - H * 0.15, H * 0.035, -Math.PI / 2), fill: mix(tok.warning, pal.sun, 0.4) });
+  });
   // Arched firebox
   const ow = sw0 * 0.56;
   const oTop = top + (floorY - top) * 0.28;
@@ -3654,16 +3908,23 @@ function buildHearth(ctx: Ctx) {
   const fire = tok.sunrise;
   const hot = tok.warning;
   const baseY = oBot - H * 0.03;
-  ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(baseY - H * 0.06), rx: f(ow * 0.5), ry: f(H * 0.14), fill: softFill(ctx, mix(hot, fire, 0.3), 0.6) });
+  moving(ctx, { k: 'flicker', period: 1500, min: 0.7, s: 0.04, ox: cx, oy: baseY, pri: 2 }, () =>
+    ctx.nodes.push({ t: 'ellipse', cx: f(cx), cy: f(baseY - H * 0.06), rx: f(ow * 0.5), ry: f(H * 0.14), fill: softFill(ctx, mix(hot, fire, 0.3), 0.6) }),
+  );
   const fh = (oBot - oTop) * 0.62;
   const flame = (w: number, h: number, dx: number, lean: number) => {
     const x0 = cx + dx;
     const y0 = baseY - H * 0.01;
     return `M${f(x0 - w)} ${f(y0)}C${f(x0 - w * 1.05)} ${f(y0 - h * 0.45)} ${f(x0 - w * 0.2 + lean * 0.5)} ${f(y0 - h * 0.6)} ${f(x0 + lean)} ${f(y0 - h)}C${f(x0 + w * 0.35 + lean * 0.4)} ${f(y0 - h * 0.62)} ${f(x0 + w * 1.05)} ${f(y0 - h * 0.42)} ${f(x0 + w)} ${f(y0)}Z`;
   };
-  ctx.nodes.push({ t: 'path', d: flame(ow * 0.2, fh, 0, 1.5) + flame(ow * 0.13, fh * 0.7, -ow * 0.18, -2) + flame(ow * 0.13, fh * 0.66, ow * 0.18, 2.5), fill: fire, opacity: 0.95 });
-  ctx.nodes.push({ t: 'path', d: flame(ow * 0.12, fh * 0.66, 0, 1) + flame(ow * 0.07, fh * 0.45, -ow * 0.14, -1.5), fill: mix(hot, fire, 0.2) });
-  ctx.nodes.push({ t: 'path', d: flame(ow * 0.06, fh * 0.4, ow * 0.01, 0.8), fill: mix(pal.sun, hot, 0.25) });
+  const flameBase = baseY - H * 0.01;
+  moving(ctx, { k: 'flicker', period: 1300, s: 0.07, min: 0.85, ox: cx, oy: flameBase }, () =>
+    ctx.nodes.push({ t: 'path', d: flame(ow * 0.2, fh, 0, 1.5) + flame(ow * 0.13, fh * 0.7, -ow * 0.18, -2) + flame(ow * 0.13, fh * 0.66, ow * 0.18, 2.5), fill: fire, opacity: 0.95 }),
+  );
+  moving(ctx, { k: 'flicker', period: 1000, delay: 400, s: 0.1, min: 0.9, ox: cx, oy: flameBase }, () => {
+    ctx.nodes.push({ t: 'path', d: flame(ow * 0.12, fh * 0.66, 0, 1) + flame(ow * 0.07, fh * 0.45, -ow * 0.14, -1.5), fill: mix(hot, fire, 0.2) });
+    ctx.nodes.push({ t: 'path', d: flame(ow * 0.06, fh * 0.4, ow * 0.01, 0.8), fill: mix(pal.sun, hot, 0.25) });
+  });
   const wood = mix(tok.sunrise, '#000000', 0.5);
   ctx.nodes.push({ t: 'path', d: taper([[cx - ow * 0.4, baseY + H * 0.01], [cx, baseY - H * 0.005], [cx + ow * 0.4, baseY - H * 0.02]], H * 0.035, H * 0.03), fill: wood });
   ctx.nodes.push({ t: 'path', d: taper([[cx + ow * 0.38, baseY + H * 0.012], [cx, baseY + H * 0.004], [cx - ow * 0.36, baseY - H * 0.016]], H * 0.032, H * 0.028), fill: mix(wood, hot, 0.15) });
@@ -3695,7 +3956,10 @@ function buildEaves(ctx: Ctx) {
     fine += `M${f(x)} ${f(y)}l${f(-l * 0.06)} ${f(l)}`;
   }
   const rainC = dark ? mix(pal.cloud, tok.accent, 0.2) : mix(pal.cloudShade, pal.water, 0.35);
-  ctx.nodes.push({ t: 'path', d: fine, stroke: rainC, sw: ctx.lite ? 0.45 : 0.25, fill: 'none', opacity: 0.45 });
+  const fineY = H * 0.75;
+  moving(ctx, { k: 'loop', period: 1500, dx: -fineY * 0.06, dy: fineY, clip: [-12, H * 0.2, W + 24, H * 0.8] }, () =>
+    ctx.nodes.push({ t: 'path', d: fine, stroke: rainC, sw: ctx.lite ? 0.45 : 0.25, fill: 'none', opacity: 0.45 }),
+  );
   // Roof edge across the top: underside, fascia board, shingle scallops, gutter
   const roofC = dark ? mix(pal.land, '#000000', 0.25) : mix(pal.land, tok.sunrise, 0.12);
   const eaveY = H * 0.2;
@@ -3734,8 +3998,11 @@ function buildEaves(ctx: Ctx) {
     }
     drips += dot(x + 0.2, y + H * 0.03, ctx.lite ? 0.8 : 0.55);
   }
-  ctx.nodes.push({ t: 'path', d: streams, stroke: waterC, sw: sw(ctx, 0.45, 0.75), fill: 'none', opacity: 0.85 });
-  ctx.nodes.push({ t: 'path', d: drips, fill: waterC, opacity: 0.85 });
+  // Water keeps spilling off the gutter: the drip trains slide down and fade, then refill.
+  moving(ctx, { k: 'rise', period: 1300, dy: H * 0.06 }, () => {
+    ctx.nodes.push({ t: 'path', d: streams, stroke: waterC, sw: sw(ctx, 0.45, 0.75), fill: 'none', opacity: 0.85 });
+    ctx.nodes.push({ t: 'path', d: drips, fill: waterC, opacity: 0.85 });
+  });
   // Splash puddle along the bottom
   const py = H * 0.94;
   ctx.nodes.push({ t: 'path', d: ell(W * 0.5, py, W * 0.55, H * 0.045), fill: linear(ctx, 0, py - H * 0.045, 0, py + H * 0.045, [{ o: 0, c: mix(pal.skyLow, pal.horizon, 0.4) }, { o: 1, c: mix(pal.water, pal.skyMid, 0.3) }]) });
@@ -3744,7 +4011,9 @@ function buildEaves(ctx: Ctx) {
     const x = range(rng, W * 0.1, W * 0.9);
     for (let k = 0; k < 2; k++) rip += ell(x, py + range(rng, -1, 1), H * (0.02 + 0.02 * k), H * (0.006 + 0.005 * k));
   }
-  ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.5), sw: sw(ctx, 0.3, 0.55), fill: 'none', opacity: 0.75 });
+  moving(ctx, { k: 'wave', period: 1400, min: 0.3, s: 0.05, ox: W * 0.5, oy: py }, () =>
+    ctx.nodes.push({ t: 'path', d: rip, stroke: mix(pal.skyLow, '#FFFFFF', 0.5), sw: sw(ctx, 0.3, 0.55), fill: 'none', opacity: 0.75 }),
+  );
 }
 
 const BUILDERS: Record<SceneType, (ctx: Ctx) => void> = {
@@ -3761,6 +4030,7 @@ const BUILDERS: Record<SceneType, (ctx: Ctx) => void> = {
   bowl: buildBowl,
   piano: buildPiano,
   strings: buildStrings,
+  drone: buildDrone,
   waves: buildWaves,
   branch: buildBranch,
   raincloud: buildRaincloud,
