@@ -8,6 +8,7 @@ import {
   STILLNESS_MAX_MOTION,
   STILLNESS_WINDOW_MS,
   LEAVE_HOLDING_GRACE_MS,
+  RECOVER_HOLDING_FRAMES,
 } from './thresholds';
 
 function joint(landmarks: PoseLandmarks, name: string): PoseJoint | null {
@@ -199,15 +200,24 @@ export function createHoldingHysteresis(
   let enterStreak = 0;
   let leaveStreak = 0;
   let leaveStartedAt: number | null = null;
+  let recoverStreak = 0;
 
   return {
     push(raw: PoseStatus, now: number = Date.now()) {
       if (published === 'holding') {
         if (raw === 'holding') {
+          // A leave run in progress is cancelled only by a short run of holding frames, so a
+          // single flicker back to "holding" can't keep restarting the grace period.
+          if (leaveStartedAt != null) {
+            recoverStreak += 1;
+            if (recoverStreak < RECOVER_HOLDING_FRAMES) return published;
+          }
           leaveStreak = 0;
+          recoverStreak = 0;
           leaveStartedAt = null;
           return published;
         }
+        recoverStreak = 0;
         if (raw === 'not_upright') {
           published = raw;
           leaveStreak = 0;
@@ -247,6 +257,7 @@ export function createHoldingHysteresis(
       published = 'absent';
       enterStreak = 0;
       leaveStreak = 0;
+      recoverStreak = 0;
       leaveStartedAt = null;
     },
     published: () => published,

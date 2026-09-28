@@ -23,6 +23,8 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
       return { label: 'Settle in\u2026 stay still', inFrame: false };
     case 'hands_near':
       return { label: 'Let your hands rest', inFrame: false };
+    case 'arms_moving':
+      return { label: 'Let your hands rest', inFrame: false };
     case 'not_upright':
       return { label: 'Prop your phone up, facing you', inFrame: false };
     case 'too_dark':

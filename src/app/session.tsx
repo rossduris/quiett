@@ -10,7 +10,6 @@ import {
 } from 'quiett-pose';
 import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
 import { PoseDebugOverlay, PoseDebugReadout } from '@/components/PoseDebugOverlay';
-import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
@@ -43,9 +42,14 @@ import {
   loadAlarmPrefs,
   loadSitMinutes,
   recordSuccessfulSit,
+  loadStreak,
+  loadEarnedBadges,
   type SitMinutes,
+  type BadgeId,
   loadWakeIntention,
+  loadUnlockTrackId,
 } from '@/lib/storage';
+import { useGentleBrightness } from '@/lib/gentle-brightness';
 import {
   armMeditationDeadMan,
   clearMeditationDeadMan,
@@ -78,6 +82,11 @@ export default function SessionScreen() {
   const durationMs = sitDurationMs(sitMinutes);
   const [cameraReady, setCameraReady] = useState(false);
   const [wakeIntention, setWakeIntention] = useState('');
+  const [trackId, setTrackId] = useState<string | null>(null);
+  const [bottomH, setBottomH] = useState(96);
+  const [topH, setTopH] = useState(40);
+  // Night-friendly: at dawn the screen eases up gently from the user's own brightness (restored on exit).
+  useGentleBrightness(true);
 
   const preferLive = isLivePoseCameraAvailable();
   const cameraRef = useRef<ElementRef<typeof CameraView>>(null);
@@ -113,8 +122,13 @@ export default function SessionScreen() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [minutes, intention] = await Promise.all([loadSitMinutes(), loadWakeIntention()]);
+      const [minutes, intention, track] = await Promise.all([
+        loadSitMinutes(),
+        loadWakeIntention(),
+        loadUnlockTrackId().catch(() => null),
+      ]);
       if (!alive) return;
+      setTrackId(track);
       setSitMinutes(minutes);
       setSitLeft(sitDurationMs(minutes));
       setDurationReady(true);
@@ -320,35 +334,59 @@ export default function SessionScreen() {
   }, [phase, durationMs, durationReady]);
 
   useEffect(() => {
+    // Session end must feel instant: the camera window is veiled the moment the phase flips
+    // (SessionChrome), we navigate as soon as /success has its params, and the slow native work
+    // (AlarmKit scrub + reschedule, audio session release) runs after navigation. The camera
+    // itself already stopped via isActive=false (stopRunning runs on the native session queue),
+    // and the detector unsubscribes on unmount.
     if (phase === 'completed') {
+      missionDone.current = true;
+      // The backtrack keeps playing into /success (fades out when the user leaves it);
+      // only the alarm and voice stop here.
+      handoffBacktrackToSuccess();
       void (async () => {
-        missionDone.current = true;
-        // The backtrack keeps playing into /success (fades out when the user leaves it);
-        // only the alarm and voice stop here.
-        handoffBacktrackToSuccess();
+        // Snapshot streak + badges first so /success can animate exactly what changed (no guesses).
+        const [prevStreak, prevBadges] = await Promise.all([
+          loadStreak().catch(() => null),
+          loadEarnedBadges().catch((): BadgeId[] => []),
+        ]);
         const streak = await recordSuccessfulSit();
-        const prefs = await loadAlarmPrefs();
-        await completeOsAlarmAndReschedule(prefs);
-        releaseAudio();
+        const newBadges = (await loadEarnedBadges().catch(() => prevBadges)).filter((b) => !prevBadges.includes(b));
         router.replace({
           pathname: '/success',
           params: {
             streak: String(streak.count),
+            ...(prevStreak ? { prev: String(prevStreak.count) } : {}),
+            ...(newBadges.length ? { badges: newBadges.join(',') } : {}),
             ...(wakeIntention.trim() ? { intention: wakeIntention.trim() } : {}),
           },
         });
+        // After navigation: resolve today's alarm + schedule tomorrow, then free the session.
+        try {
+          const prefs = await loadAlarmPrefs();
+          await completeOsAlarmAndReschedule(prefs);
+        } catch (e) {
+          console.warn('[quiett] complete alarm', e);
+        } finally {
+          releaseAudio();
+        }
       })();
     }
     if (phase === 'emergency') {
+      missionDone.current = true;
+      void stopAllAudio();
       void (async () => {
-        missionDone.current = true;
-        await stopAllAudio();
-        await breakStreak();
-        // Keep tomorrow's schedule; ring already silenced at session open.
-        const prefs = await loadAlarmPrefs();
-        await completeOsAlarmAndReschedule(prefs);
-        releaseAudio();
+        await breakStreak().catch((e) => console.warn('[quiett] break streak', e));
         router.replace('/emergency');
+        // Keep tomorrow's schedule; ring already silenced at session open.
+        try {
+          const prefs = await loadAlarmPrefs();
+          await completeOsAlarmAndReschedule(prefs);
+        } catch (e) {
+          console.warn('[quiett] complete alarm', e);
+        } finally {
+          releaseAudio();
+        }
       })();
     }
   }, [phase, router]);
@@ -360,8 +398,6 @@ export default function SessionScreen() {
     },
     [],
   );
-
-  const timerLabel = phase === 'meditating' ? formatMmSs(sitLeft) : friendlyDuration(sitMinutes);
 
   const confirmProgress = 1 - confirmLeft / CONFIRM_HOLD_MS;
   const sitProgress = durationMs > 0 ? 1 - sitLeft / durationMs : 0;
@@ -439,7 +475,30 @@ export default function SessionScreen() {
       <StatusBar style="light" />
       <SessionBackdrop />
 
+      <SessionChrome
+        phase={phase}
+        pose={pose}
+        confirmProgress={confirmProgress}
+        sitProgress={sitProgress}
+        timerLabel={formatMmSs(sitLeft)}
+        durationLabel={friendlyDuration(sitMinutes)}
+        secondsLeft={phase === 'meditating' ? Math.ceil(sitLeft / 1000) : undefined}
+        trackId={trackId}
+        wakeIntention={wakeIntention}
+        debugOverlay={poseDebugOverlay}
+        topInset={insets.top + spacing.sm + topH}
+        bottomInset={insets.bottom + spacing.md + bottomH}
+        camera={
+          poseDebugOverlay && preferLive ? (
+            <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
+          ) : (
+            cameraView
+          )
+        }
+      />
+
       <View
+        pointerEvents="box-none"
         style={[
           styles.ui,
           {
@@ -448,31 +507,11 @@ export default function SessionScreen() {
           },
         ]}
       >
-        <View style={styles.top}>
-          <PoseStatusChip status={pose} />
+        <View style={styles.top} pointerEvents="box-none" onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
           {poseDebugOverlay ? <PoseDebugReadout diagnostics={poseDiag} fps={poseFps} /> : null}
-          {wakeIntention.length > 0 && phase === 'meditating' && (
-            <Text style={styles.intention}>{wakeIntention}</Text>
-          )}
         </View>
 
-        <View style={styles.center}>
-          <SessionChrome
-            phase={phase}
-            confirmProgress={confirmProgress}
-            sitProgress={sitProgress}
-            timerLabel={timerLabel}
-            camera={
-              poseDebugOverlay && preferLive ? (
-                <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
-              ) : (
-                cameraView
-              )
-            }
-          />
-        </View>
-
-        <View style={styles.bottom}>
+        <View style={styles.bottom} onLayout={(e) => setBottomH(e.nativeEvent.layout.height)}>
           <EmergencyHoldButton onConfirm={() => dispatch({ type: 'EMERGENCY_DISMISS' })} />
         </View>
       </View>

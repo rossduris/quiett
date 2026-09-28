@@ -9,7 +9,6 @@ import {
   QuiettPoseCameraView,
 } from 'quiett-pose';
 import { PoseDebugOverlay, PoseDebugReadout } from '@/components/PoseDebugOverlay';
-import { PoseStatusChip } from '@/components/PoseStatusChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
@@ -33,7 +32,7 @@ import {
   type SessionEvent,
   type SessionPhase,
 } from '@/lib/session-machine';
-import { saveTestMorningCompleted } from '@/lib/storage';
+import { loadUnlockTrackId, saveTestMorningCompleted } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,6 +49,18 @@ export default function TestMorningScreen() {
   const [pose, setPose] = useState<PoseStatus>('absent');
   const [confirmLeft, setConfirmLeft] = useState(CONFIRM_HOLD_MS);
   const [sitLeft, setSitLeft] = useState(PRACTICE_DURATION_SEC * 1000);
+  const [trackId, setTrackId] = useState<string | null>(null);
+  const [bottomH, setBottomH] = useState(56);
+  const [topH, setTopH] = useState(40);
+  useEffect(() => {
+    let alive = true;
+    void loadUnlockTrackId()
+      .then((id) => alive && setTrackId(id))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [cameraReady, setCameraReady] = useState(false);
 
   const preferLive = isLivePoseCameraAvailable();
@@ -188,18 +199,18 @@ export default function TestMorningScreen() {
 
   useEffect(() => {
     if (phase === 'completed') {
+      // Navigate first (camera window is already veiled); the save + audio release follow.
+      void stopAllAudio();
       void (async () => {
-        await stopAllAudio();
-        releaseAudio();
-        await saveTestMorningCompleted(true);
+        await saveTestMorningCompleted(true).catch((e) => console.warn('[quiett] test save', e));
         router.replace({
           pathname: '/test-success',
         });
+        releaseAudio();
       })();
     }
   }, [phase, router]);
 
-  const timerLabel = phase === 'meditating' ? formatMmSs(sitLeft) : '30 seconds';
 
   const confirmProgress = 1 - confirmLeft / CONFIRM_HOLD_MS;
   const sitProgress = 1 - sitLeft / (PRACTICE_DURATION_SEC * 1000);
@@ -284,7 +295,30 @@ export default function TestMorningScreen() {
       <StatusBar style="light" />
       <SessionBackdrop />
 
+      <SessionChrome
+        phase={phase}
+        pose={pose}
+        confirmProgress={confirmProgress}
+        sitProgress={sitProgress}
+        timerLabel={formatMmSs(sitLeft)}
+        durationLabel="30 seconds"
+        secondsLeft={phase === 'meditating' ? Math.ceil(sitLeft / 1000) : undefined}
+        trackId={trackId}
+        wakeIntention=""
+        debugOverlay={poseDebugOverlay}
+        topInset={insets.top + spacing.sm + topH}
+        bottomInset={insets.bottom + spacing.md + bottomH}
+        camera={
+          poseDebugOverlay && preferLive ? (
+            <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
+          ) : (
+            cameraView
+          )
+        }
+      />
+
       <View
+        pointerEvents="box-none"
         style={[
           styles.ui,
           {
@@ -293,32 +327,15 @@ export default function TestMorningScreen() {
           },
         ]}
       >
-        <View style={styles.top}>
+        <View style={styles.top} pointerEvents="box-none" onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
           <View style={styles.practiceBadge}>
             <Ionicons name="leaf-outline" size={13} color={colors.sessionGlow} />
             <Text style={styles.practiceBadgeText}>Practice run · 30 seconds</Text>
           </View>
-          <PoseStatusChip status={pose} />
           {poseDebugOverlay ? <PoseDebugReadout diagnostics={poseDiag} fps={poseFps} /> : null}
         </View>
 
-        <View style={styles.center}>
-          <SessionChrome
-            phase={phase}
-            confirmProgress={confirmProgress}
-            sitProgress={sitProgress}
-            timerLabel={timerLabel}
-            camera={
-              poseDebugOverlay && preferLive ? (
-                <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
-              ) : (
-                cameraView
-              )
-            }
-          />
-        </View>
-
-        <View style={styles.bottom}>
+        <View style={styles.bottom} onLayout={(e) => setBottomH(e.nativeEvent.layout.height)}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="End practice"

@@ -763,6 +763,17 @@ enum QuiettPoseBody {
     var checks: [QuiettCheck] = []
     var extra: [String: Any] = ["bodyHeightM": Double(obs.bodyHeight), "upAxis": "model+Y"]
 
+    // Arm joints in metres, relative to the body root, for the JS arm-stillness tracker
+    // (wrist / elbow travel relative to the shoulders over a short window).
+    var arm3D: [String: [Double]] = [:]
+    for k in ["centerShoulder", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist"] {
+      if let p = pos[k] {
+        let d = p - root
+        arm3D[k] = [Double(d.x), Double(d.y), Double(d.z)]
+      }
+    }
+    extra["arm3D"] = arm3D
+
     // Camera-relative up (diagnostic only until verified on device).
     let cm = obs.cameraOriginMatrix
     let camUp = simd_float3(cm.columns.1.x, cm.columns.1.y, cm.columns.1.z)

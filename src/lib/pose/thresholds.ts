@@ -86,3 +86,52 @@ export const HAND_NEAR_FACE_PAD = 0.22;
  * - 0.00: Too loose — no lighting gate
  */
 export const BRIGHTNESS_MIN = 0.13;
+
+/**
+ * Arm stillness (body2d / body3d). Wrist + elbow positions are measured relative to the
+ * same-side shoulder and divided by shoulder width (×sw), so 2D (image) and 3D (metres) share
+ * one unit: 1.0 ×sw ≈ 35–40 cm for most adults. Per joint, travel = second-largest
+ * deviation from the window median (one glitchy frame can't trip it) minus a jitter floor;
+ * the check value is the worst joint.
+ *
+ * Tuning:
+ * - Resting hands still trip it → RAISE ARM_MOTION_MAX (e.g. 0.45), ARM_JITTER_FLOOR or ARM_MOTION_PERSIST_MS
+ * - Waving / reaching slips through → LOWER ARM_MOTION_MAX (e.g. 0.28) or ARM_MOTION_PERSIST_MS
+ * - Breaks land too fast on a short reach → RAISE ARM_MOTION_WINDOW_MS / ARM_MOTION_MIN_SAMPLES
+ * - Noisy 2D joints at night → RAISE ARM_MIN_JOINT_CONFIDENCE (joints below are ignored)
+ */
+/** Look-back window for arm travel (ms). */
+export const ARM_MOTION_WINDOW_MS = 1500;
+/** Frames (with that joint) needed in the window before the joint counts. */
+export const ARM_MOTION_MIN_SAMPLES = 4;
+/** Fail above this travel (×sw, after the jitter floor). ~0.28 ≈ 10–11 cm (0.22 too twitchy, 0.35 too loose). */
+export const ARM_MOTION_MAX = 0.28;
+/** Once failing, travel must drop below MAX × this to pass again (no chatter at the edge). */
+export const ARM_MOTION_RECOVER_RATIO = 0.7;
+/** Subtracted from each joint's travel: joint jitter + small natural shifts (×sw). */
+export const ARM_JITTER_FLOOR = 0.065;
+/** 2D joints below this Vision confidence are skipped for the frame (3D has no confidence). */
+export const ARM_MIN_JOINT_CONFIDENCE = 0.3;
+/** EMA weight of the newest frame (lower = smoother, laggier). */
+export const ARM_SMOOTHING = 0.5;
+/** A single-frame jump bigger than this (×sw) is a tracking glitch; ignored for up to 2 frames. */
+export const ARM_GLITCH_JUMP = 1.2;
+/**
+ * Arms-only grace: travel must stay over ARM_MOTION_MAX this long (ms) before the check fails,
+ * so a quick scratch / adjusting a sleeve doesn't break the hold. The normal leave-holding
+ * grace (LEAVE_HOLDING_GRACE_MS) still applies on top, so a real arm break lands in ~1 s.
+ */
+export const ARM_MOTION_PERSIST_MS = 450;
+/** Short measurement gaps (blur) up to this long don't restart the persistence clock. */
+export const ARM_MOTION_PERSIST_GAP_MS = 400;
+/**
+ * Once arms are failing, keep failing through frames where the arm joints can't be measured
+ * (motion blur drops them) for up to this long. Real stillness (measured) clears it sooner.
+ */
+export const ARM_FAIL_HOLD_MS = 1200;
+/**
+ * While holding, a leave run (non-holding frames) is only cancelled by this many consecutive
+ * holding frames. One stray "holding" frame in the middle of a real break used to restart the
+ * grace timer, so flickery checks (arm motion, blinks) could keep the hold alive indefinitely.
+ */
+export const RECOVER_HOLDING_FRAMES = 2;

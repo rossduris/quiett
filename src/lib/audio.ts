@@ -1,6 +1,7 @@
 import {
   createAudioPlayer,
   setAudioModeAsync,
+  setIsAudioActiveAsync,
   type AudioPlayer,
 } from 'expo-audio';
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
@@ -31,6 +32,17 @@ const VOICE_LEAD_MS = 2500;
 const VOICE_VOLUME = 1;
 /** Backtrack fades in over this on the first play of a session (clips have no file-level fade). */
 const FIRST_PLAY_FADE_MS = 3000;
+/** After a break the backtrack (paused where it left off) fades back in over this. */
+const RESUME_FADE_MS = 1800;
+/** Re-check shortly after (re)starting that the backtrack / voice really are playing. */
+const RESUME_WATCHDOG_MS = 700;
+/**
+ * Session players keep the AVAudioSession active across pause(). By default expo-audio
+ * deactivates the session ~100 ms after any pause() when it sees nothing playing, which can
+ * land mid-handoff (harsh paused, backtrack not yet reporting `.playing`) and iOS then stops
+ * the freshly resumed backtrack. We deactivate ourselves once the session is fully over.
+ */
+const SESSION_PLAYER_OPTIONS = { keepAudioSessionActive: true } as const;
 /** Tone clips are 5-min seamless loops; fallback if the player has not reported a duration. */
 const TONE_CLIP_SECONDS = 300;
 /**
@@ -61,6 +73,53 @@ let voiceLeadTimer: ReturnType<typeof setTimeout> | null = null;
 /** Backtrack handed to /success after the unlock (keeps playing until the user leaves). */
 let tail: AudioPlayer | null = null;
 let tailTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * What session audio should be doing right now. Every public entry point claims a new
+ * generation synchronously; async work re-checks it after each await and bails when a newer
+ * call has taken over. Without this, a slow `playHarshAlarm()` (setAudioModeAsync + storage
+ * reads) could resolve after `crossfadeToMeditation()` and pause the backtrack + voice again
+ * while the session is meditating: the alarm stops, but the music never comes back.
+ */
+type SessionIntent = 'off' | 'alarm' | 'meditation';
+let sessionIntent: SessionIntent = 'off';
+let intentGen = 0;
+let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+function claimIntent(intent: SessionIntent): number {
+  intentGen += 1;
+  sessionIntent = intent;
+  if (watchdogTimer) clearTimeout(watchdogTimer);
+  watchdogTimer = null;
+  return intentGen;
+}
+
+function isStale(gen: number) {
+  return gen !== intentGen;
+}
+
+function safePause(player: AudioPlayer | null) {
+  if (!player) return;
+  try {
+    player.pause();
+  } catch {
+    /* ignore */
+  }
+}
+
+function isPlaying(player: AudioPlayer | null) {
+  if (!player) return false;
+  try {
+    return player.playing;
+  } catch {
+    return false;
+  }
+}
+
+/** Backtrack level for the meditation right now: ducked under a speaking voice. */
+function backtrackTarget() {
+  return voice && voiceState === 'playing' ? BACKTRACK_DUCKED : BACKTRACK_VOLUME;
+}
 
 /** Exclusive loudspeaker playback for in-app harsh (media stream; denser than AlarmKit file). */
 async function ensureMode() {
@@ -154,7 +213,7 @@ function rebuildHarsh(alarmId: string) {
   const asset = alarmId === 'quiett_harsh' 
     ? QUIETT_HARSH_SESSION 
     : alarmSoundById(alarmId).url ?? QUIETT_HARSH_SESSION;
-  harsh = createAudioPlayer(asset);
+  harsh = createAudioPlayer(asset, SESSION_PLAYER_OPTIONS);
   harsh.loop = true;
   harsh.volume = 1;
   loadedAlarmId = alarmId;
@@ -187,13 +246,14 @@ async function ensureVoice() {
   releaseVoice();
   if (clip == null) return;
   try {
-    const player = createAudioPlayer(clip);
+    const player = createAudioPlayer(clip, SESSION_PLAYER_OPTIONS);
     player.loop = false;
     player.volume = VOICE_VOLUME;
     voiceSub = player.addListener('playbackStatusUpdate', (status) => {
       if (voice !== player || !status.didJustFinish) return;
       voiceState = 'done';
-      if (calm) rampVolume(calm, BACKTRACK_VOLUME, DUCK_UP_MS);
+      // Un-duck only while meditating; a later resume fades straight to full level.
+      if (calm && sessionIntent === 'meditation') rampVolume(calm, BACKTRACK_VOLUME, DUCK_UP_MS);
     });
     voice = player;
     loadedVoiceClip = clip;
@@ -214,7 +274,7 @@ async function ensurePlayers() {
 
   if (!calm || loadedMeditationId !== meditationId) {
     removePlayer(calm);
-    calm = createAudioPlayer(meditationSoundById(meditationId).url);
+    calm = createAudioPlayer(meditationSoundById(meditationId).url, SESSION_PLAYER_OPTIONS);
     calm.loop = true;
     calm.volume = BACKTRACK_VOLUME;
     loadedMeditationId = meditationId;
@@ -277,20 +337,24 @@ export async function playHarshAlarm() {
   if (AppState.currentState !== 'active') {
     return;
   }
-  modeReady = false; // re-assert doNotMix each session open
-  await ensureMode();
-  await ensurePlayers();
+  const wasOff = sessionIntent === 'off';
+  const gen = claimIntent('alarm');
+  // Silence the meditation layers right away (paused in place, so a resume picks up where it
+  // left off), before any await, so nothing overlaps the alarm.
   clearVoiceLead();
-  try {
-    voice?.pause();
-  } catch {
-    /* ignore */
-  }
-  try {
-    calm?.pause();
-  } catch {
-    /* ignore */
-  }
+  if (voice) cancelRamp(voice);
+  safePause(voice);
+  if (calm) cancelRamp(calm);
+  safePause(calm);
+  if (wasOff) modeReady = false; // re-assert doNotMix each session open
+  await ensureMode();
+  if (isStale(gen)) return;
+  await ensurePlayers();
+  if (isStale(gen)) return;
+  // Players may have been (re)built during the awaits.
+  clearVoiceLead();
+  safePause(voice);
+  safePause(calm);
   try {
     harsh!.volume = 1;
     harsh!.play();
@@ -298,6 +362,7 @@ export async function playHarshAlarm() {
     console.warn('[quiett audio] alarm retry', e);
     try {
       const alarmId = await loadAlarmSoundId();
+      if (isStale(gen)) return;
       rebuildHarsh(alarmId);
       harsh!.volume = 1;
       harsh!.play();
@@ -308,15 +373,16 @@ export async function playHarshAlarm() {
 }
 
 /** Voice starts after a short lead-in (first time) or resumes; the backtrack ducks under it. */
-function startOrResumeVoice() {
+function startOrResumeVoice(gen: number) {
   const player = voice;
   if (!player || voiceState === 'done') return;
   const begin = () => {
     voiceLeadTimer = null;
-    if (voice !== player || AppState.currentState !== 'active') return;
+    if (voice !== player || isStale(gen) || AppState.currentState !== 'active') return;
     voiceState = 'playing';
     if (calm) rampVolume(calm, BACKTRACK_DUCKED, DUCK_DOWN_MS);
     try {
+      player.volume = VOICE_VOLUME;
       player.play();
     } catch (e) {
       console.warn('[quiett audio] voice play', e);
@@ -329,38 +395,65 @@ function startOrResumeVoice() {
   else voiceLeadTimer = setTimeout(begin, VOICE_LEAD_MS);
 }
 
+/**
+ * Alarm → meditation. First play of the session picks a start offset and fades in; after a
+ * break the backtrack was paused in place, so it fades back in from where it left off. The
+ * voice (if it was mid-clip) resumes and the backtrack re-ducks under it. Safe to call
+ * repeatedly (each break → settle cycle), and a newer alarm call cancels it mid-flight.
+ */
 export async function crossfadeToMeditation() {
   stopPreview();
   if (AppState.currentState !== 'active') {
     return;
   }
+  const gen = claimIntent('meditation');
   await ensureMode();
+  if (isStale(gen)) return;
   await ensurePlayers();
-  try {
-    harsh?.pause();
-  } catch {
-    /* ignore */
-  }
-  const player = calm!;
+  if (isStale(gen)) return;
+  safePause(harsh);
+  const player = calm;
+  if (!player) return;
   const firstPlay = !calmStarted;
   if (firstPlay) {
     calmStarted = true;
     await seekToSessionStart(player, loadedMeditationId ?? '');
     if (calm !== player) return; // rebuilt while seeking
-    setVolumeNow(player, 0);
+    if (isStale(gen)) return; // broke again while seeking; the next settle resumes from here
   }
+  setVolumeNow(player, 0);
   try {
     player.play();
   } catch (e) {
     console.warn('[quiett audio] calm', e);
   }
-  // Short fade-in on the first play only; resumes come straight back at full level.
-  if (firstPlay) rampVolume(player, BACKTRACK_VOLUME, FIRST_PLAY_FADE_MS);
-  startOrResumeVoice();
+  rampVolume(player, backtrackTarget(), firstPlay ? FIRST_PLAY_FADE_MS : RESUME_FADE_MS);
+  startOrResumeVoice(gen);
+  // Belt and braces: if iOS dropped the resume (session hiccup / interruption), kick it again.
+  watchdogTimer = setTimeout(() => {
+    watchdogTimer = null;
+    if (isStale(gen) || AppState.currentState !== 'active') return;
+    safePause(harsh);
+    if (calm === player && !isPlaying(player)) {
+      try {
+        player.play();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (voice && voiceState === 'playing' && !voiceLeadTimer && !isPlaying(voice)) {
+      try {
+        voice.play();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, RESUME_WATCHDOG_MS);
 }
 
 export async function stopAllAudio() {
   stopPreview();
+  claimIntent('off');
   clearVoiceLead();
   try {
     harsh?.pause();
@@ -388,6 +481,7 @@ export async function stopAllAudio() {
  */
 export function handoffBacktrackToSuccess() {
   stopPreview();
+  claimIntent('off');
   try {
     harsh?.pause();
   } catch {
@@ -429,16 +523,30 @@ export function fadeOutBacktrack(ms = 1800) {
   rampVolume(player, 0, ms, () => {
     if (tail === player) tail = null;
     removePlayer(player);
+    releaseSessionIfIdle();
   });
 }
 
 /** Stop the /success backtrack immediately (app backgrounded — JS timers may not run). */
 export function stopBacktrack() {
   stopTail();
+  releaseSessionIfIdle();
+}
+
+/**
+ * Session players keep the AVAudioSession active across pauses, so hand it back once nothing
+ * of ours is left (lets other apps' audio resume).
+ */
+function releaseSessionIfIdle() {
+  if (sessionIntent !== 'off' || tail || harsh || calm || voice || previewPlayer) return;
+  void setIsAudioActiveAsync(false).catch(() => {
+    /* ignore */
+  });
 }
 
 export function releaseAudio() {
   stopPreview();
+  claimIntent('off');
   removePlayer(harsh);
   removePlayer(calm);
   releaseVoice();
@@ -448,6 +556,7 @@ export function releaseAudio() {
   loadedMeditationId = null;
   calmStarted = false;
   modeReady = false;
+  releaseSessionIfIdle();
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,9 @@ import {
   saveBailTimerIds,
   saveNativeAlarmId,
   loadAlarmSoundId,
+  loadAlarmPrefs,
+  loadScheduledAlarmSound,
+  saveScheduledAlarmSound,
   type AlarmPrefs,
 } from '@/lib/storage';
 import {
@@ -31,6 +34,34 @@ import {
 } from '@/lib/harsh-alarm-asset';
 
 const ALARM_TITLE = 'Quiett · time to settle in';
+
+/**
+ * iOS sound options for an AlarmKit alarm.
+ *
+ * Bundled tones (iosAlarmSounds plugin) are referenced by their own file name — unique per tone.
+ * We used to also pass `soundUri`, which makes the scheduler copy the file to
+ * Library/Sounds/alarm-scheduler-<alarmId>.caf: the SAME name for every tone on a given alarm
+ * id. iOS caches alert sounds by name, so after switching tones the daily alarm and its bail
+ * backups kept ringing the previously chosen tone. `soundUri` is now only a fallback for a tone
+ * without a bundled file (Android keeps getting the resolved URI, as before). System default →
+ * neither (AlarmKit default sound).
+ */
+async function iosAlarmSoundFor(alarmSoundId: string): Promise<{ soundName?: string; soundUri?: string }> {
+  const soundName = alarmKitSoundName(alarmSoundId);
+  if (soundName && Platform.OS === 'ios') return { soundName };
+  try {
+    const soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
+    return soundUri ? { soundUri } : {};
+  } catch (e) {
+    console.warn('[quiett os-alarm] alarm asset', e);
+    return {};
+  }
+}
+
+/** Stored with each schedule; a mismatch with the current selection means the alarm is stale. */
+function soundKey(alarmSoundId: string): string {
+  return `v2:${alarmSoundId}`;
+}
 
 /** True after session silenced the OS ring; cleared on sit success / emergency. */
 let osRingHandedToSession = false;
@@ -158,25 +189,20 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     }
 
     const { hour, minute } = parseHhMm(prefs.time);
+    // Always read the live selection (never a cached pref) right before scheduling.
     const alarmSoundId = await loadAlarmSoundId();
-    let soundUri: string | undefined;
-    try {
-      soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
-    } catch (e) {
-      console.warn('[quiett os-alarm] alarm asset', e);
-    }
-    const soundName = alarmKitSoundName(alarmSoundId);
+    const iosSound = await iosAlarmSoundFor(alarmSoundId);
     const scheduled = await AlarmScheduler.scheduleAlarmAsync({
       id,
       hour,
       minute,
       title: ALARM_TITLE,
       weekdays: prefs.weekdays as AlarmWeekday[],
-      soundUri,
+      soundUri: iosSound.soundUri,
       ios: {
         ...iosGate,
-        ...(soundName ? { soundName } : {}),
-        soundUri,
+        ...(iosSound.soundName ? { soundName: iosSound.soundName } : {}),
+        soundUri: iosSound.soundUri,
       },
       android: {
         ...androidGate,
@@ -185,6 +211,7 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     });
 
     await saveNativeAlarmId(scheduled.id);
+    await saveScheduledAlarmSound('daily', soundKey(alarmSoundId));
     return { ok: true, scheduled: true, id: scheduled.id };
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Could not schedule the OS alarm.';
@@ -549,8 +576,14 @@ async function cancelBailTimerWaves(preservePrimaryId?: string | null): Promise<
  */
 export async function prepareBailSoundCarriers(): Promise<void> {
   if (Platform.OS === 'web') return;
+  const alarmSoundId = await loadAlarmSoundId();
+  const key = soundKey(alarmSoundId);
+  // The daily alarm's timer backup is the first bail ring (it reuses the sound stored with that
+  // alarm), so make sure it carries the current tone before anything can bail.
+  await refreshDailyAlarmSoundIfStale(key);
   const existing = await loadBailCarrierIds();
-  if (existing.length >= 2) {
+  // Carriers keep the sound they were created with — reuse them only if it's still the selection.
+  if (existing.length >= 2 && (await loadScheduledAlarmSound('carrier')) === key) {
     for (const id of existing) {
       try {
         await AlarmScheduler.completeNativeAlarmAsync(id);
@@ -563,15 +596,8 @@ export async function prepareBailSoundCarriers(): Promise<void> {
 
   await disposeBailSoundCarriers();
 
-  const alarmSoundId = await loadAlarmSoundId();
-  let soundUri: string | undefined;
-  try {
-    clearAlarmSoundUriCache();
-    soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
-  } catch (e) {
-    console.warn('[quiett os-alarm] carrier sound', e);
-  }
-  const soundName = alarmKitSoundName(alarmSoundId);
+  clearAlarmSoundUriCache();
+  const iosSound = await iosAlarmSoundFor(alarmSoundId);
 
   const ids: string[] = [];
   for (let i = 0; i < 2; i++) {
@@ -584,11 +610,11 @@ export async function prepareBailSoundCarriers(): Promise<void> {
         minute: when.getMinutes(),
         weekdays: [],
         title: ALARM_TITLE,
-        soundUri,
+        soundUri: iosSound.soundUri,
         ios: {
           ...bailIosGate,
-          ...(soundName ? { soundName } : {}),
-          soundUri,
+          ...(iosSound.soundName ? { soundName: iosSound.soundName } : {}),
+          soundUri: iosSound.soundUri,
         },
         android: {
           ...androidGate,
@@ -608,7 +634,33 @@ export async function prepareBailSoundCarriers(): Promise<void> {
       console.warn('[quiett os-alarm] carrier schedule', e);
     }
   }
-  if (ids.length) await saveBailCarrierIds(ids);
+  if (ids.length) {
+    await saveBailCarrierIds(ids);
+    await saveScheduledAlarmSound('carrier', key);
+  }
+}
+
+/** Reschedule the daily alarm if it was scheduled with a different (or pre-fix) sound. */
+async function refreshDailyAlarmSoundIfStale(key: string): Promise<void> {
+  try {
+    if ((await loadScheduledAlarmSound('daily')) === key) return;
+    const prefs = await loadAlarmPrefs();
+    if (!prefs.enabled) return;
+    const res = await syncOsAlarm(prefs);
+    if (!res.ok) console.warn('[quiett os-alarm] refresh daily sound', res.message);
+  } catch (e) {
+    console.warn('[quiett os-alarm] refresh daily sound', e);
+  }
+}
+
+/**
+ * The alarm sound changed: reschedule the daily alarm (and so its backups) with the new tone and
+ * drop the bail carriers so the next session recreates them with it.
+ */
+export async function applyAlarmSoundChange(prefs: AlarmPrefs): Promise<SyncOsAlarmResult | undefined> {
+  if (Platform.OS === 'web') return undefined;
+  await disposeBailSoundCarriers();
+  return syncOsAlarm(prefs);
 }
 
 export async function disposeBailSoundCarriers(): Promise<void> {
@@ -626,6 +678,7 @@ export async function disposeBailSoundCarriers(): Promise<void> {
     }
   }
   if (ids.length) await clearBailCarrierIds();
+  await saveScheduledAlarmSound('carrier', null);
 }
 
 async function cancelStoredBailOneShot(): Promise<void> {

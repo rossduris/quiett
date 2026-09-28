@@ -24,6 +24,10 @@ const KEYS = {
   completedDays: 'quiett.completedDays',
   account: 'quiett.account',
   nativeAlarmId: 'quiett.nativeAlarmId',
+  /** Sound key the daily AlarmKit alarm was last scheduled with (stale-sound check). */
+  nativeAlarmSound: 'quiett.nativeAlarmSound',
+  /** Sound key the bail carrier alarms were created with. */
+  bailCarrierSound: 'quiett.bailCarrierSound',
   wakeResolvedDate: 'quiett.wakeResolvedDate',
   pendingSitWake: 'quiett.pendingSitWake',
   bailAlarmId: 'quiett.bailAlarmId',
@@ -308,6 +312,17 @@ export async function loadNativeAlarmId(): Promise<string | null> {
 export async function saveNativeAlarmId(id: string | null): Promise<void> {
   if (id) await AsyncStorage.setItem(KEYS.nativeAlarmId, id);
   else await AsyncStorage.removeItem(KEYS.nativeAlarmId);
+}
+
+/** Which alarm sound a scheduled AlarmKit alarm carries ('daily' primary / 'carrier' bail ids). */
+export async function loadScheduledAlarmSound(which: 'daily' | 'carrier'): Promise<string | null> {
+  return AsyncStorage.getItem(which === 'daily' ? KEYS.nativeAlarmSound : KEYS.bailCarrierSound);
+}
+
+export async function saveScheduledAlarmSound(which: 'daily' | 'carrier', key: string | null): Promise<void> {
+  const k = which === 'daily' ? KEYS.nativeAlarmSound : KEYS.bailCarrierSound;
+  if (key) await AsyncStorage.setItem(k, key);
+  else await AsyncStorage.removeItem(k);
 }
 
 function parseWeekdays(raw: string | null): Weekday[] {

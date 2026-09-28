@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import type { ColorTokens } from '@/constants/themes';
 import { POSE_DETECTOR_LABELS } from '@/lib/pose-dev-pref';
+import { formatArmMotion } from '@/lib/pose/arm-motion';
 import type { PoseCheck, PoseDiagnostics, PoseJoint } from '@/lib/pose/types';
 import { useThemeColors } from '@/lib/theme-provider';
 
@@ -173,6 +174,11 @@ export function PoseDebugReadout({ diagnostics, fps }: ReadoutProps) {
           </Text>
         </View>
       ))}
+      {d.armMotion ? (
+        <Text style={styles.sub} numberOfLines={1}>
+          {formatArmMotion(d.armMotion)}
+        </Text>
+      ) : null}
       <Text style={styles.joints} numberOfLines={2}>
         joints ({d.jointsDetected.length}): {d.jointsDetected.join(', ') || 'none'}
       </Text>

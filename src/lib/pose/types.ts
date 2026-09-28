@@ -5,6 +5,7 @@
  * - too_dark:     insufficient lighting (softer than original gate)
  * - fidgeting:    face present but moving too much
  * - hands_near:   hand overlapping / near the face
+ * - arms_moving:  body modes — wrists / elbows moving too much relative to the shoulders
  * - holding:      propped + bright enough + face looking + both eyes + mouth + no hands near + still
  */
 
@@ -14,6 +15,8 @@ export type PoseStatus =
   | 'too_dark'
   | 'fidgeting'
   | 'hands_near'
+  /** Body modes: wrists / elbows moving relative to the shoulders (arm-motion tracker). */
+  | 'arms_moving'
   /** Body modes: shoulders / head / torso alignment off. */
   | 'posture'
   | 'holding';
@@ -33,6 +36,19 @@ export type PoseCheck = {
   note?: string;
 };
 
+/** Arm-stillness tracker readout (body modes; dev debug panel). */
+export type ArmMotionDiagnostics = {
+  /** 3d = metric joints from native body3d; 2d = Vision image joints. */
+  source: '3d' | '2d' | 'none';
+  /** Worst joint travel (×shoulder width, jitter floor removed). */
+  value?: number;
+  /** Per joint travel: LW / RW / LE / RE. */
+  perJoint: Record<string, number>;
+  samples: number;
+  failing: boolean;
+  limit: number;
+};
+
 /** Common per-frame detector result — same shape for legacy / body2d / body3d. */
 export type PoseDiagnostics = {
   /** Requested mode. */
@@ -48,6 +64,8 @@ export type PoseDiagnostics = {
   rawStatus: PoseStatus;
   phonePropped: boolean;
   checks: PoseCheck[];
+  /** Body modes: arm-stillness values. */
+  armMotion?: ArmMotionDiagnostics;
   jointsDetected: string[];
   /** Normalized joints (Vision coords, origin bottom-left) for the debug overlay. */
   joints: Record<string, PoseJoint>;
@@ -115,6 +133,8 @@ export type PoseLandmarks = {
     jointsDetected: string[];
     jointCount: number;
     processingMs?: number;
+    /** Mode-specific native values (e.g. `arm3D`: root-relative arm joints in metres). */
+    extra?: Record<string, unknown>;
   };
   processingMs?: number;
   imageWidth?: number;

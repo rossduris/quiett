@@ -6,7 +6,7 @@ import { DEFAULT_UNLOCK_TRACK_ID, pickSurpriseTrack, type UnlockTrack } from '@/
 import { showGuided } from '@/lib/dev-flags';
 import { isUnlockedForToday } from '@/lib/home-status';
 import { syncEveningReminder } from '@/lib/notifications';
-import { openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
+import { applyAlarmSoundChange, openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 import { stopPreview } from '@/lib/audio';
 import { usePremium } from '@/lib/premium-provider';
 import {
@@ -221,7 +221,9 @@ export function useHomeState() {
     setAlarmSoundId(id);
     await saveAlarmSoundId(id);
     lastSynced.current = syncKey(alarm, id);
-    void syncOsAlarm(alarm);
+    // New tone → reschedule the daily AlarmKit alarm (its bail backups reuse its sound) and
+    // drop the bail carriers so they're rebuilt with it.
+    void applyAlarmSoundChange(alarm);
   };
 
   const toggleSurprise = async () => {

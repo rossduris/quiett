@@ -25,8 +25,10 @@ import {
   LEAVE_HOLDING_FRAMES,
   MIN_JOINT_CONFIDENCE,
   STILLNESS_MAX_MOTION,
+  ARM_MOTION_MAX,
 } from './thresholds';
 import { createProppedMonitor } from './device-propped';
+import { createArmMotionTracker } from './arm-motion';
 import type {
   PoseCheck,
   PoseDetector,
@@ -83,6 +85,7 @@ const CHECK_WEIGHTS: Record<string, number> = {
   handsLow: 1.5,
   handsAway: 1.5,
   stillness: 1.5,
+  armStillness: 1.5,
 };
 
 function softScore(c: PoseCheck): number {
@@ -166,6 +169,7 @@ export function createOnDevicePoseDetector(
   let lastBrightEnough = true;
   let lastConf = 0;
   const proppedMonitor = createProppedMonitor();
+  const armTracker = createArmMotionTracker();
   const hysteresis = createHoldingHysteresis(
     ENTER_HOLDING_FRAMES,
     LEAVE_HOLDING_FRAMES,
@@ -229,6 +233,29 @@ export function createOnDevicePoseDetector(
     const checks: PoseCheck[] = order
       .map((k) => det.checks?.[k])
       .filter((c): c is PoseCheck => !!c);
+    // Arm stillness (JS): wrists / elbows vs shoulders over a short window.
+    if (!phonePropped || !det.personFound) armTracker.reset();
+    const arm = phonePropped && det.personFound ? armTracker.push(landmarks) : undefined;
+    const armMotion = arm
+      ? {
+          source: arm.source,
+          value: arm.value,
+          perJoint: arm.perJoint,
+          samples: arm.samples,
+          failing: arm.failing,
+          limit: arm.limit,
+        }
+      : undefined;
+    checks.push({
+      name: 'armStillness',
+      value: arm?.value,
+      limit: ARM_MOTION_MAX,
+      pass: !arm?.failing,
+      available: !!arm?.available,
+      unit: '×sw',
+      kind: 'max',
+      note: arm?.available ? undefined : arm && arm.source !== 'none' ? 'warming up' : 'no arms',
+    });
     const byName = (n: string) => checks.find((c) => c.name === n);
     const fails = (n: string) => {
       const c = byName(n);
@@ -241,6 +268,7 @@ export function createOnDevicePoseDetector(
     else if (fails('handsLow')) raw = 'hands_near';
     else if (fails('shoulderLevel') || fails('headCentered') || fails('torsoUpright'))
       raw = 'posture';
+    else if (fails('armStillness')) raw = 'arms_moving';
     else if (fails('stillness')) raw = 'fidgeting';
     else raw = 'holding';
 
@@ -252,6 +280,7 @@ export function createOnDevicePoseDetector(
       score: phonePropped ? Math.round(det.score) : Math.min(Math.round(det.score), 20),
       rawStatus: raw,
       checks,
+      armMotion,
       jointsDetected: det.jointsDetected ?? [],
       processingMs: det.processingMs ?? landmarks.processingMs,
     };
@@ -271,6 +300,7 @@ export function createOnDevicePoseDetector(
       processBody(landmarks, landmarks.detector, phonePropped);
       return;
     }
+    armTracker.reset();
 
     if (!phonePropped) {
       motion = [];
@@ -488,6 +518,7 @@ export function createOnDevicePoseDetector(
       stopped = false;
       hysteresis.reset();
       motion = [];
+      armTracker.reset();
       lastDiagnostics = undefined;
       proppedMonitor.start();
       unsubPropped = proppedMonitor.subscribe(() => onProppedChange());
@@ -522,6 +553,7 @@ export function createOnDevicePoseDetector(
       }
       proppedMonitor.stop();
       motion = [];
+      armTracker.reset();
       hysteresis.reset();
     },
     simulate(status: PoseStatus) {
@@ -531,6 +563,7 @@ export function createOnDevicePoseDetector(
     clearSimulate() {
       simulated = null;
       motion = [];
+      armTracker.reset();
       hysteresis.reset();
     },
     subscribe(listener: PoseDetectorListener) {
