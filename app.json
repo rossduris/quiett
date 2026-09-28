@@ -4,7 +4,7 @@
     "slug": "quiett",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-s7f/icon-1024.png",
     "scheme": "quiett",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -21,9 +21,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F6E4D8",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/icon-s7f/android-adaptive-foreground-1024.png",
+        "backgroundImage": "./assets/images/icon-s7f/android-adaptive-background-1024.png",
+        "monochromeImage": "./assets/images/icon-s7f/android-monochrome-1024.png"
       },
       "permissions": [
         "CAMERA",
@@ -38,7 +38,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/icon-s7f/favicon-32.png"
     },
     "plugins": [
       "expo-router",
@@ -46,7 +46,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#F6E4D8",
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icon-s7f/splash-icon-1024.png",
           "imageWidth": 200
         }
       ],
