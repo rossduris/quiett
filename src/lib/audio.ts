@@ -570,6 +570,8 @@ const PREVIEW_CAP_MS: Record<PreviewKind, number> = { alarm: 6_000, track: 20_00
 const PREVIEW_FADE_MS = 900;
 const PREVIEW_FADE_STEPS = 12;
 const PREVIEW_VOLUME = 0.85;
+/** Selection change while previewing: old preview fades out as the new one fades in. */
+const PREVIEW_XFADE_MS = 450;
 
 let previewPlayer: AudioPlayer | null = null;
 let previewSub: { remove: () => void } | null = null;
@@ -579,6 +581,52 @@ let previewFadeTimer: ReturnType<typeof setInterval> | null = null;
 let previewToken = 0;
 let previewPlayingId: string | null = null;
 const previewListeners = new Set<() => void>();
+/** Previews fading out during a crossfade (still owned here so a stop kills them too). */
+const previewOutgoing = new Set<AudioPlayer>();
+
+function disposePreviewPlayer(player: AudioPlayer) {
+  cancelRamp(player);
+  try {
+    player.pause();
+  } catch {
+    /* ignore */
+  }
+  try {
+    player.remove();
+  } catch {
+    /* ignore */
+  }
+}
+
+function killOutgoingPreviews() {
+  previewOutgoing.forEach(disposePreviewPlayer);
+  previewOutgoing.clear();
+}
+
+/**
+ * Hand the current preview over for a crossfade: its timers/listener go (so it can't end the
+ * new preview), and it fades to silence on its own, then is removed.
+ */
+function detachPreviewForCrossfade() {
+  previewToken += 1;
+  if (previewCapTimer) clearTimeout(previewCapTimer);
+  if (previewFadeTimer) clearInterval(previewFadeTimer);
+  previewCapTimer = null;
+  previewFadeTimer = null;
+  try {
+    previewSub?.remove();
+  } catch {
+    /* ignore */
+  }
+  previewSub = null;
+  const old = previewPlayer;
+  previewPlayer = null;
+  if (!old) return;
+  previewOutgoing.add(old);
+  rampVolume(old, 0, PREVIEW_XFADE_MS, () => {
+    if (previewOutgoing.delete(old)) disposePreviewPlayer(old);
+  });
+}
 
 function setPreviewPlayingId(id: string | null) {
   if (previewPlayingId === id) return;
@@ -601,23 +649,13 @@ function teardownPreview() {
   previewSub = null;
   const player = previewPlayer;
   previewPlayer = null;
-  if (player) {
-    try {
-      player.pause();
-    } catch {
-      /* ignore */
-    }
-    try {
-      player.remove();
-    } catch {
-      /* ignore */
-    }
-  }
+  if (player) disposePreviewPlayer(player);
+  killOutgoingPreviews();
 }
 
 /** Stop any preview immediately (sheet close, blur, background, session start). */
 export function stopPreview() {
-  if (!previewPlayer && previewPlayingId === null) return;
+  if (!previewPlayer && previewPlayingId === null && previewOutgoing.size === 0) return;
   teardownPreview();
   setPreviewPlayingId(null);
 }
@@ -648,8 +686,15 @@ function fadeOutPreview(token: number) {
  * Start a preview (stops whatever preview is playing). Plays up to the cap for its kind,
  * then fades out; shorter clips just end naturally.
  */
-export async function startPreview(id: string, url: string | number, kind: PreviewKind) {
-  teardownPreview();
+export async function startPreview(
+  id: string,
+  url: string | number,
+  kind: PreviewKind,
+  opts: { crossfade?: boolean } = {},
+) {
+  const crossfade = !!opts.crossfade && (previewPlayer != null || previewPlayingId != null);
+  if (crossfade) detachPreviewForCrossfade();
+  else teardownPreview();
   stopTail();
   const token = previewToken;
   setPreviewPlayingId(id);
@@ -666,7 +711,7 @@ export async function startPreview(id: string, url: string | number, kind: Previ
   previewPlayer = player;
   try {
     player.loop = false;
-    player.volume = PREVIEW_VOLUME;
+    player.volume = crossfade ? 0 : PREVIEW_VOLUME;
   } catch {
     /* ignore */
   }
@@ -681,6 +726,7 @@ export async function startPreview(id: string, url: string | number, kind: Previ
     stopPreview();
     return;
   }
+  if (crossfade) rampVolume(player, PREVIEW_VOLUME, PREVIEW_XFADE_MS);
   previewCapTimer = setTimeout(
     () => fadeOutPreview(token),
     PREVIEW_CAP_MS[kind] - PREVIEW_FADE_MS,
@@ -694,6 +740,20 @@ export function togglePreview(id: string, url: string | number, kind: PreviewKin
     return;
   }
   void startPreview(id, url, kind);
+}
+
+/**
+ * The user selected a different item. If a preview is playing, it follows the selection:
+ * crossfade to the new item (its halo / animated cover light up), or stop when the item
+ * can't be previewed (locked premium → pass `url` null). Nothing playing → stays silent.
+ */
+export function followPreviewSelection(id: string, url: string | number | null | undefined, kind: PreviewKind) {
+  if (previewPlayingId === null || previewPlayingId === id) return;
+  if (url == null) {
+    stopPreview();
+    return;
+  }
+  void startPreview(id, url, kind, { crossfade: true });
 }
 
 /** Stable preview ids so the same sound shows as playing everywhere (Home, sheets, Library). */
@@ -720,14 +780,23 @@ export function usePreviewPlayer() {
     (id: string, url: string | number, kind: PreviewKind) => togglePreview(id, url, kind),
     [],
   );
-  return { playingId, toggle, stop: stopPreview };
+  return { playingId, toggle, follow: followPreviewSelection, stop: stopPreview };
 }
 
-/** Sheets: stop the preview when `visible` flips to false, or on unmount while open. */
-export function useStopPreviewWhenHidden(visible: boolean) {
+/**
+ * Sheets: stop the preview when `visible` flips to false, or on unmount while open.
+ * `keepId`: a preview with this id survives the close (the sheet's selection handed the
+ * preview to the screen underneath, e.g. Home's meditation row).
+ */
+export function useStopPreviewWhenHidden(visible: boolean, keepId?: () => string | null) {
   const wasVisible = useRef(visible);
+  const keep = useRef(keepId);
+  keep.current = keepId;
   useEffect(() => {
-    if (wasVisible.current && !visible) stopPreview();
+    if (wasVisible.current && !visible) {
+      const k = keep.current?.();
+      if (!k || previewPlayingId !== k) stopPreview();
+    }
     wasVisible.current = visible;
   }, [visible]);
   useEffect(

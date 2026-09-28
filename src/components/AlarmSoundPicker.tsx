@@ -10,7 +10,7 @@ import {
   alarmSoundsBySection,
   type SoundOption,
 } from '@/constants/sounds';
-import { previewIds, startPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
+import { followPreviewSelection, previewIds, startPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 
 type Props = {
   visible: boolean;
@@ -28,9 +28,15 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
 
   /** Row tap selects and plays it (keeps playing if it already is). */
   const pick = async (opt: SoundOption) => {
-    await onSelect(opt.id);
     const id = previewIds.alarm(opt.id);
-    if (opt.url != null && playingId !== id) void startPreview(id, opt.url, 'alarm');
+    // Playing → crossfade to the new tone right away; otherwise tap-to-hear (this sheet's rows
+    // are the preview control). System (no url) stops any preview.
+    if (playingId == null) {
+      if (opt.url != null) void startPreview(id, opt.url, 'alarm');
+    } else if (playingId !== id) {
+      followPreviewSelection(id, opt.url, 'alarm');
+    }
+    await onSelect(opt.id);
   };
 
   return (

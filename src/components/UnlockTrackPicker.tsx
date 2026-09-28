@@ -1,15 +1,16 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { TrackCover } from '@/components/TrackCover';
+import { PlayButton } from '@/components/PlayButton';
 import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById } from '@/constants/sounds';
-import { previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
+import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
 import { useShowGuided } from '@/lib/dev-flags';
@@ -48,7 +49,13 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { playingId, toggle } = usePreviewPlayer();
-  useStopPreviewWhenHidden(visible);
+  // Selecting a row while a preview plays hands the preview to the new track; it keeps playing
+  // after the sheet closes (Home's meditation row picks up the halo). Any other close stops it.
+  const handoff = useRef<string | null>(null);
+  useEffect(() => {
+    if (visible) handoff.current = null;
+  }, [visible]);
+  useStopPreviewWhenHidden(visible, () => handoff.current);
   const router = useRouter();
   const { isPremium } = usePremium();
   const coverStyle = useCoverStyle();
@@ -57,6 +64,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
 
   /** Locked premium row → close this sheet, then open the paywall (RN Modal sits above nav). */
   const openPaywall = () => {
+    stopPreview();
     onClose();
     setTimeout(() => router.push('/paywall'), 450);
   };
@@ -121,8 +129,16 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                         accessibilityState={{ selected }}
                         {...previewA11yActions(playing, disabled ? undefined : () => preview(track))}
                         onPress={() => {
-                          if (disabled) openPaywall();
-                          else onSelect(track);
+                          if (disabled) {
+                            openPaywall();
+                            return;
+                          }
+                          const id = previewIds.track(track.id);
+                          if (playingId != null) {
+                            followPreviewSelection(id, meditationSoundById(track.playbackSoundId).url, 'track');
+                            handoff.current = id;
+                          }
+                          onSelect(track);
                         }}
                         style={({ pressed }) => [
                           styles.row,
@@ -133,7 +149,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                       >
                         {coverStyle !== 'classic' ? (
                           <View style={[styles.art, styles.artScene]}>
-                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} />
+                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} animate={playing} />
                           </View>
                         ) : (
                           <View
@@ -180,22 +196,16 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                           </Text>
                         </View>
                         {!disabled ? (
-                          <Pressable
+                          <PlayButton
                             {...previewButtonA11yHidden}
-                            hitSlop={8}
+                            playing={playing}
                             onPress={() => preview(track)}
-                            style={({ pressed }) => [
-                              styles.previewBtn,
-                              playing && styles.previewBtnActive,
-                              pressed && styles.pressed,
-                            ]}
-                          >
-                            <Ionicons
-                              name={playing ? 'stop' : 'play'}
-                              size={14}
-                              color={playing ? colors.calm : colors.text}
-                            />
-                          </Pressable>
+                            colors={colors}
+                            size={34}
+                            iconSize={14}
+                            style={styles.previewBtn}
+                            activeStyle={styles.previewBtnActive}
+                          />
                         ) : null}
                       </Pressable>
                     );

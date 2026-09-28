@@ -43,7 +43,7 @@ import type { ColorTokens } from '@/constants/themes';
 import { MORNING_GOALS, SNOOZE_CHART_COPY, morningGoalById, type MorningGoalId } from '@/constants/onboarding';
 import { freeUnlockTracks, type UnlockTrack } from '@/constants/unlock-tracks';
 import { meditationSoundById } from '@/constants/sounds';
-import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
+import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   getNotificationPermissionStatus,
   requestNotificationPermissions,
@@ -295,7 +295,11 @@ export default function OnboardingScreen() {
   const selectSound = (track: UnlockTrack) => {
     setTrackId(track.id);
     const url = meditationSoundById(track.playbackSoundId).url;
-    if (url != null) togglePreview(previewIds.track(track.id), url, 'track');
+    const id = previewIds.track(track.id);
+    // Another sound playing → crossfade to this one. Otherwise the row is the play/stop control
+    // (this step has no separate play button): tap plays, tapping the playing row stops.
+    if (playingId != null && playingId !== id) followPreviewSelection(id, url, 'track');
+    else if (url != null) togglePreview(id, url, 'track');
   };
 
   const saveSoundAndContinue = async () => {

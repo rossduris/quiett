@@ -10,7 +10,7 @@ import {
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
 import { VOICE_OPTIONS } from '@/constants/voices';
-import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
+import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import { useShowGuided, useVoiceGuidesEnabled } from '@/lib/dev-flags';
 import { syncEveningReminder } from '@/lib/notifications';
 import { usePremium } from '@/lib/premium-provider';
@@ -49,6 +49,8 @@ export function useLibraryState() {
   const [surpriseMe, setSurpriseMe] = useState(false);
   const [surpriseOffTick, setSurpriseOffTick] = useState(0);
   const [voiceId, setVoiceId] = useState<string>(VOICE_OPTIONS[0]!.id);
+  /** First saved-selection load finished (Library shows a placeholder until then). */
+  const [ready, setReady] = useState(false);
   const { playingId, toggle: togglePreview } = usePreviewPlayer();
 
   useFocusEffect(
@@ -60,7 +62,10 @@ export function useLibraryState() {
         setSelectedId(id);
         setSurpriseMe(surprise);
         setVoiceId(voice);
-      })();
+        setReady(true);
+      })().catch(() => {
+        if (alive) setReady(true);
+      });
       return () => {
         alive = false;
         // Leaving the tab (or unmounting) ends any preview.
@@ -91,9 +96,11 @@ export function useLibraryState() {
     async (track: UnlockTrack) => {
       const { isPremium: premium, surpriseMe: surprise } = latest.current;
       if (track.locked && !premium) {
-        openPaywall();
+        openPaywall(); // also stops any preview
         return;
       }
+      // A playing preview follows the selection (crossfade); nothing playing → silent.
+      followPreviewSelection(previewIds.track(track.id), meditationSoundById(track.playbackSoundId).url, 'track');
       const saved = await saveUnlockTrackId(track.id, { premium });
       setSelectedId(saved);
       if (surprise) {
@@ -124,6 +131,12 @@ export function useLibraryState() {
       const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
       await saveSurpriseTrackDate();
       setSelectedId(id);
+      const track = unlockTrackById(id);
+      followPreviewSelection(
+        previewIds.track(track.id),
+        track.locked && !isPremium ? null : meditationSoundById(track.playbackSoundId).url,
+        'track',
+      );
     }
     setSurpriseMe(next);
     await saveSurpriseMe(next);
@@ -147,6 +160,7 @@ export function useLibraryState() {
   };
 
   return {
+    ready,
     isPremium,
     guidedOn,
     voiceOn,
