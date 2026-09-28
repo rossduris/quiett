@@ -1,431 +1,91 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useRouter, type Href } from 'expo-router';
+import { useMemo } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { radii, spacing } from '@/constants/theme';
+import { spacing } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
-import { describeUnavailableReason } from '@/lib/purchases';
-import { ThemePicker } from '@/components/ThemePicker';
+import { contactSupport } from '@/lib/support';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { COVER_STYLES, setCoverStyle, useCoverStyle } from '@/lib/scene-cover-pref';
-import { setDevFlag, useDevFlag } from '@/lib/dev-flags';
+import { ThemePicker } from '@/components/ThemePicker';
 import { SetupTips } from '@/components/SetupTips';
-import { isBody3DPoseAvailable } from 'quiett-pose';
-import {
-  POSE_DETECTOR_LABELS,
-  POSE_DETECTOR_MODES,
-  setPoseDebugOverlay,
-  setPoseDetectorMode,
-  usePoseDebugOverlay,
-  usePoseDetectorMode,
-} from '@/lib/pose-dev-pref';
-import {
-  DEFAULT_SIT_MINUTES,
-  loadSitMinutes,
-  saveSitMinutes,
-  SIT_MINUTE_OPTIONS,
-  type SitMinutes,
-  loadStreakDeadlinePrefs,
-  saveStreakDeadlinePrefs,
-  saveOnboardingComplete,
-  type StreakDeadlinePrefs,
-} from '@/lib/storage';
-import type { ColorTokens } from '@/constants/themes';
+import { SettingsCard } from '@/components/settings/SettingsCard';
+import { SettingsLinkRow } from '@/components/settings/SettingsLinkRow';
+import { StreakDeadlineCard } from '@/components/settings/StreakDeadlineCard';
+import { DevSettingsCard } from '@/components/settings/DevSettingsCard';
+import { LegalCard } from '@/components/settings/LegalCard';
+import { AppVersionFooter } from '@/components/settings/AppVersionFooter';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const premium = usePremium();
-  const devShowGuided = useDevFlag('showGuided');
-  const devVoiceGuides = useDevFlag('voiceGuides');
-  const devAccountUi = useDevFlag('accountUi');
-  const coverStyle = useCoverStyle();
-  const poseDetectorMode = usePoseDetectorMode();
-  const poseDebugOverlay = usePoseDebugOverlay();
-  const body3DAvailable = useMemo(() => isBody3DPoseAvailable(), []);
-  const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
-  const [deadlinePrefs, setDeadlinePrefs] = useState<StreakDeadlinePrefs>({
-    enabled: false,
-    minutes: 30,
-  });
-
-  useFocusEffect(
-    useCallback(() => {
-      let alive = true;
-      (async () => {
-        const [m, deadline] = await Promise.all([
-          loadSitMinutes(),
-          loadStreakDeadlinePrefs(),
-        ]);
-        if (!alive) return;
-        setSitMinutes(m);
-        setDeadlinePrefs(deadline);
-      })();
-      return () => {
-        alive = false;
-      };
-    }, []),
-  );
-
-  const onSelectSit = async (minutes: SitMinutes) => {
-    setSitMinutes(minutes);
-    await saveSitMinutes(minutes);
-  };
-
-  const onToggleDeadline = async () => {
-    const next = { ...deadlinePrefs, enabled: !deadlinePrefs.enabled };
-    setDeadlinePrefs(next);
-    await saveStreakDeadlinePrefs(next);
-  };
-
-  const onSelectDeadlineMinutes = async (minutes: number) => {
-    const next = { ...deadlinePrefs, minutes };
-    setDeadlinePrefs(next);
-    await saveStreakDeadlinePrefs(next);
-  };
+  const { isPremium } = usePremium();
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
+    <View style={styles.screen}>
       <ScreenHeader title="Settings" fallbackHref="/profile" />
       <ScrollView
         style={styles.screen}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + spacing.xl },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
+        <SettingsCard>
           <ThemePicker />
-        </View>
+        </SettingsCard>
 
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Preferences</Text>
-          <Pressable
+        <SettingsCard label="Preferences">
+          <SettingsLinkRow
+            icon="notifications-outline"
+            label="Notifications"
             onPress={() => router.push('/notifications')}
-            style={({ pressed }) => [
-              styles.linkRow,
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="notifications-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Notifications</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-          <Pressable
+          />
+          <SettingsLinkRow
+            icon="bulb-outline"
+            label="Wake-up intention"
             onPress={() => router.push('/wake-intention')}
-            style={({ pressed }) => [
-              styles.linkRow,
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="bulb-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Wake-up intention</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-        </View>
+          />
+        </SettingsCard>
 
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <View style={styles.cardTop}>
-            <Text style={[styles.cardLabel, { color: colors.textDim }]}>Streak deadline</Text>
-            <Pressable
-              onPress={() => void onToggleDeadline()}
-              style={styles.switchWrap}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: deadlinePrefs.enabled }}
-            >
-              <View style={[styles.miniSwitch, deadlinePrefs.enabled && styles.miniSwitchOn]}>
-                <View style={[styles.miniThumb, deadlinePrefs.enabled && styles.miniThumbOn]} />
-              </View>
-            </Pressable>
-          </View>
-          <Text style={[styles.hint, { color: colors.textMuted }]}>
-            Unlocks only count toward your streak if completed within a time limit after the alarm
-            rings. Late unlocks still open the day but are marked late.
-          </Text>
-          {deadlinePrefs.enabled && (
-            <View style={styles.row}>
-              {[10, 15, 30, 60].map((m) => {
-                const selected = m === deadlinePrefs.minutes;
-                return (
-                  <Pressable
-                    key={m}
-                    onPress={() => void onSelectDeadlineMinutes(m)}
-                    style={[
-                      styles.pill,
-                      { backgroundColor: colors.bgElevated, borderColor: colors.border },
-                      selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                  >
-                    <Text
-                      style={[
-                        styles.pillText,
-                        { color: selected ? colors.calm : colors.textMuted },
-                        selected && styles.pillTextSelected,
-                      ]}
-                    >
-                      {m}m
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
+        <StreakDeadlineCard />
 
-        {__DEV__ ? (
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Unlock length (dev only)</Text>
-          <Text style={[styles.hint, { color: colors.textMuted }]}>Release builds are locked to 2 minutes</Text>
-          <View style={styles.row}>
-            {SIT_MINUTE_OPTIONS.map((m) => {
-              const selected = m === sitMinutes;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => void onSelectSit(m)}
-                  style={[
-                    styles.pill,
-                    { backgroundColor: colors.bgElevated, borderColor: colors.border },
-                    selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>{m === 0.5 ? '30s' : `${m}m`}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Pressable
-            onPress={() => {
-              void (async () => {
-                await saveOnboardingComplete(false);
-                if (router.canDismiss()) router.dismissAll();
-                router.replace('/onboarding');
-              })();
-            }}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="refresh-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Replay onboarding (dev)</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-          <Pressable
-            onPress={() => void premium.setDevForcePremium(!premium.devForcePremium)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: premium.devForcePremium }}
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="sparkles-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Force premium (dev)</Text>
-            </View>
-            <View style={[styles.miniSwitch, premium.devForcePremium && styles.miniSwitchOn]}>
-              <View style={[styles.miniThumb, premium.devForcePremium && styles.miniThumbOn]} />
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={() => void setDevFlag('showGuided', !devShowGuided)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: devShowGuided }}
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="person-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Show guided shelf (dev)</Text>
-            </View>
-            <View style={[styles.miniSwitch, devShowGuided && styles.miniSwitchOn]}>
-              <View style={[styles.miniThumb, devShowGuided && styles.miniThumbOn]} />
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={() => void setDevFlag('voiceGuides', !devVoiceGuides)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: devVoiceGuides }}
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="mic-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Voice guides (dev)</Text>
-            </View>
-            <View style={[styles.miniSwitch, devVoiceGuides && styles.miniSwitchOn]}>
-              <View style={[styles.miniThumb, devVoiceGuides && styles.miniThumbOn]} />
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={() => void setDevFlag('accountUi', !devAccountUi)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: devAccountUi }}
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="person-circle-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Account row on Profile (dev)</Text>
-            </View>
-            <View style={[styles.miniSwitch, devAccountUi && styles.miniSwitchOn]}>
-              <View style={[styles.miniThumb, devAccountUi && styles.miniThumbOn]} />
-            </View>
-          </Pressable>
-          {devVoiceGuides ? (
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
-              Pick a voice in Library → Voice (dev). It plays over your sound during the meditation.
-            </Text>
-          ) : null}
-          <Text style={[styles.hint, { color: colors.textMuted }]}>Cover style (dev)</Text>
-          <View style={styles.row}>
-            {COVER_STYLES.map((cs) => {
-              const selected = cs === coverStyle;
-              return (
-                <Pressable
-                  key={cs}
-                  onPress={() => void setCoverStyle(cs)}
-                  style={[
-                    styles.pill,
-                    { backgroundColor: colors.bgElevated, borderColor: colors.border },
-                    selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>
-                    {cs === 'scenes' ? 'Scenes' : 'Classic'}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Pressable
-            onPress={() => router.push('/cover-gallery' as Href)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="grid-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Cover gallery (dev)</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-          <Text style={[styles.hint, { color: colors.textMuted }]}>Pose detector (dev)</Text>
-          <View style={styles.row}>
-            {POSE_DETECTOR_MODES.map((m) => {
-              const selected = m === poseDetectorMode;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => void setPoseDetectorMode(m)}
-                  style={[
-                    styles.pill,
-                    { backgroundColor: colors.bgElevated, borderColor: colors.border },
-                    selected && { backgroundColor: colors.calmSoft, borderColor: colors.calm },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.pillText, { color: selected ? colors.calm : colors.textMuted }, selected && styles.pillTextSelected]}>
-                    {POSE_DETECTOR_LABELS[m]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {poseDetectorMode === 'body3d' && !body3DAvailable ? (
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
-              3D body pose needs iOS 17 and a native rebuild — falls back to 2D body.
-            </Text>
-          ) : null}
-          <Pressable
-            onPress={() => void setPoseDebugOverlay(!poseDebugOverlay)}
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.75 }]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: poseDebugOverlay }}
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="body-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Pose debug overlay</Text>
-            </View>
-            <View style={[styles.miniSwitch, poseDebugOverlay && styles.miniSwitchOn]}>
-              <View style={[styles.miniThumb, poseDebugOverlay && styles.miniThumbOn]} />
-            </View>
-          </Pressable>
-          <Text style={[styles.hint, { color: colors.textMuted }]}>
-            RevenueCat:{' '}
-            {premium.available
-              ? premium.offerings
-                ? `ready · offering "${premium.offerings.identifier}" (${premium.offerings.availablePackages.length} packages)`
-                : 'ready · no current offering yet'
-              : premium.unavailableReason
-                ? describeUnavailableReason(premium.unavailableReason)
-                : 'unavailable'}
-          </Text>
-        </View>
-        ) : null}
+        <SettingsCard label="Subscription">
+          <SettingsLinkRow
+            icon={isPremium ? 'sunny' : 'sunny-outline'}
+            label="Quiett Premium"
+            value={isPremium ? 'Active' : 'Free'}
+            valueColor={isPremium ? colors.calm : undefined}
+            accessibilityLabel={
+              isPremium ? 'Quiett Premium, active. Manage subscription' : 'Quiett Premium, free plan'
+            }
+            onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
+          />
+        </SettingsCard>
 
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Help</Text>
-          <Pressable
-            onPress={() => router.push('/help')}
-            style={({ pressed }) => [
-              styles.linkRow,
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="help-circle-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Troubleshooting</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-          <Pressable
+        <SettingsCard label="Help">
+          <SettingsLinkRow icon="help-circle-outline" label="Troubleshooting" onPress={() => router.push('/help')} />
+          <SettingsLinkRow
+            icon="checkmark-circle-outline"
+            label="Alarm reliability check"
             onPress={() => router.push('/reliability-check')}
-            style={({ pressed }) => [
-              styles.linkRow,
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="checkmark-circle-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Alarm reliability check</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
+          />
           <SetupTips />
-        </View>
+          <SettingsLinkRow
+            icon="mail-outline"
+            label="Contact support"
+            kind="link"
+            accessibilityHint="Opens an email with your app version filled in"
+            onPress={() => void contactSupport()}
+          />
+        </SettingsCard>
 
-        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textDim }]}>Account</Text>
-          <Pressable
-            onPress={() => router.push('/manage-subscription')}
-            style={({ pressed }) => [
-              styles.linkRow,
-              pressed && { opacity: 0.75 },
-            ]}
-            accessibilityRole="button"
-          >
-            <View style={styles.linkLeft}>
-              <Ionicons name="pricetag-outline" size={20} color={colors.text} />
-              <Text style={[styles.linkText, { color: colors.text }]}>Manage subscription</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textDim} />
-          </Pressable>
-        </View>
+        <LegalCard />
+
+        {__DEV__ ? <DevSettingsCard /> : null}
+
+        <AppVersionFooter />
       </ScrollView>
     </View>
   );
@@ -433,72 +93,7 @@ export default function SettingsScreen() {
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-    screen: { flex: 1 },
+    screen: { flex: 1, backgroundColor: colors.bg },
     content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.lg },
-    card: {
-      borderRadius: 16,
-      padding: spacing.lg,
-      borderWidth: 1,
-      gap: spacing.sm,
-    },
-    cardLabel: {
-      fontSize: 12,
-      fontWeight: '700',
-      letterSpacing: 0.8,
-      textTransform: 'uppercase',
-    },
-    cardTop: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    hint: { fontSize: 13, marginBottom: spacing.xs },
-    row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    pill: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 999,
-      borderWidth: 1,
-    },
-    pillText: { fontWeight: '600' },
-    pillTextSelected: {},
-    linkRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      borderRadius: radii.md,
-      backgroundColor: colors.bgElevated,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    linkLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      flex: 1,
-    },
-    linkText: {
-      fontSize: 15,
-      fontWeight: '500',
-    },
-    switchWrap: { paddingVertical: 4, paddingHorizontal: 4 },
-    miniSwitch: {
-      width: 42,
-      height: 26,
-      borderRadius: 13,
-      backgroundColor: colors.border,
-      justifyContent: 'center',
-      paddingHorizontal: 2,
-    },
-    miniSwitchOn: { backgroundColor: colors.calm },
-    miniThumb: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: colors.bg,
-    },
-    miniThumbOn: { alignSelf: 'flex-end' },
   });
 }

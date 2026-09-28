@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -17,7 +17,9 @@ import {
   requestNotificationPermissions,
   scheduleEveningReminder,
   cancelEveningReminder,
+  previewEveningReminder,
 } from '@/lib/notifications';
+import { deviceUses24h } from '@/lib/time-format';
 import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
@@ -42,14 +44,16 @@ export default function NotificationsScreen() {
 
   const [prefs, setPrefs] = useState<EveningReminderPrefs>({ enabled: false, time: '20:00' });
   const [showPicker, setShowPicker] = useState(false);
+  const [example, setExample] = useState<{ time: string; track: string } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
-        const loaded = await loadEveningReminderPrefs();
+        const [loaded, preview] = await Promise.all([loadEveningReminderPrefs(), previewEveningReminder()]);
         if (!alive) return;
         setPrefs(loaded);
+        setExample(preview);
       })();
       return () => {
         alive = false;
@@ -64,9 +68,12 @@ export default function NotificationsScreen() {
       const granted = await requestNotificationPermissions();
       if (!granted) {
         Alert.alert(
-          'Notification Permission Required',
-          'Please enable notifications for Quiett in Settings to receive evening reminders.',
-          [{ text: 'OK' }],
+          'Notifications are off',
+          'Turn on notifications for Quiett in iPhone Settings to get evening reminders.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+          ],
         );
         return;
       }
@@ -147,9 +154,9 @@ export default function NotificationsScreen() {
                   <DateTimePicker
                     value={parseTime(prefs.time)}
                     mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'spinner'}
-                    locale="en_US"
-                    is24Hour={false}
+                    display="spinner"
+                    // iOS follows the device 12/24-hour setting natively; Android is told explicitly.
+                    {...(Platform.OS === 'android' ? { is24Hour: deviceUses24h() } : null)}
                     minuteInterval={1}
                     onValueChange={onTimeChange}
                     onDismiss={() => setShowPicker(false)}
@@ -180,9 +187,9 @@ export default function NotificationsScreen() {
                   </View>
                   <Text style={styles.exampleTitle}>
                     Tomorrow's wake-up is set for{' '}
-                    <Text style={styles.exampleBold}>7:00 AM</Text>
+                    <Text style={styles.exampleBold}>{example?.time ?? '…'}</Text>
                   </Text>
-                  <Text style={styles.exampleBody}>Morning Light · Meditation 2m</Text>
+                  <Text style={styles.exampleBody}>{example?.track ?? ''}</Text>
                 </View>
               </View>
             </>

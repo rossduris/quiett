@@ -7,6 +7,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { contactSupport } from '@/lib/support';
 import type { ColorTokens } from '@/constants/themes';
 
 type HelpSection = {
@@ -33,9 +34,7 @@ const HELP_SECTIONS: HelpSection[] = [
     title: 'Camera or lighting trouble?',
     tips: [
       'Make sure you\'ve allowed Quiett camera access in iPhone Settings > Quiett.',
-      'Prop your phone upright (not flat) so the camera can see your face. Holding it in bed won\'t work.',
-      'Face the camera directly - profile or looking away won\'t count (same idea as Face ID).',
-      'Bedroom light is fine. Avoid pointing a bright lamp straight into the lens.',
+      'For propping the phone, facing the camera and lighting, see Camera setup tips in Settings \u2192 Help.',
       'Go to Settings > Face ID & Passcode and turn off "Attention Aware Features" so iOS won\'t lower alarm volume when you look at the camera.',
     ],
   },
@@ -68,8 +67,8 @@ export default function HelpScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {HELP_SECTIONS.map((section, index) => (
-          <View key={index} style={styles.section}>
+        {HELP_SECTIONS.map((section) => (
+          <View key={section.title} style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionIconWrap}>
                 <Ionicons name={section.icon} size={24} color={colors.calm} />
@@ -103,6 +102,11 @@ export default function HelpScreen() {
             label="Open iPhone Settings"
             variant="secondary"
             onPress={onOpenSettings}
+          />
+          <PrimaryButton
+            label="Contact support"
+            variant="secondary"
+            onPress={() => void contactSupport()}
           />
         </View>
       </ScrollView>

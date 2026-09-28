@@ -1,7 +1,9 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/theme-provider';
-import { THEMES, type ThemeId } from '@/constants/themes';
-import { spacing } from '@/constants/theme';
+import { THEMES, type ColorTokens, type ThemeId } from '@/constants/themes';
+import { radii, spacing, typography } from '@/constants/theme';
 
 type Props = {
   label?: string;
@@ -9,46 +11,32 @@ type Props = {
 
 export function ThemePicker({ label = 'Appearance' }: Props) {
   const { themeId, setTheme, colors } = useTheme();
-
-  const handlePress = async (id: ThemeId) => {
-    await setTheme(id);
-  };
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <View style={styles.options}>
+      <Text style={styles.label} accessibilityRole="header">
+        {label}
+      </Text>
+      <View style={styles.options} accessibilityRole="radiogroup">
         {Object.values(THEMES).map((theme) => {
           const isActive = theme.id === themeId;
           return (
-            <TouchableOpacity
+            <Pressable
               key={theme.id}
-              style={[
-                styles.option,
-                {
-                  backgroundColor: isActive ? colors.calmSoft : colors.bgCard,
-                  borderColor: isActive ? colors.calm : colors.border,
-                },
-              ]}
-              onPress={() => handlePress(theme.id)}
-              activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: isActive }}
+              accessibilityLabel={theme.name}
+              onPress={() => void setTheme(theme.id as ThemeId)}
+              style={({ pressed }) => [styles.option, isActive && styles.optionActive, pressed && styles.pressed]}
             >
-              <View style={styles.optionContent}>
-                <Text
-                  style={[
-                    styles.optionLabel,
-                    { color: isActive ? colors.text : colors.textMuted },
-                  ]}
-                >
-                  {theme.name}
-                </Text>
-                {isActive && (
-                  <View style={[styles.check, { backgroundColor: colors.calm }]}>
-                    <Text style={styles.checkmark}>✓</Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
+              <Text style={[styles.optionLabel, isActive && styles.optionLabelActive]}>{theme.name}</Text>
+              {isActive ? (
+                <View style={styles.check}>
+                  <Ionicons name="checkmark" size={14} color={colors.bg} />
+                </View>
+              ) : null}
+            </Pressable>
           );
         })}
       </View>
@@ -56,43 +44,32 @@ export function ThemePicker({ label = 'Appearance' }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing.sm,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  options: {
-    gap: spacing.xs,
-  },
-  option: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    padding: spacing.md,
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  optionLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  check: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
+    container: { gap: spacing.sm },
+    label: { ...typography.eyebrow, color: colors.textDim },
+    options: { gap: spacing.xs },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: radii.md,
+      borderWidth: 1.5,
+      padding: spacing.md,
+      backgroundColor: colors.bgElevated,
+      borderColor: colors.border,
+    },
+    optionActive: { backgroundColor: colors.calmSoft, borderColor: colors.calm },
+    optionLabel: { ...typography.body, fontWeight: '500', color: colors.textMuted },
+    optionLabelActive: { color: colors.text },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: radii.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.calm,
+    },
+    pressed: { opacity: 0.75 },
+  });
+}

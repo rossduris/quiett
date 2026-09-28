@@ -43,7 +43,7 @@ export default function WakeIntentionScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader fallbackHref="/" />
+      <ScreenHeader title="Wake-up intention" fallbackHref="/" />
 
       <ScrollView
         style={styles.scroll}
@@ -68,7 +68,6 @@ export default function WakeIntentionScreen() {
             placeholderTextColor={colors.textDim}
             multiline
             maxLength={120}
-            autoFocus
             returnKeyType="done"
             blurOnSubmit
           />
@@ -80,18 +79,24 @@ export default function WakeIntentionScreen() {
           <Pressable
             onPress={() => setText('Morning sunlight walk, then journal')}
             style={({ pressed }) => [styles.exampleRow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityHint="Uses this example"
           >
             <Text style={styles.exampleText}>Morning sunlight walk, then journal</Text>
           </Pressable>
           <Pressable
             onPress={() => setText('Gratitude practice and coffee')}
             style={({ pressed }) => [styles.exampleRow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityHint="Uses this example"
           >
             <Text style={styles.exampleText}>Gratitude practice and coffee</Text>
           </Pressable>
           <Pressable
             onPress={() => setText('Start the day calm and centered')}
             style={({ pressed }) => [styles.exampleRow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityHint="Uses this example"
           >
             <Text style={styles.exampleText}>Start the day calm and centered</Text>
           </Pressable>

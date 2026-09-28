@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Redirect } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -44,7 +45,13 @@ function randomSpecs(seed: number, count: number): { label: string; spec: SceneS
 }
 
 /** Dev-only: generative scene covers (every track plus random seeds across types / times). */
-export default function CoverGalleryScreen() {
+/** Dev-only tool: release builds redirect away even when opened by a direct link. */
+export default function CoverGalleryRoute() {
+  if (!__DEV__) return <Redirect href="/settings" />;
+  return <CoverGalleryScreen />;
+}
+
+function CoverGalleryScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();

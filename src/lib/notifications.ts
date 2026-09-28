@@ -4,8 +4,6 @@ import {
   loadAlarmPrefs,
   loadEveningReminderPrefs,
   loadUnlockTrackId,
-  nextAlarmDate,
-  type AlarmPrefs,
   type Weekday,
 } from '@/lib/storage';
 import { unlockTrackById } from '@/constants/unlock-tracks';
@@ -60,67 +58,76 @@ function formatAlarmTime(hhmm: string): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function getTomorrowWeekday(): Weekday {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const dow = tomorrow.getDay();
+/** How many upcoming evenings are queued at once (one-shot notifications). */
+const REMINDER_QUEUE = 7;
+
+function reminderId(i: number): string {
+  return `${EVENING_REMINDER_ID}-${i}`;
+}
+
+function isoWeekday(d: Date): Weekday {
+  const dow = d.getDay();
   return (dow === 0 ? 7 : dow) as Weekday;
 }
 
+async function cancelAllEveningReminders(): Promise<void> {
+  // Legacy id (the old repeating DAILY trigger) plus the queued one-shots.
+  const ids = [EVENING_REMINDER_ID, ...Array.from({ length: REMINDER_QUEUE }, (_, i) => reminderId(i))];
+  await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
+}
+
+/**
+ * Queues one-shot reminders for the next evenings that come before a scheduled alarm day
+ * (never before a day off). Re-run whenever the alarm, sound or reminder changes and on
+ * every foreground (see syncEveningReminder) so the message never goes stale.
+ */
 export async function scheduleEveningReminder(): Promise<void> {
   if (Platform.OS === 'web') return;
-  
-  await Notifications.cancelScheduledNotificationAsync(EVENING_REMINDER_ID).catch(() => {});
-  
+
+  await cancelAllEveningReminders();
+
   const [reminderPrefs, alarmPrefs, unlockTrackId] = await Promise.all([
     loadEveningReminderPrefs(),
     loadAlarmPrefs(),
     loadUnlockTrackId(),
   ]);
-  
-  if (!reminderPrefs.enabled || !alarmPrefs.enabled) return;
-  
+
+  if (!reminderPrefs.enabled || !alarmPrefs.enabled || alarmPrefs.weekdays.length === 0) return;
+
   const { hour, minute } = await parseReminderTime(reminderPrefs.time);
   const unlockTrack = unlockTrackById(unlockTrackId);
-  
   const scheduledDays = new Set(alarmPrefs.weekdays);
-  const tomorrow = getTomorrowWeekday();
-  
-  if (!scheduledDays.has(tomorrow)) {
-    return;
-  }
-  
-  const nextAlarm = nextAlarmDate(alarmPrefs.time, alarmPrefs.weekdays);
-  if (!nextAlarm) return;
-  
+  const body = `Tomorrow's wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${unlockTrack.title}`;
   const now = new Date();
-  const todayReminder = new Date(now);
-  todayReminder.setHours(hour, minute, 0, 0);
-  
-  if (todayReminder < now) {
-    todayReminder.setDate(todayReminder.getDate() + 1);
+
+  let queued = 0;
+  for (let offset = 0; offset < 14 && queued < REMINDER_QUEUE; offset++) {
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, hour, minute, 0, 0);
+    if (at.getTime() <= now.getTime()) continue;
+    const nextDay = new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1);
+    if (!scheduledDays.has(isoWeekday(nextDay))) continue;
+    await Notifications.scheduleNotificationAsync({
+      identifier: reminderId(queued),
+      content: {
+        title: 'Quiett',
+        body,
+        data: { source: 'evening-reminder' },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+    });
+    queued += 1;
   }
-  
-  const trigger: Notifications.DailyTriggerInput = {
-    type: Notifications.SchedulableTriggerInputTypes.DAILY,
-    hour,
-    minute,
-  };
-  
-  await Notifications.scheduleNotificationAsync({
-    identifier: EVENING_REMINDER_ID,
-    content: {
-      title: 'Quiett',
-      body: `Tomorrow's wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${unlockTrack.title}`,
-      data: { source: 'evening-reminder' },
-    },
-    trigger,
-  });
 }
 
 export async function cancelEveningReminder(): Promise<void> {
   if (Platform.OS === 'web') return;
-  await Notifications.cancelScheduledNotificationAsync(EVENING_REMINDER_ID).catch(() => {});
+  await cancelAllEveningReminders();
+}
+
+/** The body the evening reminder will use (for the in-app example). */
+export async function previewEveningReminder(): Promise<{ time: string; track: string }> {
+  const [alarmPrefs, unlockTrackId] = await Promise.all([loadAlarmPrefs(), loadUnlockTrackId()]);
+  return { time: formatAlarmTime(alarmPrefs.time), track: unlockTrackById(unlockTrackId).title };
 }
 
 export async function syncEveningReminder(): Promise<void> {

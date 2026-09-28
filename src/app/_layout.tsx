@@ -1,14 +1,29 @@
+import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { Stack, ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { ThemeProvider, useTheme } from '@/lib/theme-provider';
 import { PremiumProvider } from '@/lib/premium-provider';
+import { syncEveningReminder } from '@/lib/notifications';
+import { warnIfLegalPlaceholders } from '@/constants/legal';
 
 function RootStack() {
   const { colors, theme } = useTheme();
 
   // Use light nav theme for light color schemes, dark for dark
   const navTheme = theme.colors.statusBarStyle === 'dark' ? DefaultTheme : DarkTheme;
+
+  // Evening reminders are one-shot and queued a week ahead: top the queue up (and refresh
+  // the time / sound in the message) on launch and every foreground.
+  useEffect(() => {
+    warnIfLegalPlaceholders();
+    void syncEveningReminder();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void syncEveningReminder();
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <>
@@ -33,7 +48,6 @@ function RootStack() {
             name="onboarding"
             options={{ headerShown: false, gestureEnabled: false, animation: 'fade' }}
           />
-          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen
             name="session"
             options={{

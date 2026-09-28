@@ -89,7 +89,7 @@ export default function ReliabilityCheckScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader fallbackHref="/" />
+      <ScreenHeader title="Alarm reliability" fallbackHref="/" />
 
       <ScrollView
         style={styles.scroll}
