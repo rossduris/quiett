@@ -37,7 +37,7 @@ export function PrimaryButton({
         style,
       ]}
     >
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, variant === 'primary' && styles.labelOnAccent]}>{label}</Text>
     </Pressable>
   );
 }
@@ -50,7 +50,7 @@ function createStyles(colors: ColorTokens) {
     borderRadius: radii.md,
     alignItems: 'center',
   },
-  primary: { backgroundColor: colors.accent },
+  primary: { backgroundColor: colors.accentStrong },
   secondary: {
     backgroundColor: colors.bgCard,
     borderWidth: 1,
@@ -65,5 +65,7 @@ function createStyles(colors: ColorTokens) {
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.4 },
   label: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  // Filled primary: always the theme's on-accent colour (was colors.text → near-black on peach).
+  labelOnAccent: { color: colors.onAccent },
 });
 }

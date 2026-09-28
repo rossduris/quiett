@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   AppState,
   BackHandler,
-  Image,
   Linking,
   Platform,
   Pressable,
@@ -10,18 +9,40 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCameraPermissions } from 'expo-camera';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { LockInAura } from '@/components/LockInAura';
+import { deviceUses24h } from '@/lib/time-format';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { SessionBackdrop } from '@/components/SessionBackdrop';
+import { AnimatedScene } from '@/components/onboarding/art/AnimatedScene';
+import { artPalette } from '@/components/onboarding/art/art-palette';
+import {
+  alarmCalmLayout,
+  snoozeLayout,
+  sunriseLayout,
+  uprightLayout,
+} from '@/components/onboarding/art/scene-layouts';
+import { ParallaxHills } from '@/components/onboarding/ParallaxHills';
+import { ProgressSegments } from '@/components/onboarding/ProgressSegments';
+import { SnoozeChart } from '@/components/onboarding/SnoozeChart';
+import {
+  CheckRow,
+  GoalChoices,
+  HowSteps,
+  SoundChoices,
+  StepText,
+} from '@/components/onboarding/OnboardingParts';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
+import { MORNING_GOALS, SNOOZE_CHART_COPY, morningGoalById, type MorningGoalId } from '@/constants/onboarding';
+import { freeUnlockTracks, type UnlockTrack } from '@/constants/unlock-tracks';
+import { meditationSoundById } from '@/constants/sounds';
+import { previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   getNotificationPermissionStatus,
   requestNotificationPermissions,
@@ -37,24 +58,53 @@ import {
 } from '@/lib/os-alarm';
 import {
   clearWakeResolved,
+  dayKey,
   formatWeekdayHint,
   loadAlarmPrefs,
   loadEveningReminderPrefs,
+  loadOnboardingGoal,
+  loadSurpriseMe,
+  loadUnlockTrackId,
+  loadWakeIntention,
+  nextAlarmDate,
   saveAlarmPrefs,
   DEFAULT_ALARM,
   saveEveningReminderPrefs,
   saveOnboardingComplete,
+  saveOnboardingGoal,
+  saveSurpriseMe,
+  saveUnlockTrackId,
+  saveWakeIntention,
   type AlarmPrefs,
   type Weekday,
 } from '@/lib/storage';
 import { useThemeColors } from '@/lib/theme-provider';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 
-const BRAND_MARK = require('../../assets/images/icon.png');
-
-const STEPS = ['welcome', 'how', 'time', 'alarm', 'camera', 'reminder', 'practice'] as const;
+/**
+ * First-run flow (9 screens): hook → problem → how it works → goal → wake time → first
+ * sound → camera (rationale + prompt) → alarms + optional evening reminder (rationale +
+ * prompts) → commitment, which starts the practice run or goes Home. No paywall here.
+ */
+const STEPS = ['welcome', 'problem', 'snooze', 'how', 'goal', 'time', 'sound', 'camera', 'alarm', 'commit'] as const;
 type StepId = (typeof STEPS)[number];
 
+/** Steps with a full-bleed scene of their own (the background hills step aside). */
+const SCENE_STEPS: readonly StepId[] = ['welcome', 'commit'];
+
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+/** Preferred picks for variety (music + ambient). Only used if they're free in the catalog. */
+const FIRST_SOUND_PREFS = ['music:soft-pad', 'music:warm-drone', 'music:low-cloud', 'ambient:night_crickets', 'ambient:calm_waves'];
+const FIRST_SOUND_COUNT = 5;
+
+/** Free, non-guided tracks for the first-sound step — never Premium, whatever the catalog says. */
+const FIRST_SOUNDS: readonly UnlockTrack[] = (() => {
+  const free = freeUnlockTracks().filter((t) => t.kind !== 'guided');
+  const preferred = FIRST_SOUND_PREFS.map((id) => free.find((t) => t.id === id)).filter((t): t is UnlockTrack => t != null);
+  const rest = free.filter((t) => !preferred.includes(t));
+  return [...preferred, ...rest].slice(0, FIRST_SOUND_COUNT);
+})();
 
 function parseTime(hhmm: string): Date {
   const [h, m] = hhmm.split(':').map((n) => parseInt(n, 10));
@@ -71,16 +121,29 @@ function displayTime(hhmm: string): string {
   return parseTime(hhmm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-type Action = { label: string; onPress: () => void; a11yHint?: string };
+/** "Tomorrow" / "Today" / "Monday" for the next ring. */
+function ringDayLabel(date: Date | null, now = new Date()): string {
+  if (!date) return 'Tomorrow';
+  const key = dayKey(0, date);
+  if (key === dayKey(0, now)) return 'Today';
+  if (key === dayKey(1, now)) return 'Tomorrow';
+  return date.toLocaleDateString([], { weekday: 'long' });
+}
+
+type Action = { label: string; onPress: () => void };
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const palette = useMemo(() => artPalette(colors), [colors]);
+  const reduceMotion = useReduceMotion();
 
   const [stepIndex, setStepIndex] = useState(0);
   const step: StepId = STEPS[stepIndex]!;
+  const direction = useRef(1);
 
   const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({
     ...DEFAULT_ALARM,
@@ -94,8 +157,12 @@ export default function OnboardingScreen() {
   );
   const [reminderOn, setReminderOn] = useState(false);
   const [reminderTime, setReminderTime] = useState('20:00');
+  const [wantReminder, setWantReminder] = useState(true);
+  const [goal, setGoal] = useState<MorningGoalId | null>(null);
+  const [trackId, setTrackId] = useState<string>(FIRST_SOUNDS[0]?.id ?? '');
   const [busy, setBusy] = useState(false);
   const launchedPractice = useRef(false);
+  const { playingId, toggle: togglePreview } = usePreviewPlayer();
 
   const refreshStatuses = useCallback(async () => {
     const [perm, notif, reminder] = await Promise.all([
@@ -116,6 +183,12 @@ export default function OnboardingScreen() {
     void loadAlarmPrefs().then((prefs) => {
       if (alive) setAlarm({ ...prefs, enabled: true });
     });
+    void loadOnboardingGoal().then((g) => {
+      if (alive && morningGoalById(g)) setGoal(g as MorningGoalId);
+    });
+    void loadUnlockTrackId().then((id) => {
+      if (alive && FIRST_SOUNDS.some((t) => t.id === id)) setTrackId(id);
+    });
     void refreshStatuses();
     return () => {
       alive = false;
@@ -130,6 +203,12 @@ export default function OnboardingScreen() {
     return () => sub.remove();
   }, [refreshStatuses]);
 
+  // Previews only play on the sound step.
+  useEffect(() => {
+    if (step !== 'sound') stopPreview();
+  }, [step]);
+  useEffect(() => () => stopPreview(), []);
+
   // After the practice run (finished or ended early) we land back here → go Home.
   useFocusEffect(
     useCallback(() => {
@@ -139,11 +218,24 @@ export default function OnboardingScreen() {
     }, [router]),
   );
 
+  const goTo = useCallback((index: number) => {
+    setStepIndex((i) => {
+      const nextIndex = Math.max(0, Math.min(STEPS.length - 1, index));
+      direction.current = nextIndex >= i ? 1 : -1;
+      return nextIndex;
+    });
+  }, []);
   const next = useCallback(() => {
-    setStepIndex((i) => Math.min(STEPS.length - 1, i + 1));
+    setStepIndex((i) => {
+      direction.current = 1;
+      return Math.min(STEPS.length - 1, i + 1);
+    });
   }, []);
   const back = useCallback(() => {
-    setStepIndex((i) => Math.max(0, i - 1));
+    setStepIndex((i) => {
+      direction.current = -1;
+      return Math.max(0, i - 1);
+    });
   }, []);
 
   // Android hardware back steps backwards instead of leaving onboarding.
@@ -181,11 +273,37 @@ export default function OnboardingScreen() {
 
   // ── Step handlers ──────────────────────────────────────────────────────────
 
+  const saveGoalAndContinue = async () => {
+    const chosen = morningGoalById(goal);
+    if (chosen) {
+      await saveOnboardingGoal(chosen.id);
+      // Seed the first wake-up intention, never overwriting one the user wrote.
+      if (!(await loadWakeIntention()).trim()) await saveWakeIntention(chosen.intention);
+    }
+    next();
+  };
+
   const saveTimeAndContinue = async () => {
     const prefs: AlarmPrefs = { ...alarm, enabled: true };
     await saveAlarmPrefs(prefs);
     await clearWakeResolved();
     if (alarmPerm === 'authorized') void syncOsAlarm(prefs);
+    next();
+  };
+
+  const selectSound = (track: UnlockTrack) => {
+    setTrackId(track.id);
+    const url = meditationSoundById(track.playbackSoundId).url;
+    if (url != null) togglePreview(previewIds.track(track.id), url, 'track');
+  };
+
+  const saveSoundAndContinue = async () => {
+    stopPreview();
+    if (trackId) {
+      await saveUnlockTrackId(trackId);
+      // Picking a sound turns Surprise me off (same as Library).
+      if (await loadSurpriseMe()) await saveSurpriseMe(false);
+    }
     next();
   };
 
@@ -208,6 +326,17 @@ export default function OnboardingScreen() {
     setAlarm((prev) => ({ ...prev, time: toHhMm(date) }));
   };
 
+  /** Evening reminder opt-in (checkbox on the alarm step). Never blocks moving on. */
+  const maybeEnableReminder = async () => {
+    if (!wantReminder || reminderOn || notifStatus === 'denied') return;
+    const granted = await requestNotificationPermissions();
+    setNotifStatus(granted ? 'granted' : 'denied');
+    if (!granted) return;
+    await saveEveningReminderPrefs({ enabled: true, time: reminderTime });
+    await scheduleEveningReminder();
+    setReminderOn(true);
+  };
+
   const allowAlarms = async () => {
     setBusy(true);
     try {
@@ -216,8 +345,19 @@ export default function OnboardingScreen() {
       if (state === 'authorized') {
         const prefs = await loadAlarmPrefs();
         void syncOsAlarm({ ...prefs, enabled: true });
+        await maybeEnableReminder();
         next();
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueFromAlarm = async () => {
+    setBusy(true);
+    try {
+      await maybeEnableReminder();
+      next();
     } finally {
       setBusy(false);
     }
@@ -228,142 +368,149 @@ export default function OnboardingScreen() {
     if (res.granted) next();
   };
 
-  const turnOnReminder = async () => {
-    setBusy(true);
-    try {
-      const granted = await requestNotificationPermissions();
-      setNotifStatus(granted ? 'granted' : 'denied');
-      if (!granted) return;
-      await saveEveningReminderPrefs({ enabled: true, time: reminderTime });
-      await scheduleEveningReminder();
-      setReminderOn(true);
-      next();
-    } finally {
-      setBusy(false);
-    }
-  };
+  // ── Scenes (stable per size / theme so animations don't restart on re-render) ──
+
+  const artW = width - spacing.lg * 2;
+  const heroH = Math.round(Math.min(280, height * 0.34));
+  const sceneH = Math.round(Math.min(220, height * 0.27));
+  const welcomeScene = useMemo(() => sunriseLayout(artW, heroH, palette), [artW, heroH, palette]);
+  const commitScene = useMemo(() => sunriseLayout(artW, heroH, palette, { rings: true }), [artW, heroH, palette]);
+  const problemScene = useMemo(() => snoozeLayout(artW, sceneH, palette), [artW, sceneH, palette]);
+  const cameraScene = useMemo(() => uprightLayout(artW, sceneH, palette), [artW, sceneH, palette]);
+  const alarmScene = useMemo(() => alarmCalmLayout(artW, sceneH, palette), [artW, sceneH, palette]);
 
   // ── Step content ───────────────────────────────────────────────────────────
 
   const wakeSummary = `${displayTime(alarm.time)}, ${formatWeekdayHint(alarm.weekdays)}`;
   const cameraGranted = camera?.granted ?? false;
   const cameraBlocked = !!camera && !camera.granted && !camera.canAskAgain;
+  const chosenGoal = morningGoalById(goal);
+  const nextRing = nextAlarmDate(alarm.time, alarm.weekdays);
 
   let content: ReactNode = null;
   let primary: Action;
   let secondary: Action | undefined;
   let note: { text: string; tone: 'ok' | 'info' } | undefined;
   let skip: (() => void) | undefined;
+  let primaryDisabled = false;
 
   switch (step) {
     case 'welcome':
       content = (
-        <View style={styles.centerBlock}>
-          <Image
-            source={BRAND_MARK}
-            style={styles.brandMark}
-            accessibilityIgnoresInvertColors
-            accessible
-            accessibilityLabel="Quiett sun logo"
+        <View style={styles.block}>
+          <AnimatedScene layout={welcomeScene} reduceMotion={reduceMotion} radius={radii.xl} />
+          <StepText
+            eyebrow="Quiett"
+            title="Mornings that start quietly."
+            body="An alarm that only stops once you’re up and still. Then two calm minutes, before anything else."
+            center
           />
-          <Text style={styles.wordmark}>Quiett</Text>
-          <Text style={[styles.title, styles.textCenter]} accessibilityRole="header">
-            An alarm that turns off once you’ve settled in.
-          </Text>
-          <Text style={[styles.body, styles.textCenter]}>
-            Wake up, get still for two quiet minutes, then begin your day.
-          </Text>
         </View>
       );
       primary = { label: 'Get started', onPress: next };
       break;
 
-    case 'how':
+    case 'problem':
       content = (
         <View style={styles.block}>
-          <Text style={styles.title} accessibilityRole="header">
-            How mornings work
-          </Text>
-          <View style={styles.duskCard} accessible={false}>
-            <SessionBackdrop />
-            <View style={styles.miniWindow}>
-              <LockInAura size={88} level={1} color={colors.sessionGlow} />
-              <View style={styles.miniCircle}>
-                <Ionicons name="sunny-outline" size={30} color={colors.sessionText} />
-              </View>
-            </View>
-          </View>
-          <Beat
-            styles={styles}
-            colors={colors}
-            icon="alarm-outline"
-            n={1}
-            title="Your alarm rings"
-            body="At your wake time, the alarm plays until you settle in."
-          />
-          <Beat
-            styles={styles}
-            colors={colors}
-            icon="phone-portrait-outline"
-            n={2}
-            title="Prop your phone and settle in"
-            body="Face your phone, get comfortable, and be still for a moment."
-          />
-          <Beat
-            styles={styles}
-            colors={colors}
-            icon="leaf-outline"
-            n={3}
-            title="Two quiet minutes"
-            body="Stay with it for 2 minutes and the alarm turns off. Your morning begins."
+          <AnimatedScene layout={problemScene} reduceMotion={reduceMotion} radius={radii.xl} />
+          <StepText
+            title="Snooze. Scroll. Rush."
+            body="Most mornings start with a snooze button and a feed. By the time you’re up, the day already feels loud."
           />
         </View>
       );
+      primary = { label: 'There’s a calmer way', onPress: next };
+      skip = () => goTo(STEPS.indexOf('goal'));
+      break;
+
+    case 'snooze':
+      content = (
+        <View style={styles.block}>
+          <StepText title={SNOOZE_CHART_COPY.title} />
+          <SnoozeChart width={artW} reduceMotion={reduceMotion} />
+          <Text style={styles.chartCaption}>{SNOOZE_CHART_COPY.stat ?? SNOOZE_CHART_COPY.caption}</Text>
+          <Text style={styles.chartFootnote}>{SNOOZE_CHART_COPY.footnote}</Text>
+        </View>
+      );
+      primary = { label: 'Show me how', onPress: next };
+      skip = () => goTo(STEPS.indexOf('goal'));
+      break;
+
+    case 'how':
+      content = (
+        <View style={styles.block}>
+          <StepText title="How Quiett works" />
+          <HowSteps reduceMotion={reduceMotion} />
+        </View>
+      );
       primary = { label: 'Continue', onPress: next };
+      skip = () => goTo(STEPS.indexOf('goal'));
+      break;
+
+    case 'goal':
+      content = (
+        <View style={styles.block}>
+          <StepText
+            title="What do you want from your mornings?"
+            body="Pick one to set your first wake-up intention. You can change it anytime."
+          />
+          <GoalChoices goals={MORNING_GOALS} selected={goal} onSelect={setGoal} />
+        </View>
+      );
+      primary = { label: 'Continue', onPress: () => void saveGoalAndContinue() };
+      primaryDisabled = !goal;
       skip = next;
       break;
 
     case 'time':
       content = (
         <View style={styles.block}>
-          <Text style={styles.title} accessibilityRole="header">
-            When do you want to wake?
-          </Text>
-          <Text style={styles.body}>
-            Pick a time and the days Quiett should ring. You can change this anytime on Home.
-          </Text>
-          <Pressable
-            onPress={() => Platform.OS === 'android' && setShowAndroidPicker(true)}
-            accessibilityRole={Platform.OS === 'android' ? 'button' : 'text'}
-            accessibilityLabel={`Wake time ${displayTime(alarm.time)}`}
-            style={styles.timeCard}
-          >
-            <Text style={styles.bigTime}>{displayTime(alarm.time)}</Text>
-            {Platform.OS === 'ios' ? (
+          <StepText
+            title="When should your morning begin?"
+            body="Pick a time and the days to ring. You can change it anytime on Home."
+          />
+          {/* iOS: a plain View so VoiceOver can reach the picker wheels (a Pressable would
+              group them into one element). Android: tap the card to open the dialog. */}
+          {Platform.OS === 'ios' ? (
+            <View style={styles.timeCard}>
+              <Text style={styles.bigTime} accessibilityLabel={`Wake time ${displayTime(alarm.time)}`}>
+                {displayTime(alarm.time)}
+              </Text>
+              {/* No locale / is24Hour: iOS follows the device 12/24-hour setting. */}
               <DateTimePicker
                 value={parseTime(alarm.time)}
                 mode="time"
                 display="spinner"
-                locale="en_US"
-                is24Hour={false}
                 onValueChange={onTimeChange}
                 themeVariant={colors.statusBarStyle === 'dark' ? 'light' : 'dark'}
                 textColor={colors.text}
                 style={styles.picker}
               />
-            ) : showAndroidPicker ? (
-              <DateTimePicker
-                value={parseTime(alarm.time)}
-                mode="time"
-                display="spinner"
-                is24Hour={false}
-                onValueChange={onTimeChange}
-                onDismiss={() => setShowAndroidPicker(false)}
-              />
-            ) : (
-              <Text style={styles.caption}>Tap to change</Text>
-            )}
-          </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setShowAndroidPicker(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Wake time ${displayTime(alarm.time)}`}
+              accessibilityHint="Opens the time picker"
+              style={styles.timeCard}
+            >
+              <Text style={styles.bigTime}>{displayTime(alarm.time)}</Text>
+              {showAndroidPicker ? (
+                <DateTimePicker
+                  value={parseTime(alarm.time)}
+                  mode="time"
+                  display="spinner"
+                  is24Hour={deviceUses24h()}
+                  onValueChange={onTimeChange}
+                  onDismiss={() => setShowAndroidPicker(false)}
+                />
+              ) : (
+                <Text style={styles.caption}>Tap to change</Text>
+              )}
+            </Pressable>
+          )}
           <View style={styles.dayPills}>
             {DAY_LABELS.map((label, i) => {
               const day = (i + 1) as Weekday;
@@ -373,9 +520,9 @@ export default function OnboardingScreen() {
                   key={day}
                   onPress={() => toggleDay(day)}
                   style={[styles.pill, selected && styles.pillSelected]}
-                  accessibilityRole="button"
+                  accessibilityRole="checkbox"
                   accessibilityLabel={label}
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ checked: selected }}
                 >
                   <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
                     {label}
@@ -392,46 +539,29 @@ export default function OnboardingScreen() {
       primary = { label: 'Continue', onPress: () => void saveTimeAndContinue() };
       break;
 
-    case 'alarm':
+    case 'sound':
       content = (
-        <PrimingBlock
-          styles={styles}
-          colors={colors}
-          icon="alarm-outline"
-          title="Let Quiett wake you, even when locked"
-          body={`iOS will ask to allow alarms. Quiett only uses this for your wake-up: ${wakeSummary}.`}
-        />
+        <View style={styles.block}>
+          <StepText
+            title="Pick your first sound"
+            body="It plays during your two calm minutes. Tap one to hear it."
+          />
+          <SoundChoices tracks={FIRST_SOUNDS} selected={trackId} playingId={playingId} onSelect={selectSound} />
+          <Text style={[styles.caption, styles.textCenter]}>More sounds live in Library.</Text>
+        </View>
       );
-      if (alarmPerm === 'authorized') {
-        note = { text: 'Alarms are on. You’re all set.', tone: 'ok' };
-        primary = { label: 'Continue', onPress: next };
-      } else if (alarmPerm === 'denied') {
-        note = {
-          text: `Alarms are off for Quiett. Turn them on in Settings so it can ring at ${displayTime(alarm.time)}.`,
-          tone: 'info',
-        };
-        primary = { label: 'Open Settings', onPress: () => void openOsAlarmSettings() };
-        secondary = { label: 'Continue for now', onPress: next };
-      } else if (alarmPerm === 'unavailable') {
-        note = {
-          text: 'This device can’t schedule Quiett’s alarm right now — it needs a recent iOS version with alarm support. You can still finish setup and practice.',
-          tone: 'info',
-        };
-        primary = { label: 'Continue', onPress: next };
-      } else {
-        primary = { label: 'Allow alarms', onPress: () => void allowAlarms() };
-      }
+      primary = { label: 'Continue', onPress: () => void saveSoundAndContinue() };
       break;
 
     case 'camera':
       content = (
-        <PrimingBlock
-          styles={styles}
-          colors={colors}
-          icon="camera-outline"
-          title="Your camera checks you’re settled"
-          body="In the morning, the front camera makes sure you’re still and facing your phone. It all happens on your iPhone — video never leaves it."
-        />
+        <View style={styles.block}>
+          <AnimatedScene layout={cameraScene} reduceMotion={reduceMotion} radius={radii.xl} />
+          <StepText
+            title="Your camera checks you’re up"
+            body="In the morning, the front camera sees that you’re upright, still and facing your phone. It all happens on your iPhone. Video never leaves it."
+          />
+        </View>
       );
       if (cameraGranted) {
         note = { text: 'Camera is ready.', tone: 'ok' };
@@ -449,50 +579,82 @@ export default function OnboardingScreen() {
       }
       break;
 
-    case 'reminder':
+    case 'alarm': {
+      const reminderRow =
+        reminderOn || notifStatus === 'denied' ? null : (
+          <CheckRow
+            checked={wantReminder}
+            onToggle={() => setWantReminder((v) => !v)}
+            title="Also remind me the evening before"
+            body={`A quiet note at ${displayTime(reminderTime)} with tomorrow’s wake-up time.`}
+          />
+        );
       content = (
-        <PrimingBlock
-          styles={styles}
-          colors={colors}
-          icon="moon-outline"
-          title="A gentle evening nudge"
-          body={`Get a quiet reminder at ${displayTime(reminderTime)} with tomorrow’s wake-up time. Optional — change or turn it off in Settings.`}
-        />
+        <View style={styles.block}>
+          <AnimatedScene layout={alarmScene} reduceMotion={reduceMotion} radius={radii.xl} />
+          <StepText
+            title="Let Quiett ring, even when locked"
+            body={`iOS will ask to allow alarms. Quiett only uses this for your wake-up: ${wakeSummary}.`}
+          />
+          {reminderRow}
+        </View>
       );
-      if (reminderOn) {
-        note = { text: 'Evening reminder is on.', tone: 'ok' };
-        primary = { label: 'Continue', onPress: next };
-      } else if (notifStatus === 'denied') {
+      if (alarmPerm === 'authorized') {
+        note = { text: reminderOn ? 'Alarms and the evening reminder are on.' : 'Alarms are on. You’re all set.', tone: 'ok' };
+        primary = { label: 'Continue', onPress: () => void continueFromAlarm() };
+      } else if (alarmPerm === 'denied') {
         note = {
-          text: 'Notifications are off for Quiett. You can turn them on later in Settings.',
+          text: `Alarms are off for Quiett. Turn them on in Settings so it can ring at ${displayTime(alarm.time)}.`,
           tone: 'info',
         };
-        primary = { label: 'Continue', onPress: next };
-        secondary = { label: 'Open Settings', onPress: () => void Linking.openSettings() };
+        primary = { label: 'Open Settings', onPress: () => void openOsAlarmSettings() };
+        secondary = { label: 'Continue for now', onPress: () => void continueFromAlarm() };
+      } else if (alarmPerm === 'unavailable') {
+        note = {
+          text: 'This device can’t schedule Quiett’s alarm right now — it needs a recent iOS version with alarm support. You can still finish setup and practice.',
+          tone: 'info',
+        };
+        primary = { label: 'Continue', onPress: () => void continueFromAlarm() };
       } else {
-        primary = { label: 'Turn on reminder', onPress: () => void turnOnReminder() };
-        secondary = { label: 'Not now', onPress: next };
+        primary = { label: 'Allow alarms', onPress: () => void allowAlarms() };
       }
       break;
+    }
 
-    case 'practice':
+    case 'commit':
     default:
       content = (
-        <PrimingBlock
-          styles={styles}
-          colors={colors}
-          icon="play-circle-outline"
-          title="Try it once, now"
-          body="A 30-second practice shows exactly how a morning feels. The alarm sound plays, so set your volume to a comfortable level. It doesn’t count toward your streak."
-        />
+        <View style={styles.block}>
+          <AnimatedScene layout={commitScene} reduceMotion={reduceMotion} radius={radii.xl} />
+          <StepText
+            eyebrow="You’re set"
+            title={`${ringDayLabel(nextRing)} at ${displayTime(alarm.time)}, your morning begins.`}
+            body={chosenGoal?.promise ?? 'Up, still, then two calm minutes. The day can wait that long.'}
+            center
+          />
+          <Text style={[styles.caption, styles.textCenter]}>
+            Try it once now: a 30-second practice with the alarm sound, so set a comfortable
+            volume. It won’t count toward your streak.
+          </Text>
+        </View>
       );
-      primary = { label: 'Start practice', onPress: () => void finish(true) };
+      primary = { label: 'Try a 30-second practice', onPress: () => void finish(true) };
       secondary = { label: 'Maybe later', onPress: () => void finish(false) };
       break;
   }
 
+  const entering = reduceMotion
+    ? FadeIn.duration(250)
+    : (direction.current > 0 ? FadeInRight : FadeInLeft).duration(380);
+
   return (
     <View style={styles.screen}>
+      <ParallaxHills
+        step={stepIndex}
+        count={STEPS.length}
+        visible={!SCENE_STEPS.includes(step)}
+        reduceMotion={reduceMotion}
+      />
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
         <View style={styles.topSide}>
           {stepIndex > 0 ? (
@@ -507,23 +669,7 @@ export default function OnboardingScreen() {
             </Pressable>
           ) : null}
         </View>
-        <View
-          style={styles.dots}
-          accessible
-          accessibilityRole="progressbar"
-          accessibilityLabel={`Step ${stepIndex + 1} of ${STEPS.length}`}
-        >
-          {STEPS.map((id, i) => (
-            <View
-              key={id}
-              style={[
-                styles.dot,
-                i < stepIndex && styles.dotDone,
-                i === stepIndex && styles.dotActive,
-              ]}
-            />
-          ))}
-        </View>
+        <ProgressSegments count={STEPS.length} index={stepIndex} reduceMotion={reduceMotion} />
         <View style={[styles.topSide, styles.topSideRight]}>
           {skip ? (
             <Pressable
@@ -531,6 +677,7 @@ export default function OnboardingScreen() {
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Skip"
+              style={styles.skipBtn}
             >
               <Text style={styles.skip}>Skip</Text>
             </Pressable>
@@ -544,7 +691,7 @@ export default function OnboardingScreen() {
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-        <Animated.View key={step} entering={FadeIn.duration(320)} style={styles.stepWrap}>
+        <Animated.View key={step} entering={entering} style={styles.stepWrap}>
           {content}
         </Animated.View>
       </ScrollView>
@@ -563,7 +710,7 @@ export default function OnboardingScreen() {
         <PrimaryButton
           label={primary.label}
           onPress={primary.onPress}
-          disabled={busy}
+          disabled={busy || primaryDisabled}
           style={styles.primaryBtn}
         />
         {secondary ? (
@@ -584,127 +731,29 @@ export default function OnboardingScreen() {
   );
 }
 
-type Styles = ReturnType<typeof createStyles>;
-type IconName = keyof typeof Ionicons.glyphMap;
-
-function Beat({
-  styles,
-  colors,
-  icon,
-  n,
-  title,
-  body,
-}: {
-  styles: Styles;
-  colors: ColorTokens;
-  icon: IconName;
-  n: number;
-  title: string;
-  body: string;
-}) {
-  return (
-    <View style={styles.beat} accessible accessibilityLabel={`${n}. ${title}. ${body}`}>
-      <View style={styles.beatIcon}>
-        <Ionicons name={icon} size={20} color={colors.calm} />
-      </View>
-      <View style={styles.beatText}>
-        <Text style={styles.beatTitle}>{title}</Text>
-        <Text style={styles.beatBody}>{body}</Text>
-      </View>
-    </View>
-  );
-}
-
-function PrimingBlock({
-  styles,
-  colors,
-  icon,
-  title,
-  body,
-}: {
-  styles: Styles;
-  colors: ColorTokens;
-  icon: IconName;
-  title: string;
-  body: string;
-}) {
-  return (
-    <View style={styles.centerBlock}>
-      <View style={styles.primingIcon}>
-        <Ionicons name={icon} size={40} color={colors.calm} />
-      </View>
-      <Text style={[styles.title, styles.textCenter]} accessibilityRole="header">
-        {title}
-      </Text>
-      <Text style={[styles.body, styles.textCenter]}>{body}</Text>
-    </View>
-  );
-}
-
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.bg },
     topBar: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: spacing.sm,
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.sm,
     },
-    topSide: { width: 56, height: 36, justifyContent: 'center' },
+    topSide: { width: 56, height: 44, justifyContent: 'center' },
     topSideRight: { alignItems: 'flex-end' },
-    iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-    skip: { color: colors.textMuted, fontSize: 15, fontWeight: '500' },
-    dots: { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 6 },
-    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
-    dotDone: { backgroundColor: colors.calm, opacity: 0.45 },
-    dotActive: { width: 18, backgroundColor: colors.calm },
+    iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    skipBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
+    skip: { ...typography.body, fontSize: 15, fontWeight: '500', color: colors.textMuted },
     scroll: { flex: 1 },
     scrollContent: { flexGrow: 1, paddingHorizontal: spacing.lg },
-    stepWrap: { flex: 1, justifyContent: 'center', paddingVertical: spacing.lg },
-    block: { gap: spacing.md },
-    centerBlock: { alignItems: 'center', gap: spacing.md },
+    stepWrap: { flex: 1, justifyContent: 'center', paddingVertical: spacing.md },
+    block: { gap: spacing.lg },
+    chartCaption: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: -spacing.xs },
+    chartFootnote: { ...typography.caption, color: colors.textDim, textAlign: 'center', marginTop: -spacing.md },
     textCenter: { textAlign: 'center' },
-    brandMark: { width: 112, height: 112, borderRadius: 28, marginBottom: spacing.sm },
-    wordmark: {
-      color: colors.calm,
-      fontSize: 14,
-      fontWeight: '600',
-      letterSpacing: 2,
-      textTransform: 'uppercase',
-    },
-    title: { ...typography.title, color: colors.text },
-    body: { ...typography.body, color: colors.textMuted, lineHeight: 24 },
     caption: { ...typography.caption, color: colors.textDim },
-    duskCard: {
-      height: 168,
-      borderRadius: radii.xl,
-      overflow: 'hidden',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginVertical: spacing.xs,
-    },
-    miniWindow: { width: 88, height: 88 },
-    miniCircle: {
-      ...StyleSheet.absoluteFill,
-      borderRadius: 44,
-      backgroundColor: colors.sessionBgMid,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.sessionHairline,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    beat: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
-    beatIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.calmSoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    beatText: { flex: 1, gap: 2 },
-    beatTitle: { ...typography.subtitle, fontSize: 17, color: colors.text },
-    beatBody: { ...typography.body, fontSize: 15, color: colors.textMuted, lineHeight: 21 },
     timeCard: {
       alignItems: 'center',
       backgroundColor: colors.bgCard,
@@ -712,14 +761,14 @@ function createStyles(colors: ColorTokens) {
       borderWidth: 1,
       borderColor: colors.border,
       paddingVertical: spacing.md,
-      marginTop: spacing.sm,
     },
     bigTime: { ...typography.heroSm, color: colors.text, fontVariant: ['tabular-nums'] },
     picker: { alignSelf: 'stretch', height: 160 },
     dayPills: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
     pill: {
       flex: 1,
-      paddingVertical: 10,
+      minHeight: 44,
+      justifyContent: 'center',
       borderRadius: radii.full,
       borderWidth: 1,
       borderColor: colors.border,
@@ -727,17 +776,8 @@ function createStyles(colors: ColorTokens) {
       alignItems: 'center',
     },
     pillSelected: { backgroundColor: colors.calmSoft, borderColor: colors.calm },
-    pillText: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
+    pillText: { ...typography.caption, color: colors.textMuted, fontWeight: '500' },
     pillTextSelected: { color: colors.calm, fontWeight: '700' },
-    primingIcon: {
-      width: 88,
-      height: 88,
-      borderRadius: 44,
-      backgroundColor: colors.calmSoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: spacing.sm,
-    },
     footer: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingTop: spacing.sm },
     note: {
       flexDirection: 'row',
@@ -752,8 +792,8 @@ function createStyles(colors: ColorTokens) {
     noteOk: { backgroundColor: colors.calmSoft, borderColor: colors.calm },
     noteText: { flex: 1, ...typography.caption, fontSize: 14, color: colors.text, lineHeight: 20 },
     primaryBtn: { alignSelf: 'stretch' },
-    secondaryBtn: { paddingVertical: 12, alignItems: 'center' },
-    secondaryText: { color: colors.textMuted, fontSize: 15, fontWeight: '500' },
+    secondaryBtn: { minHeight: 44, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+    secondaryText: { ...typography.body, fontSize: 15, fontWeight: '500', color: colors.textMuted },
     secondarySpacer: { height: 44 },
     pressed: { opacity: 0.7 },
   });

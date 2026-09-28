@@ -48,6 +48,7 @@ const KEYS = {
   scheduleHistory: 'quiett.scheduleHistory',
   lifetimeMornings: 'quiett.lifetimeMornings',
   bestStreak: 'quiett.bestStreak',
+  onboardingGoal: 'quiett.onboardingGoal',
 } as const;
 
 /** ISO weekday: 1=Monday … 7=Sunday (react-native-alarm-scheduler format) */
@@ -809,6 +810,15 @@ export async function loadGetStartedDismissed(): Promise<boolean> {
 
 export async function saveGetStartedDismissed(dismissed: boolean): Promise<void> {
   await AsyncStorage.setItem(KEYS.getStartedDismissed, dismissed ? '1' : '0');
+}
+
+/** What the user wants from mornings (onboarding personalization). null = not answered. */
+export async function loadOnboardingGoal(): Promise<string | null> {
+  return AsyncStorage.getItem(KEYS.onboardingGoal);
+}
+
+export async function saveOnboardingGoal(goal: string): Promise<void> {
+  await AsyncStorage.setItem(KEYS.onboardingGoal, goal);
 }
 
 export async function loadWakeIntention(): Promise<string> {

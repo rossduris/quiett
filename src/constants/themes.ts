@@ -29,6 +29,10 @@ export type ColorTokens = {
   mist: string;
   /** General accent / link color. */
   accent: string;
+  /** Filled primary-button background: a deeper accent so `onAccent` text passes 4.5:1. */
+  accentStrong: string;
+  /** Text / icons on `accentStrong` (and other strong accent fills). Never follows the system scheme. */
+  onAccent: string;
   /** Primary calm / success accent (meditation, unlock, success). */
   calm: string;
   /** Calm soft background / tint. */
@@ -102,6 +106,8 @@ export const PEACH_CREAM: Theme = {
     textDim: '#9B8278',
     mist: '#E8C4B5',
     accent: '#E89B7A',
+    accentStrong: '#BA5838', // white on this = 4.6:1
+    onAccent: '#FFFFFF',
     // Primary action / selected / success — warm peach (not teal)
     calm: '#E07A55',
     calmSoft: 'rgba(224,122,85,0.14)',
@@ -145,6 +151,8 @@ export const NIGHT_TEAL: Theme = {
     textDim: '#5C6B7E',
     mist: '#A8C5D4',
     accent: '#5B8CFF',
+    accentStrong: '#3E6EDD', // white on this = 4.7:1
+    onAccent: '#FFFFFF',
     calm: '#3DCFB0',
     calmSoft: 'rgba(61,207,176,0.14)',
     alarm: '#FF5C5C',
