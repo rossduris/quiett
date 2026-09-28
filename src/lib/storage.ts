@@ -52,6 +52,7 @@ const KEYS = {
   scheduleHistory: 'quiett.scheduleHistory',
   lifetimeMornings: 'quiett.lifetimeMornings',
   bestStreak: 'quiett.bestStreak',
+  morningLog: 'quiett.morningLog',
   onboardingGoal: 'quiett.onboardingGoal',
 } as const;
 
@@ -572,13 +573,93 @@ async function addCompletedDay(key: string): Promise<string[]> {
   return trimmed;
 }
 
-export async function recordSuccessfulSit(): Promise<StreakData> {
+// ── Morning log: where each completed morning came from ─────────────────────
+// 'alarm' = a real wake (AlarmKit handoff → /session). 'dev' = a dev-build run that wasn't a
+// real morning (off schedule / evening test). 'practice' = the practice run (never recorded
+// today; reserved so it can never leak into history). Entries before this shipped have no tag;
+// see `isHiddenMorning` in lib/profile-insights.ts for the heuristic applied to those.
+
+export type MorningSource = 'alarm' | 'dev' | 'practice';
+export type MorningLogEntry = {
+  source: MorningSource;
+  /** Unlock time (ms). */
+  at: number;
+  /** Backtrack that played (sound id), when known. */
+  soundId?: string;
+};
+export type MorningLog = Record<string, MorningLogEntry>;
+
+/** Local "morning" window used to spot evening/afternoon test runs (03:00–13:00). */
+export const MORNING_WINDOW = { startHour: 3, endHour: 13 } as const;
+
+export function isInMorningWindow(ts: number): boolean {
+  const h = new Date(ts).getHours();
+  return h >= MORNING_WINDOW.startHour && h < MORNING_WINDOW.endHour;
+}
+
+export async function loadMorningLog(): Promise<MorningLog> {
+  const raw = await AsyncStorage.getItem(KEYS.morningLog);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: MorningLog = {};
+    for (const [day, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const e = v as Partial<MorningLogEntry> | null;
+      if (!e || typeof e.at !== 'number') continue;
+      if (e.source !== 'alarm' && e.source !== 'dev' && e.source !== 'practice') continue;
+      out[day] = { source: e.source, at: e.at, soundId: typeof e.soundId === 'string' ? e.soundId : undefined };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function recordMorningLog(day: string, entry: MorningLogEntry): Promise<void> {
+  const log = await loadMorningLog();
+  log[day] = entry;
+  const keys = Object.keys(log).sort();
+  const trimmed = keys.length > 400 ? keys.slice(keys.length - 400) : keys;
+  await AsyncStorage.setItem(KEYS.morningLog, JSON.stringify(Object.fromEntries(trimmed.map((k) => [k, log[k]]))));
+}
+
+/** A scheduled ring today within the last 3 hours (alarm on, today scheduled). */
+function nearScheduledRing(prefs: AlarmPrefs, now: Date): boolean {
+  if (!prefs.enabled || !prefs.weekdays.includes(getIsoWeekday(now))) return false;
+  const [h, m] = prefs.time.split(':').map((n) => parseInt(n, 10));
+  const ring = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h || 0, m || 0, 0, 0).getTime();
+  return now.getTime() >= ring - 5 * 60_000 && now.getTime() <= ring + 3 * 3_600_000;
+}
+
+/**
+ * Source for a /session completion. Release builds always count as a real morning. In dev
+ * builds a run that isn't right after a scheduled ring, or falls outside the morning window
+ * (e.g. an evening test alarm), is tagged 'dev' so it stays out of history and stats.
+ */
+async function classifySessionSource(now: Date): Promise<MorningSource> {
+  if (!__DEV__) return 'alarm';
+  const prefs = await loadAlarmPrefs();
+  return nearScheduledRing(prefs, now) && isInMorningWindow(now.getTime()) ? 'alarm' : 'dev';
+}
+
+export async function recordSuccessfulSit(opts: { source?: MorningSource } = {}): Promise<StreakData> {
   const current = await loadStreak();
   const today = dayKey(0);
+  const now = new Date();
 
   await addCompletedDay(today);
   await recordUnlockTimestamp();
   await snapshotWakeIntentionForDay(today);
+  try {
+    const [source, soundId] = await Promise.all([
+      opts.source ? Promise.resolve(opts.source) : classifySessionSource(now),
+      loadMeditationSoundId(),
+    ]);
+    await recordMorningLog(today, { source, at: now.getTime(), soundId });
+  } catch {
+    /* history tag is best-effort */
+  }
   
   if (current.lastCompletedDate === today) return current;
   

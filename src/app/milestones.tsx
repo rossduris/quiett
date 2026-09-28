@@ -15,6 +15,15 @@ import {
 } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 import { ALL_BADGES, type Badge } from '@/constants/badges';
+import { EnterStagger } from '@/components/EnterStagger';
+import { MedalSheen } from '@/components/MedalSheen';
+import { BadgeMedallion } from '@/components/profile/BadgeMedallion';
+
+const SECTIONS: [Badge['category'], string][] = [
+  ['streak', 'Streak achievements'],
+  ['milestone', 'Milestones'],
+  ['variety', 'Variety'],
+];
 
 
 export default function MilestonesScreen() {
@@ -70,7 +79,7 @@ export default function MilestonesScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.summaryCard}>
+        <EnterStagger index={0} style={styles.summaryCard}>
           <View style={styles.summaryHero}>
             <Text style={styles.summaryBig}>{earnedCount}</Text>
             <Text style={styles.summaryLabel}>
@@ -90,79 +99,34 @@ export default function MilestonesScreen() {
               <Text style={styles.summaryText}>Total mornings</Text>
             </View>
           </View>
-        </View>
+        </EnterStagger>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Streak achievements</Text>
-          <View style={styles.badgeGrid}>
-            {byCategory.streak?.map((badge) => {
-              const earned = earnedIds.has(badge.id);
-              return (
-                <View key={badge.id} style={[styles.badgeCard, !earned && styles.badgeCardLocked]}>
-                  <View style={[styles.badgeIcon, !earned && styles.badgeIconLocked]}>
-                    <Ionicons
-                      name={earned ? badge.icon : 'lock-closed'}
-                      size={24}
-                      color={earned ? colors.calm : colors.textDim}
-                    />
+        {SECTIONS.map(([cat, title], si) => (
+          <EnterStagger key={cat} index={si + 1} style={styles.section}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            <View style={styles.badgeGrid}>
+              {byCategory[cat]?.map((badge, bi) => {
+                const earned = earnedIds.has(badge.id);
+                return (
+                  <View
+                    key={badge.id}
+                    style={[styles.badgeCard, !earned && styles.badgeCardLocked]}
+                    accessible
+                    accessibilityLabel={`${badge.label}, ${earned ? 'earned' : 'not yet earned'}. ${badge.description}`}
+                  >
+                    <MedalSheen size={56} play={earned} delay={450 + si * 180 + Math.min(bi, 4) * 110} id={`sheen-ms-${badge.id}`}>
+                      <BadgeMedallion badge={badge} earned={earned} size={56} colors={colors} idPrefix={`ms-${badge.id}`} />
+                    </MedalSheen>
+                    <Text style={[styles.badgeLabel, !earned && styles.badgeLabelLocked]}>
+                      {badge.label}
+                    </Text>
+                    <Text style={styles.badgeDesc}>{badge.description}</Text>
                   </View>
-                  <Text style={[styles.badgeLabel, !earned && styles.badgeLabelLocked]}>
-                    {badge.label}
-                  </Text>
-                  <Text style={styles.badgeDesc}>{badge.description}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Milestones</Text>
-          <View style={styles.badgeGrid}>
-            {byCategory.milestone?.map((badge) => {
-              const earned = earnedIds.has(badge.id);
-              return (
-                <View key={badge.id} style={[styles.badgeCard, !earned && styles.badgeCardLocked]}>
-                  <View style={[styles.badgeIcon, !earned && styles.badgeIconLocked]}>
-                    <Ionicons
-                      name={earned ? badge.icon : 'lock-closed'}
-                      size={24}
-                      color={earned ? colors.calm : colors.textDim}
-                    />
-                  </View>
-                  <Text style={[styles.badgeLabel, !earned && styles.badgeLabelLocked]}>
-                    {badge.label}
-                  </Text>
-                  <Text style={styles.badgeDesc}>{badge.description}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Variety</Text>
-          <View style={styles.badgeGrid}>
-            {byCategory.variety?.map((badge) => {
-              const earned = earnedIds.has(badge.id);
-              return (
-                <View key={badge.id} style={[styles.badgeCard, !earned && styles.badgeCardLocked]}>
-                  <View style={[styles.badgeIcon, !earned && styles.badgeIconLocked]}>
-                    <Ionicons
-                      name={earned ? badge.icon : 'lock-closed'}
-                      size={24}
-                      color={earned ? colors.calm : colors.textDim}
-                    />
-                  </View>
-                  <Text style={[styles.badgeLabel, !earned && styles.badgeLabelLocked]}>
-                    {badge.label}
-                  </Text>
-                  <Text style={styles.badgeDesc}>{badge.description}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+                );
+              })}
+            </View>
+          </EnterStagger>
+        ))}
       </ScrollView>
     </View>
   );

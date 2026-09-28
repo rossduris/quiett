@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { StreakCalendar } from '@/components/StreakCalendar';
-import { spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { morningsInMonth, type Schedule } from '@/lib/streak-calendar';
 import { createProfileStyles } from './profile-styles';
+import { SectionHeader } from './SectionHeader';
 
 type Props = {
   completedDays: readonly string[];
@@ -23,22 +23,22 @@ export function CalendarCard({ completedDays, schedule, firstMonth, now }: Props
   );
 
   return (
-    <View style={[styles.card, { gap: 0 }]}>
-      <Text style={styles.cardTitle} accessibilityRole="header">
-        Streak calendar
-      </Text>
-      <Text style={[styles.cardSub, { marginBottom: spacing.md }]}>
-        {monthMornings} {monthMornings === 1 ? 'morning' : 'mornings'} unlocked
-      </Text>
-      <StreakCalendar
-        completedDays={completedDays}
-        schedule={schedule}
-        year={shown.year}
-        month={shown.month}
-        firstMonth={firstMonth}
-        now={now}
-        onChangeMonth={setShown}
+    <View style={styles.section}>
+      <SectionHeader
+        label="Calendar"
+        meta={`${monthMornings} ${monthMornings === 1 ? 'morning' : 'mornings'} unlocked`}
       />
+      <View style={styles.card}>
+        <StreakCalendar
+          completedDays={completedDays}
+          schedule={schedule}
+          year={shown.year}
+          month={shown.month}
+          firstMonth={firstMonth}
+          now={now}
+          onChangeMonth={setShown}
+        />
+      </View>
     </View>
   );
 }

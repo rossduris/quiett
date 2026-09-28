@@ -5,9 +5,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StreakSheet } from '@/components/StreakSheet';
 import { TAB_BAR_CLEARANCE } from '@/components/QuiettTabBar';
-import { StatsRow } from '@/components/profile/StatsRow';
+import { ProfileHero } from '@/components/profile/ProfileHero';
+import { EnterStagger } from '@/components/EnterStagger';
+import { InsightCard } from '@/components/profile/InsightCard';
+import { MilestonesRow } from '@/components/profile/MilestonesRow';
 import { CalendarCard } from '@/components/profile/CalendarCard';
-import { RecentMornings } from '@/components/profile/RecentMornings';
+import { MorningJournal } from '@/components/profile/MorningJournal';
 import { ProfileLinks } from '@/components/profile/ProfileLinks';
 import { AccountRow } from '@/components/profile/AccountRow';
 import { pressedStyle } from '@/components/home/home-styles';
@@ -17,6 +20,7 @@ import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
 import { useAccountUiEnabled } from '@/lib/dev-flags';
 import { useProfileState } from '@/lib/use-profile-state';
+import { useProfileIdentity } from '@/lib/profile-identity';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -26,6 +30,7 @@ export default function ProfileScreen() {
   const { isPremium } = usePremium();
   const accountUi = useAccountUiEnabled();
   const p = useProfileState();
+  const identity = useProfileIdentity();
   const [showStreakSheet, setShowStreakSheet] = useState(false);
 
   const onShare = async () => {
@@ -73,21 +78,45 @@ export default function ProfileScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}
         showsVerticalScrollIndicator={false}
       >
-        <StatsRow
-          current={p.streak.count}
+        <ProfileHero
+          name={identity.name}
+          photoUri={identity.photoUri}
+          streak={p.streak.count}
           best={p.bestStreak}
           mornings={p.totalMornings}
           hasMornings={p.hasMornings}
+          intention={p.wakeIntention}
+          onEditProfile={() => router.push('/edit-profile')}
           onOpenStreak={() => setShowStreakSheet(true)}
+          onEditIntention={() => router.push('/wake-intention')}
         />
+        {p.insights.length ? (
+          <EnterStagger index={0} base={240}>
+            <InsightCard insights={p.insights} />
+          </EnterStagger>
+        ) : null}
+        <EnterStagger index={1} base={240}>
         <CalendarCard
           completedDays={p.completedDays}
           schedule={p.schedule}
           firstMonth={p.firstMonth}
           now={p.now}
         />
-        <RecentMornings days={p.recentDays} unlockTimes={p.unlockTimes} intentionsByDay={p.intentionsByDay} />
-        <ProfileLinks isPremium={isPremium} earnedBadges={p.earnedBadges} />
+        </EnterStagger>
+        <EnterStagger index={2} base={240}>
+        <MorningJournal
+          days={p.recentDays}
+          unlockTimes={p.unlockTimes}
+          intentionsByDay={p.intentionsByDay}
+          onChangeIntention={() => router.push('/wake-intention')}
+        />
+        </EnterStagger>
+        <EnterStagger index={3} base={240}>
+          <MilestonesRow earnedIds={p.earnedBadgeIds} />
+        </EnterStagger>
+        <EnterStagger index={4} base={240}>
+          <ProfileLinks isPremium={isPremium} />
+        </EnterStagger>
         {accountUi ? (
           <AccountRow
             account={p.account}
@@ -123,6 +152,6 @@ function createStyles(colors: ColorTokens) {
     title: { ...typography.title, color: colors.text, flex: 1 },
     iconBtn: { padding: spacing.xs },
     scroll: { flex: 1 },
-    content: { paddingHorizontal: spacing.lg, gap: spacing.lg },
+    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, gap: spacing.xl },
   });
 }
