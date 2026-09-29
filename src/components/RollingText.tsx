@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useAfterFirstPaint } from '@/lib/use-after-first-paint';
 import { StyleSheet, View, type StyleProp, type TextStyle } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from 'react-native-reanimated';
 import { DURATION, EASE } from '@/lib/motion';
@@ -15,11 +16,7 @@ type Props = {
  * Nothing animates on first mount. Reduce Motion: quick cross-fade.
  */
 export function RollingText({ text, style, reduceMotion }: Props) {
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-  }, []);
-  const live = mounted.current;
+  const live = useAfterFirstPaint();
   const enter = !live
     ? undefined
     : reduceMotion

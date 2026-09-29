@@ -11,6 +11,7 @@ import { BadgeMedallion } from './BadgeMedallion';
 import { MedalSheen } from '@/components/MedalSheen';
 import { createProfileStyles } from './profile-styles';
 import { SectionHeader } from './SectionHeader';
+import { EmptyState } from '@/components/EmptyState';
 
 const MEDAL = 64;
 
@@ -34,6 +35,9 @@ export function MilestonesRow({ earnedIds }: { earnedIds: readonly BadgeId[] }) 
         label={`Milestones · ${count} of ${ALL_BADGES.length}`}
         action={{ label: 'See all', onPress: () => router.push('/milestones'), accessibilityLabel: 'See all milestones' }}
       />
+      {count === 0 ? (
+        <EmptyState scene="ring" title="Your first milestone is one morning away" body="Milestones come from showing up, one quiet morning at a time." />
+      ) : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

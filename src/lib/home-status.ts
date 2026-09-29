@@ -110,3 +110,41 @@ export function getTodayStatusChip(
     label: day ? `Set for ${day === 'Today' || day === 'Tomorrow' ? day.toLowerCase() : day}` : 'Alarm set',
   };
 }
+
+/** Local hour after which Home switches to the night-before prep card. */
+export const EVENING_HOUR = 18;
+
+export type HomeStatusMode = 'unlocked' | 'off' | 'firstDay' | 'evening';
+
+/**
+ * Which status card leads Home (null = none):
+ * - off: alarm disabled or no days picked;
+ * - unlocked: today is unlocked and the card isn't dismissed (yields to evening prep after 6 PM);
+ * - firstDay: no morning recorded yet → "Your first morning is tomorrow at …";
+ * - evening: after 6 PM with the next ring tomorrow → "Tomorrow, 7:00 AM" + prep tips.
+ */
+export function homeStatusMode(input: {
+  alarm: AlarmPrefs;
+  unlockedToday: boolean;
+  dayOpenDismissed: boolean;
+  hasAnyMorning: boolean;
+  now: Date;
+}): { mode: HomeStatusMode | null; nextRing: Date | null; evening: boolean } {
+  const { alarm, unlockedToday, dayOpenDismissed, hasAnyMorning, now } = input;
+  const armed = alarm.enabled && alarm.weekdays.length > 0;
+  const nextRing = armed ? nextAlarmDate(alarm.time, alarm.weekdays, now) : null;
+  const evening = !!nextRing && now.getHours() >= EVENING_HOUR && dayKey(0, nextRing) === dayKey(1, now);
+  if (unlockedToday && !dayOpenDismissed && !evening) return { mode: 'unlocked', nextRing, evening };
+  if (!armed || !nextRing) return { mode: 'off', nextRing: null, evening: false };
+  if (!hasAnyMorning) return { mode: 'firstDay', nextRing, evening };
+  if (evening) return { mode: 'evening', nextRing, evening };
+  return { mode: null, nextRing, evening };
+}
+
+/** "tomorrow at 7:00 AM" / "today at 6:30 AM" / "on Monday at 7:00 AM" (lower-case day words). */
+export function ringPhrase(next: Date, now: Date, clock: string): string {
+  const key = dayKey(0, next);
+  if (key === dayKey(0, now)) return `today at ${clock}`;
+  if (key === dayKey(1, now)) return `tomorrow at ${clock}`;
+  return `on ${next.toLocaleDateString([], { weekday: 'long' })} at ${clock}`;
+}

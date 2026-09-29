@@ -5,9 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlarmSoundPicker } from '@/components/AlarmSoundPicker';
 import { AlarmCard } from '@/components/home/AlarmCard';
 import { EnterStagger } from '@/components/EnterStagger';
-import { DayOpenCard } from '@/components/home/DayOpenCard';
 import { GetStartedCard, type GetStartedStep } from '@/components/home/GetStartedCard';
 import { HomeHeader } from '@/components/home/HomeHeader';
+import { HomeStatusCard } from '@/components/home/HomeStatusCard';
 import { IntentionCard } from '@/components/home/IntentionCard';
 import { MorningStepsCard } from '@/components/home/MorningStepsCard';
 import { ReliabilityCard } from '@/components/home/ReliabilityCard';
@@ -20,6 +20,8 @@ import { spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { unlockTrackById } from '@/constants/unlock-tracks';
 import { useCoverStyle } from '@/lib/scene-cover-pref';
+import { usePrewarmLibraryCovers } from '@/lib/cover-prewarm';
+import { useShowGuided } from '@/lib/dev-flags';
 import { useThemeColors } from '@/lib/theme-provider';
 import { useHomeState } from '@/lib/use-home-state';
 import { greetingFor, useProfileIdentity } from '@/lib/profile-identity';
@@ -33,6 +35,9 @@ export default function HomeScreen() {
   const home = useHomeState();
   const identity = useProfileIdentity();
   const greeting = identity.name ? greetingFor(home.now, identity.name) : null;
+  const guidedOn = useShowGuided();
+  // Once Home is idle, quietly build the Library / picker covers so the first Library open is light.
+  usePrewarmLibraryCovers({ colors, isPremium: home.isPremium, guidedOn, enabled: coverStyle !== 'classic' });
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showTrackPicker, setShowTrackPicker] = useState(false);
@@ -70,10 +75,15 @@ export default function HomeScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}
         showsVerticalScrollIndicator={false}
       >
-        {home.showDayOpen ? (
-          <DayOpenCard
-            wakeIntention={home.wakeIntention}
-            alarmEnabled={home.alarm.enabled}
+        {home.statusMode ? (
+          <HomeStatusCard
+            mode={home.statusMode}
+            now={home.now}
+            nextRing={home.nextRing}
+            evening={home.isEvening}
+            unlockAt={home.unlockAt}
+            intention={home.todayIntention}
+            onTurnOn={() => void home.turnAlarmOn()}
             onDismiss={() => void home.dismissDayOpen()}
           />
         ) : null}
@@ -121,6 +131,7 @@ export default function HomeScreen() {
           completedDays={home.completedDays}
           scheduledWeekdays={home.alarm.weekdays}
           unlockedToday={home.unlockedToday}
+          hasAnyMorning={home.hasAnyMorning}
           onPress={openStreak}
         />
         </EnterStagger>

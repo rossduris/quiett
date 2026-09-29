@@ -46,7 +46,7 @@ export function PrimaryButton({
         disabled && styles.disabled,
         press.style,
       ]}>
-        <Text style={[styles.label, variant === 'primary' && styles.labelOnAccent]}>{label}</Text>
+        <Text style={[styles.label, variant === 'primary' && styles.labelOnAccent]} maxFontSizeMultiplier={1.5}>{label}</Text>
       </Animated.View>
     </Pressable>
   );

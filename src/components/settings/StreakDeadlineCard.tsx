@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Text } from 'react-native';
+import { View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useThemeColors } from '@/lib/theme-provider';
 import { loadStreakDeadlinePrefs, saveStreakDeadlinePrefs, type StreakDeadlinePrefs } from '@/lib/storage';
 import { SettingsCard } from './SettingsCard';
-import { SwitchButton } from './SettingsSwitchRow';
+import { SettingsSwitchRow } from './SettingsSwitchRow';
 import { PillGroup } from './PillGroup';
 import { createSettingsStyles } from './settings-styles';
 
@@ -38,25 +38,23 @@ export function StreakDeadlineCard() {
 
   return (
     <SettingsCard
-      label="Streak deadline"
-      right={
-        <SwitchButton
-          on={prefs.enabled}
-          label="Streak deadline"
-          onChange={(enabled) => update({ ...prefs, enabled })}
-        />
-      }
+      label="Streak"
+      footnote="With a deadline on, a morning only counts toward your streak if you unlock within that time after the alarm. Late unlocks still open the day, marked late."
     >
-      <Text style={styles.hint}>
-        Unlocks only count toward your streak if completed within a time limit after the alarm
-        rings. Late unlocks still open the day but are marked late.
-      </Text>
+      <SettingsSwitchRow
+        icon="timer-outline"
+        label="Streak deadline"
+        value={prefs.enabled}
+        onChange={(enabled) => update({ ...prefs, enabled })}
+      />
       {prefs.enabled ? (
-        <PillGroup
-          options={DEADLINE_OPTIONS}
-          selected={prefs.minutes}
-          onSelect={(minutes) => update({ ...prefs, minutes })}
-        />
+        <View style={styles.block}>
+          <PillGroup
+            options={DEADLINE_OPTIONS}
+            selected={prefs.minutes}
+            onSelect={(minutes) => update({ ...prefs, minutes })}
+          />
+        </View>
       ) : null}
     </SettingsCard>
   );

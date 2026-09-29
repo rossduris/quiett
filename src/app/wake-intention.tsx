@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader, useSafeBack } from '@/components/ScreenHeader';
 import { loadWakeIntention, saveWakeIntention } from '@/lib/storage';
@@ -66,6 +66,8 @@ export default function WakeIntentionScreen() {
             onChangeText={setText}
             placeholder="e.g., Morning light walk, breakfast with family…"
             placeholderTextColor={colors.textDim}
+            keyboardAppearance={colors.statusBarStyle === 'light' ? 'dark' : 'light'}
+            selectionColor={colors.calm}
             multiline
             maxLength={120}
             returnKeyType="done"
@@ -151,7 +153,7 @@ function createStyles(colors: ColorTokens) {
     },
     inputCard: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,
@@ -182,7 +184,7 @@ function createStyles(colors: ColorTokens) {
     },
     exampleRow: {
       backgroundColor: colors.bgCard,
-      borderRadius: 12,
+      borderRadius: radii.md,
       padding: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,

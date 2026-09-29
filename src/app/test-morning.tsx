@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import { AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +12,7 @@ import { PoseDebugOverlay, PoseDebugReadout } from '@/components/PoseDebugOverla
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
-import { spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
 import {
   crossfadeToMeditation,
   playHarshAlarm,
@@ -70,11 +70,13 @@ export default function TestMorningScreen() {
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
 
-  // Dev: Settings → "Pose detector (dev)" / "Pose debug overlay". Release: legacy, no overlay.
+  // Pose detector: body2d by default (auto-falls back to legacy); dev Settings can pick one (incl. 3D). Overlay: dev only.
   const poseDetectorMode = usePoseDetectorMode();
   const poseDebugOverlay = usePoseDebugOverlay() && __DEV__;
   const poseDebugOverlayRef = useRef(poseDebugOverlay);
-  poseDebugOverlayRef.current = poseDebugOverlay;
+  useLayoutEffect(() => {
+    poseDebugOverlayRef.current = poseDebugOverlay;
+  });
   const [poseDiag, setPoseDiag] = useState<PoseDiagnostics | undefined>(undefined);
   const [poseFps, setPoseFps] = useState<number | undefined>(undefined);
   const lastDiagAt = useRef<number | null>(null);
@@ -392,7 +394,7 @@ function createStyles(colors: ColorTokens) {
       letterSpacing: 0.4,
     },
     endBtn: {
-      borderRadius: 999,
+      borderRadius: radii.full,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.sessionHairline,
       backgroundColor: colors.sessionChipBg,

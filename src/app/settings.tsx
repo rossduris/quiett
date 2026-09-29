@@ -37,8 +37,8 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <EnterStagger index={0}>
-          <SettingsCard>
-            <ThemePicker />
+          <SettingsCard label="Appearance">
+            <ThemePicker variant="rows" />
           </SettingsCard>
         </EnterStagger>
 
@@ -68,7 +68,7 @@ export default function SettingsScreen() {
         </EnterStagger>
 
         <EnterStagger index={3}>
-          <SettingsCard label="Subscription">
+          <SettingsCard label="Premium">
             <SettingsLinkRow
               icon={isPremium ? 'sunny' : 'sunny-outline'}
               label="Quiett Premium"
@@ -122,6 +122,6 @@ export default function SettingsScreen() {
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.bg },
-    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.lg },
+    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.xl },
   });
 }

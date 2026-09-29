@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import type { PoseStatus } from '@/lib/pose/types';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -30,7 +30,7 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
     case 'too_dark':
       return { label: 'A little more light helps', inFrame: false };
     case 'posture':
-      return { label: 'Lengthen your spine, soften your shoulders', inFrame: false };
+      return { label: 'Soften your shoulders', inFrame: false };
     default:
       return { label: 'Bring your face into the circle', inFrame: false };
   }
@@ -68,7 +68,7 @@ function createStyles(colors: ColorTokens) {
       gap: spacing.sm,
       paddingHorizontal: 14,
       paddingVertical: 8,
-      borderRadius: 999,
+      borderRadius: radii.full,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.sessionHairline,
       backgroundColor: colors.sessionChipBg,

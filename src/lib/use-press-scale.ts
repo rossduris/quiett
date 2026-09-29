@@ -13,10 +13,10 @@ export function usePressScale(scaleTo = 0.97) {
   const p = useSharedValue(0);
 
   const onPressIn = useCallback(() => {
-    p.value = reduce ? withTiming(1, { duration: DURATION.fast }) : withSpring(1, SPRING);
+    p.set(reduce ? withTiming(1, { duration: DURATION.fast }) : withSpring(1, SPRING));
   }, [p, reduce]);
   const onPressOut = useCallback(() => {
-    p.value = reduce ? withTiming(0, { duration: DURATION.fast }) : withSpring(0, SPRING);
+    p.set(reduce ? withTiming(0, { duration: DURATION.fast }) : withSpring(0, SPRING));
   }, [p, reduce]);
 
   const style = useAnimatedStyle(() =>

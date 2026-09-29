@@ -103,7 +103,7 @@ export const PEACH_CREAM: Theme = {
     border: '#F5D5C8',
     text: '#2A1810',
     textMuted: '#6B5248',
-    textDim: '#9B8278',
+    textDim: '#806B63', // 4.5:1 on bgCard (was #9B8278, 3.3:1)
     mist: '#E8C4B5',
     accent: '#E89B7A',
     accentStrong: '#BA5838', // white on this = 4.6:1
@@ -145,13 +145,13 @@ export const NIGHT_TEAL: Theme = {
     bg: '#0A1220',
     bgElevated: '#121C2A',
     bgCard: '#162033',
-    border: '#243247',
+    border: '#2A3A52', // was #243247: dividers/outlines vanished on bgCard
     text: '#E8EEF5',
     textMuted: '#8B9BB0',
-    textDim: '#5C6B7E',
+    textDim: '#7A8AA3', // 4.6:1 on bgCard (was #5C6B7E, 3.0:1)
     mist: '#A8C5D4',
     accent: '#5B8CFF',
-    accentStrong: '#3E6EDD', // white on this = 4.7:1
+    accentStrong: '#17806C', // deep teal (was off-brand blue); white on this = 4.8:1
     onAccent: '#FFFFFF',
     calm: '#3DCFB0',
     calmSoft: 'rgba(61,207,176,0.14)',
@@ -160,7 +160,7 @@ export const NIGHT_TEAL: Theme = {
     warning: '#F0B429',
     sunrise: '#E8A06A',
     sunriseSoft: 'rgba(232,160,106,0.18)',
-    sunriseDeep: 'rgba(180,90,40,0.28)',
+    sunriseDeep: 'rgba(232,160,106,0.16)', // was rgba(180,90,40,0.28): read as a muddy brown disc on the alarm card
     frostBg: 'rgba(18,28,42,0.72)',
     frostBorder: 'rgba(232,238,245,0.28)',
     statusBarStyle: 'light',

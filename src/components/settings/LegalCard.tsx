@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useThemeColors } from '@/lib/theme-provider';
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, isPlaceholder } from '@/constants/legal';
 import { openLegalUrl } from '@/lib/support';
@@ -25,9 +25,11 @@ export function LegalCard() {
         onPress={() => openLegalUrl(TERMS_OF_USE_URL)}
       />
       {__DEV__ && isPlaceholder(PRIVACY_POLICY_URL) ? (
-        <Text style={[styles.hint, { color: colors.warning }]}>
-          Dev: Privacy Policy URL is still a placeholder (src/constants/legal.ts).
-        </Text>
+        <View style={styles.block}>
+          <Text style={[styles.hint, { color: colors.warning }]}>
+            Dev: Privacy Policy URL is still a placeholder (src/constants/legal.ts).
+          </Text>
+        </View>
       ) : null}
     </SettingsCard>
   );

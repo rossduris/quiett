@@ -2,9 +2,9 @@ import type { AccessibilityActionEvent, AccessibilityProps } from 'react-native'
 
 /**
  * Screen-reader pattern for a tappable row/card that also has its own small play button.
- * The row stays one accessible element (VoiceOver can't reach a button nested inside it),
- * so the preview is exposed as a custom action ("Actions available: Preview") and the
- * visual play button is hidden from assistive tech with `previewButtonA11yHidden`.
+ * The row stays one accessible element and also offers the preview as a custom action
+ * ("Actions available: Preview"). The play button itself is drawn as a sibling on top of
+ * the row by `PreviewOverlay`, so VoiceOver can also focus it as its own button.
  */
 export function previewA11yActions(
   playing: boolean,
@@ -18,10 +18,3 @@ export function previewA11yActions(
     },
   };
 }
-
-/** Spread on the visual play button inside a row that uses `previewA11yActions`. */
-export const previewButtonA11yHidden = {
-  accessible: false,
-  accessibilityElementsHidden: true,
-  importantForAccessibility: 'no-hide-descendants' as const,
-};

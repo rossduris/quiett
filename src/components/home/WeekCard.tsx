@@ -12,10 +12,12 @@ type Props = {
   completedDays: readonly string[];
   scheduledWeekdays: readonly Weekday[];
   unlockedToday: boolean;
+  /** False before the first recorded morning (shows a gentle hint instead of an empty row). */
+  hasAnyMorning?: boolean;
   onPress: () => void;
 };
 
-function WeekCardBase({ completedDays, scheduledWeekdays, unlockedToday, onPress }: Props) {
+function WeekCardBase({ completedDays, scheduledWeekdays, unlockedToday, hasAnyMorning = true, onPress }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -32,6 +34,7 @@ function WeekCardBase({ completedDays, scheduledWeekdays, unlockedToday, onPress
         <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
       </View>
       <WeekStreakStrip completedDays={completedDays} scheduledWeekdays={scheduledWeekdays} />
+      {!hasAnyMorning ? <Text style={styles.hint}>Each morning you open lights up a day here.</Text> : null}
     </Pressable>
   );
 }
@@ -44,5 +47,6 @@ function createStyles(colors: ColorTokens) {
     cardOpen: { borderColor: colors.calm },
     top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     label: { ...typography.eyebrow, color: colors.textDim },
+    hint: { ...typography.caption, color: colors.textMuted },
   });
 }

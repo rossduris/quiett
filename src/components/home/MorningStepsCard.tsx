@@ -3,13 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { TrackCover } from '@/components/TrackCover';
-import { PlayButton } from '@/components/PlayButton';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById, type SoundOption } from '@/constants/sounds';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
 import { previewIds, usePreviewPlayer } from '@/lib/audio';
-import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
+import { previewA11yActions } from '@/lib/preview-a11y';
+import { PreviewOverlay } from '@/components/PreviewOverlay';
 import { SurpriseOffNote } from '@/components/SurpriseOffNote';
 import type { CoverStyle } from '@/lib/scene-cover-pref';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -156,6 +156,22 @@ function StepRow({
   onPreview?: () => void;
 }) {
   return (
+    <PreviewOverlay
+      button={
+        onPreview
+          ? {
+              playing: !!previewPlaying,
+              onPress: onPreview,
+              colors,
+              size: 34,
+              iconSize: 14,
+              style: styles.previewBtn,
+              activeStyle: styles.previewBtnActive,
+              accessibilityLabel: `${previewPlaying ? 'Stop' : 'Play'} preview of ${title}`,
+            }
+          : null
+      }
+      renderRow={(slot) => (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
@@ -179,20 +195,11 @@ function StepRow({
           {meta}
         </Text>
       </View>
-      {onPreview ? (
-        <PlayButton
-          {...previewButtonA11yHidden}
-          playing={!!previewPlaying}
-          onPress={onPreview}
-          colors={colors}
-          size={34}
-          iconSize={14}
-          style={styles.previewBtn}
-          activeStyle={styles.previewBtnActive}
-        />
-      ) : null}
+      {slot}
       <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
     </Pressable>
+      )}
+    />
   );
 }
 

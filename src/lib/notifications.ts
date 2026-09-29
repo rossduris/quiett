@@ -7,6 +7,7 @@ import {
   type Weekday,
 } from '@/lib/storage';
 import { unlockTrackById } from '@/constants/unlock-tracks';
+import { formatClock } from '@/lib/time-format';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,7 +56,7 @@ function formatAlarmTime(hhmm: string): string {
   const minute = Number.isFinite(m) ? m : 0;
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return formatClock(date);
 }
 
 /** How many upcoming evenings are queued at once (one-shot notifications). */
@@ -97,7 +98,7 @@ export async function scheduleEveningReminder(): Promise<void> {
   const { hour, minute } = await parseReminderTime(reminderPrefs.time);
   const unlockTrack = unlockTrackById(unlockTrackId);
   const scheduledDays = new Set(alarmPrefs.weekdays);
-  const body = `Tomorrow's wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${unlockTrack.title}`;
+  const body = `Tomorrow’s wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${unlockTrack.title}`;
   const now = new Date();
 
   let queued = 0;

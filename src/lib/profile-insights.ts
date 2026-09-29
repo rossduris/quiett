@@ -4,11 +4,14 @@
  */
 import {
   dayKey,
+  getIsoWeekday,
   isInMorningWindow,
   type MorningLog,
+  type ScheduleResolver,
+  type Weekday,
 } from '@/lib/storage';
 import type { Schedule } from '@/lib/streak-calendar';
-import { getIsoWeekday, type ScheduleResolver, type Weekday } from '@/lib/storage';
+import { formatClock as formatClockTime } from '@/lib/time-format';
 
 function toResolver(schedule: Schedule): ScheduleResolver {
   if (typeof schedule === 'function') return schedule;
@@ -98,7 +101,7 @@ function minutesOf(ts: number): number {
 
 export function formatClock(mins: number): string {
   const d = new Date(2000, 0, 1, Math.floor(mins / 60), Math.round(mins % 60));
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return formatClockTime(d);
 }
 
 /** Min mornings in each week before the week-over-week insight shows. */

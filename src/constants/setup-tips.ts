@@ -18,7 +18,7 @@ export const SETUP_TIPS = [
 ] as const;
 
 export const SETUP_LEAD =
-  'Quiett needs your face looking at the camera, phone propped, and you fairly still. Set the phone up the night before so the morning loop is frictionless.';
+  'Quiett needs your face toward the camera, the phone propped up, and you fairly still. Set the phone up the night before so the morning is easy.';
 
 export const SETUP_NOTE =
-  'Pose runs on-device (Apple Vision). Face looking at the camera is required — body-only will not dismiss the alarm.';
+  'The check stays on your iPhone. Your face needs to be toward the camera — looking away won’t turn the alarm off.';

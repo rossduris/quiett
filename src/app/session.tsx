@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import { AppState, Linking, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,7 +38,6 @@ import {
 import {
   breakStreak,
   DEFAULT_SIT_MINUTES,
-  isWakeResolvedToday,
   loadAlarmPrefs,
   loadSitMinutes,
   recordSuccessfulSit,
@@ -82,6 +81,11 @@ export default function SessionScreen() {
   const durationMs = sitDurationMs(sitMinutes);
   const [cameraReady, setCameraReady] = useState(false);
   const [wakeIntention, setWakeIntention] = useState('');
+  // Read by the completion effect (keyed on phase only) without re-running it.
+  const wakeIntentionRef = useRef('');
+  useLayoutEffect(() => {
+    wakeIntentionRef.current = wakeIntention;
+  });
   const [trackId, setTrackId] = useState<string | null>(null);
   const [bottomH, setBottomH] = useState(96);
   const [topH, setTopH] = useState(40);
@@ -95,11 +99,13 @@ export default function SessionScreen() {
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
 
-  // Dev: Settings → "Pose detector (dev)" / "Pose debug overlay". Release: legacy, no overlay.
+  // Pose detector: body2d by default (auto-falls back to legacy); dev Settings can pick one (incl. 3D). Overlay: dev only.
   const poseDetectorMode = usePoseDetectorMode();
   const poseDebugOverlay = usePoseDebugOverlay() && __DEV__;
   const poseDebugOverlayRef = useRef(poseDebugOverlay);
-  poseDebugOverlayRef.current = poseDebugOverlay;
+  useLayoutEffect(() => {
+    poseDebugOverlayRef.current = poseDebugOverlay;
+  });
   const [poseDiag, setPoseDiag] = useState<PoseDiagnostics | undefined>(undefined);
   const [poseFps, setPoseFps] = useState<number | undefined>(undefined);
   const lastDiagAt = useRef<number | null>(null);
@@ -161,7 +167,9 @@ export default function SessionScreen() {
   // before bail re-arm runs (POSE_BROKEN would bounce meditating → alarming).
   const appActive = useRef(AppState.currentState === 'active');
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+  useLayoutEffect(() => {
+    phaseRef.current = phase;
+  });
 
   useEffect(() => {
     let inactiveArm: ReturnType<typeof setTimeout> | null = null;
@@ -358,7 +366,7 @@ export default function SessionScreen() {
             streak: String(streak.count),
             ...(prevStreak ? { prev: String(prevStreak.count) } : {}),
             ...(newBadges.length ? { badges: newBadges.join(',') } : {}),
-            ...(wakeIntention.trim() ? { intention: wakeIntention.trim() } : {}),
+            ...(wakeIntentionRef.current.trim() ? { intention: wakeIntentionRef.current.trim() } : {}),
           },
         });
         // After navigation: resolve today's alarm + schedule tomorrow, then free the session.

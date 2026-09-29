@@ -3,7 +3,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader, useSafeBack } from '@/components/ScreenHeader';
 import { loadReliabilityCheckCompleted, saveReliabilityCheckCompleted } from '@/lib/storage';
@@ -100,7 +100,7 @@ export default function ReliabilityCheckScreen() {
           <Ionicons name="alarm-outline" size={48} color={colors.calm} />
           <Text style={styles.title}>Make sure your alarm can wake you</Text>
           <Text style={styles.lead}>
-            Quiett can't detect these iPhone settings, but they matter for a reliable morning
+            Quiett can’t detect these iPhone settings, but they matter for a reliable morning
             alarm. Check each one:
           </Text>
         </View>
@@ -132,7 +132,7 @@ export default function ReliabilityCheckScreen() {
                     <Text style={styles.checkText}>{item.body}</Text>
                   </View>
                   <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-                    {checked ? <Ionicons name="checkmark" size={18} color={colors.bg} /> : null}
+                    {checked ? <Ionicons name="checkmark" size={18} color={colors.onAccent} /> : null}
                   </View>
                 </View>
               </Pressable>
@@ -150,7 +150,7 @@ export default function ReliabilityCheckScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerNote}>
-            Mark each item as done once you've checked it. The card on Home will disappear when
+            Mark each item as done once you’ve checked it. The card on Home will disappear when
             all three are complete.
           </Text>
         </View>
@@ -196,7 +196,7 @@ function createStyles(colors: ColorTokens) {
     checklist: { gap: spacing.md },
     checkItem: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,
@@ -213,7 +213,7 @@ function createStyles(colors: ColorTokens) {
     checkNumber: {
       width: 32,
       height: 32,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       backgroundColor: colors.bgElevated,
       borderWidth: 1,
       borderColor: colors.border,
@@ -251,8 +251,8 @@ function createStyles(colors: ColorTokens) {
       justifyContent: 'center',
     },
     checkboxChecked: {
-      backgroundColor: colors.calm,
-      borderColor: colors.calm,
+      backgroundColor: colors.accentStrong,
+      borderColor: colors.accentStrong,
     },
     actions: { gap: spacing.md },
     footer: { paddingTop: spacing.sm },

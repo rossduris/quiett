@@ -17,7 +17,7 @@ import { useCameraPermissions } from 'expo-camera';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Animated, { FadeIn, FadeInLeft, FadeInRight } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { deviceUses24h } from '@/lib/time-format';
+import { deviceUses24h, formatClock } from '@/lib/time-format';
 import { SpringPill } from '@/components/SpringPill';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { AnimatedScene } from '@/components/onboarding/art/AnimatedScene';
@@ -119,7 +119,7 @@ function toHhMm(d: Date): string {
 }
 
 function displayTime(hhmm: string): string {
-  return parseTime(hhmm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return formatClock(parseTime(hhmm));
 }
 
 /** "Tomorrow" / "Today" / "Monday" for the next ring. */
@@ -144,7 +144,13 @@ export default function OnboardingScreen() {
 
   const [stepIndex, setStepIndex] = useState(0);
   const step: StepId = STEPS[stepIndex]!;
-  const direction = useRef(1);
+  // Slide direction: forward when the step index goes up, back when it goes down.
+  const [prevStep, setPrevStep] = useState(0);
+  const [direction, setDirection] = useState(1);
+  if (stepIndex !== prevStep) {
+    setDirection(stepIndex > prevStep ? 1 : -1);
+    setPrevStep(stepIndex);
+  }
 
   const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({
     ...DEFAULT_ALARM,
@@ -220,23 +226,13 @@ export default function OnboardingScreen() {
   );
 
   const goTo = useCallback((index: number) => {
-    setStepIndex((i) => {
-      const nextIndex = Math.max(0, Math.min(STEPS.length - 1, index));
-      direction.current = nextIndex >= i ? 1 : -1;
-      return nextIndex;
-    });
+    setStepIndex(Math.max(0, Math.min(STEPS.length - 1, index)));
   }, []);
   const next = useCallback(() => {
-    setStepIndex((i) => {
-      direction.current = 1;
-      return Math.min(STEPS.length - 1, i + 1);
-    });
+    setStepIndex((i) => Math.min(STEPS.length - 1, i + 1));
   }, []);
   const back = useCallback(() => {
-    setStepIndex((i) => {
-      direction.current = -1;
-      return Math.max(0, i - 1);
-    });
+    setStepIndex((i) => Math.max(0, i - 1));
   }, []);
 
   // Android hardware back steps backwards instead of leaving onboarding.
@@ -479,7 +475,7 @@ export default function OnboardingScreen() {
               group them into one element). Android: tap the card to open the dialog. */}
           {Platform.OS === 'ios' ? (
             <View style={styles.timeCard}>
-              <Text style={styles.bigTime} accessibilityLabel={`Wake time ${displayTime(alarm.time)}`}>
+              <Text style={styles.bigTime} maxFontSizeMultiplier={1.3} accessibilityLabel={`Wake time ${displayTime(alarm.time)}`}>
                 {displayTime(alarm.time)}
               </Text>
               {/* No locale / is24Hour: iOS follows the device 12/24-hour setting. */}
@@ -501,7 +497,7 @@ export default function OnboardingScreen() {
               accessibilityHint="Opens the time picker"
               style={styles.timeCard}
             >
-              <Text style={styles.bigTime}>{displayTime(alarm.time)}</Text>
+              <Text style={styles.bigTime} maxFontSizeMultiplier={1.3}>{displayTime(alarm.time)}</Text>
               {showAndroidPicker ? (
                 <DateTimePicker
                   value={parseTime(alarm.time)}
@@ -651,7 +647,7 @@ export default function OnboardingScreen() {
 
   const entering = reduceMotion
     ? FadeIn.duration(250)
-    : (direction.current > 0 ? FadeInRight : FadeInLeft).duration(380);
+    : (direction > 0 ? FadeInRight : FadeInLeft).duration(380);
 
   return (
     <View style={styles.screen}>

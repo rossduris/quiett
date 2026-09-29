@@ -71,6 +71,7 @@ type LayerProps = {
 };
 
 const linear = Easing.linear;
+const f2 = (n: number) => Math.round(n * 1000) / 1000;
 const sine = Easing.inOut(Easing.sin);
 
 function startDriver(m: SceneMotion, phase: number): number {
@@ -212,7 +213,14 @@ const MotionLayer = memo(function MotionLayer({ frame, defs, render, segment, on
 
   const originX = offX + (m.ox ?? frame.vbW / 2) * k;
   const originY = offY + (m.oy ?? frame.vbH / 2) * k;
-  const vb = `0 0 ${frame.vbW} ${frame.vbH}`;
+  // Overscan: the moving layer's own canvas is larger than the cover on every side, so while it
+  // translates / scales its edge never enters view (it used to be exactly cover-sized, and the
+  // drifting clouds / falling rain showed a hard rectangular edge sliding in). The viewBox grows
+  // by the same amount, so the drawing maps to exactly the same place; only the cover's outer
+  // frame (or the scene's own clip rect) clips it.
+  const padX = Math.ceil(Math.abs(m.dx ?? 0) * k + frame.width * 0.12);
+  const padY = Math.ceil(Math.abs(m.dy ?? 0) * k + frame.height * 0.12);
+  const vb = `${f2((-offX - padX) / k)} ${f2((-offY - padY) / k)} ${f2((frame.width + padX * 2) / k)} ${f2((frame.height + padY * 2) / k)}`;
   const node = render(segment.node, 'n');
   const tile =
     m.k === 'loop' ? (
@@ -236,12 +244,18 @@ const MotionLayer = memo(function MotionLayer({ frame, defs, render, segment, on
     <View pointerEvents="none" style={[styles.clip, clipBox]}>
       <Animated.View
         style={[
-          { position: 'absolute', left: -clipBox.left, top: -clipBox.top, width: frame.width, height: frame.height },
+          { position: 'absolute', left: -clipBox.left, top: -clipBox.top, width: frame.width, height: frame.height, overflow: 'visible' },
           { transformOrigin: [originX, originY, 0] },
           aStyle,
         ]}
       >
-        <Svg width={frame.width} height={frame.height} viewBox={vb} preserveAspectRatio="xMidYMid slice">
+        <Svg
+          style={{ position: 'absolute', left: -padX, top: -padY }}
+          width={frame.width + padX * 2}
+          height={frame.height + padY * 2}
+          viewBox={vb}
+          preserveAspectRatio="none"
+        >
           <Defs>{defs}</Defs>
           {node}
           {tile}

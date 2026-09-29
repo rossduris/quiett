@@ -1,16 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 
+// One shared AppState listener (every animatable cover used to add its own).
+let appActive = AppState.currentState === 'active';
+const listeners = new Set<() => void>();
+AppState.addEventListener('change', (s: AppStateStatus) => {
+  const next = s === 'active';
+  if (next === appActive) return;
+  appActive = next;
+  listeners.forEach((l) => l());
+});
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+const getSnapshot = () => appActive;
+
 /** True while the app is in the foreground. */
 export function useAppActive(): boolean {
-  const [active, setActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (s: AppStateStatus) => setActive(s === 'active'));
-    return () => sub.remove();
-  }, []);
-  return active;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /**

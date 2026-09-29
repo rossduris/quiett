@@ -344,7 +344,7 @@ const AMBIENT_META: Record<
 const AMBIENT_TRACKS: UnlockTrack[] = MEDITATION_SOUNDS.map((s) => {
   const meta = AMBIENT_META[s.id] ?? {
     title: s.label,
-    blurb: 'Ambient sound for the morning session.',
+    blurb: 'An ambient sound for your quiet morning minutes.',
     accent: '#A8C5D4',
     accentSoft: 'rgba(168,197,212,0.18)',
     mood: 'Ambient',

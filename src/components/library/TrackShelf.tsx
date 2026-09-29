@@ -27,6 +27,9 @@ type Props = {
 
 const STRIDE = CARD_W + CARD_GAP;
 
+const keyExtractor = (t: UnlockTrack) => t.id;
+const getItemLayout = (_: unknown, index: number) => ({ length: CARD_W, offset: spacing.lg + STRIDE * index, index });
+
 /** One horizontal shelf (virtualised: only the cards near the viewport mount their SVG covers). */
 export function TrackShelf({ kind, isPremium, selectedId, playingId, scenes, onSelect, onPreview }: Props) {
   const colors = useThemeColors();
@@ -65,15 +68,17 @@ export function TrackShelf({ kind, isPremium, selectedId, playingId, scenes, onS
       <FlatList
         horizontal
         data={tracks}
-        keyExtractor={(t) => t.id}
+        keyExtractor={keyExtractor}
         renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.row}
         ItemSeparatorComponent={Separator}
-        getItemLayout={(_, index) => ({ length: CARD_W, offset: spacing.lg + STRIDE * index, index })}
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={5}
+        getItemLayout={getItemLayout}
+        // ~2.4 cards fit on screen: mount 3, keep one screen either side, add 2 per batch.
+        initialNumToRender={3}
+        maxToRenderPerBatch={2}
+        updateCellsBatchingPeriod={80}
+        windowSize={3}
         decelerationRate="fast"
         snapToInterval={STRIDE}
       />

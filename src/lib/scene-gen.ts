@@ -2918,7 +2918,7 @@ function washStroke(ctx: Ctx, y: number, thick: number, color: string, alpha: nu
 
 /** Dawn Wash — watercolour bands of dawn colour washing across the sky over a still sea. */
 function buildWash(ctx: Ctx) {
-  const { W, H, pal, tok, mode } = ctx;
+  const { H, pal, tok, mode } = ctx;
   const dark = mode === 'dark';
   const hy = H * 0.64;
   drawSky(ctx, hy);

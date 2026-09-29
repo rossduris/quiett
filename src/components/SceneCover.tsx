@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState, type ReactElement } from 'react';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, {
   Circle,
@@ -25,6 +26,9 @@ import {
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { useMotionActive } from '@/lib/use-motion-active';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
+import { markCoverDrawn, scheduleCoverMount, wasCoverDrawn } from '@/lib/cover-mount-queue';
+import { DURATION } from '@/lib/motion';
 import { SceneMotionLayers, segmentScene } from '@/components/scene-motion-layers';
 
 type Props = {
@@ -43,6 +47,12 @@ type Props = {
    * the screen is focused, the app is foregrounded and Reduce Motion is off.
    */
   animate?: boolean;
+  /**
+   * Lists with many covers (Library shelves, the track picker): show a flat sky-coloured
+   * placeholder first and mount the SVG a couple of covers at a time once the screen has settled,
+   * with a short fade (none under Reduce Motion). A scene already drawn this session mounts at once.
+   */
+  defer?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -54,6 +64,49 @@ export function sceneModeFor(colors: ColorTokens): SceneMode {
 /** Theme tokens the scene generator uses for motif colours (balloons, flowers, brass, felt, night sky depth). */
 export function sceneTokensFor(colors: ColorTokens): SceneTokens {
   return { accent: colors.accent, calm: colors.calm, sunrise: colors.sunrise, warning: colors.warning, bg: colors.bg };
+}
+
+/** Build options exactly as SceneCover does (shared with the background pre-warm). */
+export function sceneOptionsFor(
+  colors: ColorTokens,
+  size: number,
+  height?: number,
+  over: { mode?: SceneMode; lod?: 'full' | 'lite' } = {},
+): Parameters<typeof buildSceneCached>[1] {
+  const h = height ?? size;
+  return {
+    mode: over.mode ?? sceneModeFor(colors),
+    // Quantise aspect so similar tiles share a cached model.
+    aspect: Math.round((h / size) * 20) / 20,
+    lod: over.lod ?? (Math.min(size, h) < 72 ? 'lite' : 'full'),
+    accent: colors.accent,
+    tokens: sceneTokensFor(colors),
+  };
+}
+
+type SceneContent = { vb: string; defs: ReactElement[]; nodes: ReactElement[]; placeholder: string };
+/** React elements per cached model, shared by every cover showing that scene (and by remounts). */
+const CONTENT = new WeakMap<object, SceneContent>();
+export function sceneContentFor(model: ReturnType<typeof buildSceneCached>): SceneContent {
+  let c = CONTENT.get(model);
+  if (!c) {
+    c = {
+      vb: `0 0 ${model.w} ${model.h}`,
+      defs: model.defs.map(renderDef),
+      nodes: model.nodes.map((n, i) => renderNode(n, i)),
+      placeholder: placeholderColor(model),
+    };
+    CONTENT.set(model, c);
+  }
+  return c;
+}
+
+/** Mid sky colour of the scene (first linear gradient), so the placeholder → scene fade is gentle. */
+function placeholderColor(model: ReturnType<typeof buildSceneCached>): string {
+  const sky = model.defs.find((d) => d.t === 'linear');
+  if (sky && sky.t === 'linear' && sky.stops.length) return sky.stops[Math.floor(sky.stops.length / 2)]!.c;
+  const rect = model.nodes.find((n) => n.t === 'rect');
+  return rect && rect.t === 'rect' && rect.fill && !rect.fill.startsWith('url(') ? rect.fill : 'transparent';
 }
 
 function stops(list: GradStop[]) {
@@ -129,37 +182,50 @@ function renderDef(d: SvgDef): ReactElement {
  * Gradient ids derive from a hash of the spec/options, so instances never collide
  * with a *different* scene; identical scenes share identical defs.
  */
-function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, animate, style }: Props) {
+function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, animate, defer, style }: Props) {
   const colors = useThemeColors();
   const h = height ?? size;
-  const sceneMode = mode ?? sceneModeFor(colors);
-  const level = lod ?? (Math.min(size, h) < 72 ? 'lite' : 'full');
-  // Quantise aspect so similar tiles share a cached model.
-  const aspect = Math.round((h / size) * 20) / 20;
-
-  const tokens = useMemo(() => sceneTokensFor(colors), [colors]);
 
   const model = useMemo(
-    () => buildSceneCached(scene, { mode: sceneMode, aspect, lod: level, accent: colors.accent, tokens }),
-    [scene, sceneMode, aspect, level, colors.accent, tokens],
+    () => buildSceneCached(scene, sceneOptionsFor(colors, size, h, { mode, lod })),
+    [scene, colors, size, h, mode, lod],
   );
-  const content = useMemo(
-    () => ({
-      vb: `0 0 ${model.w} ${model.h}`,
-      defs: model.defs.map(renderDef),
-      nodes: model.nodes.map((n, i) => renderNode(n, i)),
-    }),
-    [model],
-  );
+  const content = sceneContentFor(model);
+
+  // Deferred covers: placeholder until the mount queue gets to this one.
+  const [shown, setShown] = useState(() => !defer || wasCoverDrawn(model));
+  const [fade, setFade] = useState(false);
+  // Already drawn elsewhere (or the model changed to one that was): show straight away.
+  if (!shown && wasCoverDrawn(model)) setShown(true);
+  useEffect(() => {
+    if (shown) {
+      markCoverDrawn(model);
+      return;
+    }
+    return scheduleCoverMount(() => {
+      setFade(true);
+      setShown(true);
+    });
+  }, [shown, model]);
+  const reduce = useReduceMotion();
 
   const frame = useMemo(
     () => [styles.frame, { width: size, height: h, borderRadius: radius }, style],
     [size, h, radius, style],
   );
 
-  return (
-    <View style={frame} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {animate !== undefined ? (
+  if (!shown) {
+    return (
+      <View
+        style={[frame, { backgroundColor: content.placeholder }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
+    );
+  }
+
+  const svg =
+    animate !== undefined ? (
         <AnimatedLayers model={model} defs={content.defs} width={size} height={h} animate={animate}>
           <Svg width={size} height={h} viewBox={content.vb} preserveAspectRatio="xMidYMid slice">
             <Defs>{content.defs}</Defs>
@@ -171,7 +237,15 @@ function SceneCoverBase({ scene, size, height, radius = 0, mode, lod, animate, s
           <Defs>{content.defs}</Defs>
           {content.nodes}
         </Svg>
-      )}
+      );
+
+  return (
+    <View
+      style={fade ? [frame, { backgroundColor: content.placeholder }] : frame}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {fade && !reduce ? <Animated.View entering={FadeIn.duration(DURATION.base)}>{svg}</Animated.View> : svg}
     </View>
   );
 }
@@ -196,14 +270,14 @@ function AnimatedLayers({
   children: ReactElement;
 }) {
   const live = useMotionActive(animate);
+  // Sticky: once the cover has gone live, keep the segmented layers.
   const [layered, setLayered] = useState(false);
-  useEffect(() => {
-    if (live) setLayered(true);
-  }, [live]);
-  const segments = useMemo(() => segmentScene(model.nodes), [model]);
-  const hasMotion = segments.some((s) => s.kind === 'motion');
+  if (live && !layered) setLayered(true);
+  // Segmenting is only needed once the cover actually goes live (most never do).
+  const segments = useMemo(() => (layered ? segmentScene(model.nodes) : null), [layered, model]);
+  const hasMotion = !!segments && segments.some((s) => s.kind === 'motion');
   const frame = useMemo(() => ({ width, height, vbW: model.w, vbH: model.h }), [width, height, model]);
-  if (!layered || !hasMotion) return children;
+  if (!layered || !segments || !hasMotion) return children;
   return <SceneMotionLayers frame={frame} defs={defs} segments={segments} render={renderNode} playing={live} />;
 }
 

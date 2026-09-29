@@ -30,13 +30,21 @@ const NARROW_WIDTH = 390;
 
 /** Minute clock local to this card, re-anchored whenever Home refreshes `resetAt`. */
 function useMinuteClock(resetAt: Date): Date {
-  const [now, setNow] = useState(() => new Date());
+  const [tick, setNow] = useState(() => new Date());
   useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
+    // Tick on the minute boundary so the countdown never lags the real clock by up to a minute.
+    let id: ReturnType<typeof setInterval> | null = null;
+    const first = setTimeout(() => {
+      setNow(new Date());
+      id = setInterval(() => setNow(new Date()), 60_000);
+    }, 60_000 - (Date.now() % 60_000) + 50);
+    return () => {
+      clearTimeout(first);
+      if (id) clearInterval(id);
+    };
   }, [resetAt]);
-  return now;
+  // A Home refresh (`resetAt` is its fresh "now") counts as a newer reading than the last tick.
+  return resetAt.getTime() > tick.getTime() ? resetAt : tick;
 }
 
 type Props = {

@@ -14,7 +14,12 @@ export type ProppedSample = {
   x: number;
   y: number;
   z: number;
+  /** True when no motion reading arrived in time; the propped check is skipped (passes). */
+  sensorMissing?: boolean;
 };
+
+/** No accelerometer reading within this long after start → skip the propped check. */
+const NO_READING_GRACE_MS = 3500;
 
 /**
  * True when the phone looks propped (nightstand / upright lean), not flat
@@ -41,8 +46,9 @@ export type ProppedMonitor = {
 };
 
 /**
- * Live propped-phone monitor. Fail-closed after first reading: if sensors
- * unavailable, isPropped() returns false so the sit cannot cheat-open.
+ * Live propped-phone monitor. While readings arrive the check is enforced (hysteresis).
+ * If the sensor is unavailable or no reading arrives within NO_READING_GRACE_MS, the check
+ * is skipped (isPropped() → true) so nobody gets stuck; a later reading re-enables it.
  */
 export function createProppedMonitor(): ProppedMonitor {
   const listeners = new Set<(sample: ProppedSample) => void>();
@@ -51,6 +57,8 @@ export function createProppedMonitor(): ProppedMonitor {
   let hasSample = false;
   let enter = 0;
   let leave = 0;
+  let sensorMissing = false;
+  let graceTimer: ReturnType<typeof setTimeout> | null = null;
   let last: ProppedSample = {
     propped: false,
     rawPropped: false,
@@ -64,7 +72,20 @@ export function createProppedMonitor(): ProppedMonitor {
     listeners.forEach((l) => l(sample));
   };
 
+  const clearGrace = () => {
+    if (graceTimer) clearTimeout(graceTimer);
+    graceTimer = null;
+  };
+
+  const markMissing = () => {
+    if (hasSample) return;
+    sensorMissing = true;
+    emit({ propped: true, rawPropped: true, x: 0, y: 0, z: 0, sensorMissing: true });
+  };
+
   const onReading = (m: AccelerometerMeasurement) => {
+    clearGrace();
+    sensorMissing = false;
     const rawPropped = isRawPropped(m);
     if (!hasSample) {
       hasSample = true;
@@ -105,15 +126,20 @@ export function createProppedMonitor(): ProppedMonitor {
       if (sub) return;
       Accelerometer.setUpdateInterval(ACCEL_INTERVAL_MS);
       sub = Accelerometer.addListener(onReading);
-      void Accelerometer.isAvailableAsync().then((ok) => {
-        if (!ok) {
-          hasSample = true;
-          published = false;
-          emit({ propped: false, rawPropped: false, x: 0, y: 0, z: 0 });
-        }
-      });
+      clearGrace();
+      graceTimer = setTimeout(markMissing, NO_READING_GRACE_MS);
+      void Accelerometer.isAvailableAsync()
+        .then((ok) => {
+          if (!ok && sub) {
+            clearGrace();
+            markMissing();
+          }
+        })
+        .catch(() => {});
     },
     stop() {
+      clearGrace();
+      sensorMissing = false;
       sub?.remove();
       sub = null;
       hasSample = false;
@@ -121,7 +147,7 @@ export function createProppedMonitor(): ProppedMonitor {
       enter = 0;
       leave = 0;
     },
-    isPropped: () => (hasSample ? published : false),
+    isPropped: () => (sensorMissing ? true : hasSample ? published : false),
     subscribe(listener) {
       listeners.add(listener);
       listener(last);

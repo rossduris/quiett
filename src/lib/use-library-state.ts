@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { meditationSoundById } from '@/constants/sounds';
 import {
@@ -90,7 +90,9 @@ export function useLibraryState() {
 
   // Latest-state ref so the per-track callbacks below can stay referentially stable.
   const latest = useRef({ isPremium, surpriseMe, selectedId, guidedOn });
-  latest.current = { isPremium, surpriseMe, selectedId, guidedOn };
+  useLayoutEffect(() => {
+    latest.current = { isPremium, surpriseMe, selectedId, guidedOn };
+  });
 
   const selectTrack = useCallback(
     async (track: UnlockTrack) => {

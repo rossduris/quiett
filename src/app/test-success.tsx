@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,7 +33,7 @@ export default function TestSuccessScreen() {
           Nice — you settled in and finished a 30-second practice. On a real morning it works
           the same way, followed by 2 minutes of quiet.
         </Text>
-        <Text style={styles.note}>Practice sessions don't count toward your streak or history.</Text>
+        <Text style={styles.note}>Test mornings don’t count toward your streak or history.</Text>
       </View>
 
       <View style={styles.actions}>

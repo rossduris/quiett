@@ -39,6 +39,7 @@ import type {
   PoseSample,
   PoseStatus,
 } from './types';
+import { notePoseFrameForFallback } from '@/lib/pose-dev-pref';
 
 export type CaptureFn = () => Promise<string | null>;
 
@@ -293,6 +294,8 @@ export function createOnDevicePoseDetector(
   };
 
   const processLandmarks = (landmarks: PoseLandmarks) => {
+    // Runtime fallback: steps body3d → body2d → legacy when a body mode isn't working here.
+    if (mode === 'live' && usingNative) notePoseFrameForFallback(detector, landmarks);
     const phonePropped = proppedMonitor.isPropped();
 
     if (detector !== 'legacy' && landmarks.available && landmarks.detector) {

@@ -4,7 +4,7 @@ import {
   setIsAudioActiveAsync,
   type AudioPlayer,
 } from 'expo-audio';
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import {
   alarmSoundById,
@@ -210,9 +210,11 @@ function rebuildHarsh(alarmId: string) {
     /* ignore */
   }
   // Use optimized session version for Quiett harsh; standard assets for others.
-  const asset = alarmId === 'quiett_harsh' 
-    ? QUIETT_HARSH_SESSION 
-    : alarmSoundById(alarmId).url ?? QUIETT_HARSH_SESSION;
+  // System default has no in-app file (lock screen uses the iOS sound) → bundled Classic ring.
+  const opt = alarmSoundById(alarmId);
+  const asset = alarmId === 'quiett_harsh'
+    ? QUIETT_HARSH_SESSION
+    : opt.inAppUrl ?? opt.url ?? QUIETT_HARSH_SESSION;
   harsh = createAudioPlayer(asset, SESSION_PLAYER_OPTIONS);
   harsh.loop = true;
   harsh.volume = 1;
@@ -791,7 +793,9 @@ export function usePreviewPlayer() {
 export function useStopPreviewWhenHidden(visible: boolean, keepId?: () => string | null) {
   const wasVisible = useRef(visible);
   const keep = useRef(keepId);
-  keep.current = keepId;
+  useLayoutEffect(() => {
+    keep.current = keepId;
+  });
   useEffect(() => {
     if (wasVisible.current && !visible) {
       const k = keep.current?.();

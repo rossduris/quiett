@@ -1,14 +1,14 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { SceneLockBadge } from '@/components/SceneCover';
-import { PlayButton } from '@/components/PlayButton';
+import { PreviewOverlay } from '@/components/PreviewOverlay';
 import { TrackCover } from '@/components/TrackCover';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
-import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
+import { previewA11yActions } from '@/lib/preview-a11y';
 import { CARD_H, CARD_W, SCENE_ART_H, frostPill, playFab, pillText, pressedStyle } from './library-styles';
 import { hapticSelect } from '@/lib/haptics';
 
@@ -30,6 +30,20 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
   const preview = locked ? undefined : () => onPreview(track);
   const status = locked ? ', Premium. Opens Quiett Premium' : selected ? ', selected for your next morning' : '';
 
+  const button = preview
+    ? {
+        playing: previewing,
+        onPress: preview,
+        colors,
+        size: 32,
+        iconSize: 14,
+        style: styles.fab,
+        activeStyle: styles.fabActive,
+        accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${track.title}`,
+      }
+    : null;
+
+  const renderCard = (slot: ReactNode) => {
   const badges = (
     <View style={styles.top}>
       {selected ? (
@@ -45,18 +59,7 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
       ) : (
         <View />
       )}
-      {preview ? (
-        <PlayButton
-          {...previewButtonA11yHidden}
-          playing={previewing}
-          onPress={preview}
-          colors={colors}
-          size={32}
-          iconSize={14}
-          style={styles.fab}
-          activeStyle={styles.fabActive}
-        />
-      ) : null}
+      {slot}
     </View>
   );
 
@@ -86,7 +89,7 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
       {scenes ? (
         <View style={styles.sceneCard}>
           <View style={styles.art}>
-            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} animate={previewing} />
+            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} animate={previewing} defer />
             <View style={styles.overlay}>{badges}</View>
           </View>
           <View style={styles.sceneBottom}>{text}</View>
@@ -103,6 +106,9 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
       )}
     </Pressable>
   );
+  };
+
+  return <PreviewOverlay button={button} renderRow={renderCard} />;
 }
 
 export const ShelfCard = memo(ShelfCardBase);

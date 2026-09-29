@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AppState } from 'react-native';
 import { Stack, ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,8 +11,24 @@ import { warnIfLegalPlaceholders } from '@/constants/legal';
 function RootStack() {
   const { colors, theme } = useTheme();
 
-  // Use light nav theme for light color schemes, dark for dark
-  const navTheme = theme.colors.statusBarStyle === 'dark' ? DefaultTheme : DarkTheme;
+  // Light / dark nav base, recoloured with the theme tokens so transitions, modal backdrops
+  // and any native chrome use our backgrounds (DarkTheme's near-black + iOS blue looked off
+  // against Night Teal).
+  const navTheme = useMemo(() => {
+    const base = theme.colors.statusBarStyle === 'dark' ? DefaultTheme : DarkTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.calm,
+        background: colors.bg,
+        card: colors.bg,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.alarm,
+      },
+    };
+  }, [theme.colors.statusBarStyle, colors]);
 
   // Evening reminders are one-shot and queued a week ahead: top the queue up (and refresh
   // the time / sound in the message) on launch and every foreground.

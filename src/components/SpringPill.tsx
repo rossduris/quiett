@@ -64,7 +64,7 @@ export function SpringPill({ selected, label, style, selectedStyle, textStyle, s
             fill,
           ]}
         />
-        <Animated.Text style={[textStyle, selected && selectedTextStyle, text]}>{label}</Animated.Text>
+        <Animated.Text style={[textStyle, selected && selectedTextStyle, text]} maxFontSizeMultiplier={1.3}>{label}</Animated.Text>
       </Animated.View>
     </Pressable>
   );

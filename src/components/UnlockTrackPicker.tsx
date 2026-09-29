@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { TrackCover } from '@/components/TrackCover';
-import { PlayButton } from '@/components/PlayButton';
 import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
@@ -14,7 +13,8 @@ import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer, useS
 import { useThemeColors } from '@/lib/theme-provider';
 import { usePremium } from '@/lib/premium-provider';
 import { useShowGuided } from '@/lib/dev-flags';
-import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
+import { previewA11yActions } from '@/lib/preview-a11y';
+import { PreviewOverlay } from '@/components/PreviewOverlay';
 import {
   kindLabel,
   kindSectionHint,
@@ -84,7 +84,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
             <Text style={styles.sheetEyebrow}>Step 2</Text>
             <Text style={styles.sheetTitle}>Meditation</Text>
             <Text style={styles.sheetLead}>
-              Your 2-minute meditation, once you're still. {guidedOn ? 'Guided, tones & music' : 'Tones & music'} or ambient.
+              Your 2-minute meditation, once you’re still. {guidedOn ? 'Guided, tones & music' : 'Tones & music'} or ambient.
               Tap play to preview.
             </Text>
           </View>
@@ -120,8 +120,24 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                     const disabled = track.locked && !isPremium;
                     const playing = playingId === previewIds.track(track.id);
                     return (
-                      <Pressable
+                      <PreviewOverlay
                         key={track.id}
+                        button={
+                          disabled
+                            ? null
+                            : {
+                                playing,
+                                onPress: () => preview(track),
+                                colors,
+                                size: 34,
+                                iconSize: 14,
+                                style: styles.previewBtn,
+                                activeStyle: styles.previewBtnActive,
+                                accessibilityLabel: `${playing ? 'Stop' : 'Play'} preview of ${track.title}`,
+                              }
+                        }
+                        renderRow={(slot) => (
+                      <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Meditation: ${track.title}${
                           disabled ? ', premium, opens Quiett Premium' : ''
@@ -149,7 +165,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                       >
                         {coverStyle !== 'classic' ? (
                           <View style={[styles.art, styles.artScene]}>
-                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} animate={playing} />
+                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} animate={playing} defer />
                           </View>
                         ) : (
                           <View
@@ -195,19 +211,10 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             {track.durationLabel} · {track.mood}
                           </Text>
                         </View>
-                        {!disabled ? (
-                          <PlayButton
-                            {...previewButtonA11yHidden}
-                            playing={playing}
-                            onPress={() => preview(track)}
-                            colors={colors}
-                            size={34}
-                            iconSize={14}
-                            style={styles.previewBtn}
-                            activeStyle={styles.previewBtnActive}
-                          />
-                        ) : null}
+                        {slot}
                       </Pressable>
+                        )}
+                      />
                     );
                   })}
                 </View>
@@ -307,7 +314,7 @@ function createStyles(colors: ColorTokens) {
   lockBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 999,
+    borderRadius: radii.full,
     backgroundColor: colors.bgElevated,
     borderWidth: 1,
     borderColor: colors.border,

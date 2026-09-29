@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import { hapticSelect } from '@/lib/haptics';
 import { DURATION, EASE, SPRING_BOUNCY, SPRING_SOFT } from '@/lib/motion';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -129,7 +129,7 @@ export function QuiettTabBar({ state, descriptors, navigation }: QuiettTabBarPro
         return (
           <Pressable
             key={route.key}
-            accessibilityRole="button"
+            accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
             accessibilityLabel={meta.label}
             onPress={onPress}
@@ -163,13 +163,15 @@ export function QuiettTabBar({ state, descriptors, navigation }: QuiettTabBarPro
 
 function TabIcon({ focused, reduceMotion, name, color }: { focused: boolean; reduceMotion: boolean; name: IconName; color: string }) {
   const s = useSharedValue(1);
-  const [mounted, setMounted] = useState(false);
+  // Skip the first run (mount): only a focus change bounces the icon.
+  const skipFirst = useRef(true);
   useEffect(() => {
-    setMounted(true);
-  }, []);
-  useEffect(() => {
-    if (!mounted || !focused || reduceMotion) return;
-    s.value = withSequence(withTiming(0.82, { duration: 90, easing: EASE }), withSpring(1, SPRING_BOUNCY));
+    if (skipFirst.current) {
+      skipFirst.current = false;
+      return;
+    }
+    if (!focused || reduceMotion) return;
+    s.set(withSequence(withTiming(0.82, { duration: 90, easing: EASE }), withSpring(1, SPRING_BOUNCY)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
   const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
@@ -196,7 +198,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     padding: 6,
-    borderRadius: 999,
+    borderRadius: radii.full,
   },
   solidPill: {
     borderWidth: 1,
@@ -212,7 +214,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 6,
     bottom: 6,
-    borderRadius: 999,
+    borderRadius: radii.full,
   },
   item: {
     flexDirection: 'row',
@@ -220,7 +222,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 11,
-    borderRadius: 999,
+    borderRadius: radii.full,
     minWidth: 56,
     justifyContent: 'center',
   },

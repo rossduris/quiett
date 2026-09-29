@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
+import { EmptyState } from '@/components/EmptyState';
 import { StreakCalendar } from '@/components/StreakCalendar';
 import { useThemeColors } from '@/lib/theme-provider';
 import { morningsInMonth, type Schedule } from '@/lib/streak-calendar';
@@ -26,9 +27,12 @@ export function CalendarCard({ completedDays, schedule, firstMonth, now }: Props
     <View style={styles.section}>
       <SectionHeader
         label="Calendar"
-        meta={`${monthMornings} ${monthMornings === 1 ? 'morning' : 'mornings'} unlocked`}
+        meta={completedDays.length ? `${monthMornings} ${monthMornings === 1 ? 'morning' : 'mornings'} unlocked` : undefined}
       />
       <View style={styles.card}>
+        {completedDays.length === 0 ? (
+          <EmptyState bare scene="calm" title="No mornings yet" body="Each morning you unlock fills in a day here." />
+        ) : null}
         <StreakCalendar
           completedDays={completedDays}
           schedule={schedule}

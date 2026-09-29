@@ -17,7 +17,6 @@ import {
   markPendingSitWake,
   markWakeResolvedToday,
   peekPendingSitWake,
-  saveBailAlarmId,
   saveBailCarrierIds,
   saveBailTimerIds,
   saveNativeAlarmId,
@@ -33,7 +32,17 @@ import {
   resolveAlarmSoundUri,
 } from '@/lib/harsh-alarm-asset';
 
-const ALARM_TITLE = 'Quiett · time to settle in';
+/**
+ * Lock-screen / AlarmKit copy. Calm and short (the alert truncates long titles); never "sit".
+ * Tint comes from the AccentColor asset (plugins/withAccentColor.js) — native, needs a rebuild.
+ */
+const ALARM_TITLE = 'Good morning. Time to settle in';
+/** Bail / backup one-shots ring when the morning wasn't finished. */
+const BAIL_TITLE = 'Your quiet minute is waiting';
+const STOP_TITLE = 'Stop';
+/** Opens Quiett straight into the morning session (handoff treats it as a live wake). */
+const SECONDARY_TITLE = 'Settle in';
+const COUNTDOWN_TITLE = 'Ringing again soon';
 
 /**
  * iOS sound options for an AlarmKit alarm.
@@ -100,9 +109,20 @@ async function resolveRingingAlarmId(): Promise<string | null> {
   return loadNativeAlarmId();
 }
 
-/** System swipe-to-stop only (no secondary Sit button — was clunky/inconsistent on iOS). */
+/**
+ * Stop + a calm "Settle in" button that opens the session (secondaryOpen handoff). The old
+ * secondary button was removed for inconsistent behaviour; it now uses openApp explicitly.
+ */
+const iosButtons = {
+  stopButtonTitle: STOP_TITLE,
+  secondaryButtonTitle: SECONDARY_TITLE,
+  secondaryButtonBehavior: 'openApp' as const,
+  countdownTitle: COUNTDOWN_TITLE,
+};
+
 const iosGate = {
   alertTitle: ALARM_TITLE,
+  ...iosButtons,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   metadata: { source: 'quiett-home' },
@@ -110,7 +130,8 @@ const iosGate = {
 
 /** Carriers / bail one-shots — no rescheduleImmediate cascade. */
 const bailIosGate = {
-  alertTitle: ALARM_TITLE,
+  alertTitle: BAIL_TITLE,
+  ...iosButtons,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'openApp' as const,
   metadata: { source: 'quiett-bail' },
@@ -118,7 +139,10 @@ const bailIosGate = {
 
 const androidGate = {
   alertTitle: ALARM_TITLE,
-  alertBody: 'Settle in for a quiet start to your day',
+  alertBody: 'A quiet start to your day',
+  stopButtonTitle: STOP_TITLE,
+  secondaryButtonTitle: SECONDARY_TITLE,
+  secondaryButtonBehavior: 'openApp' as const,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   launchUri: 'quiett://session',
@@ -161,7 +185,9 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     return { ok: false, reason: 'unsupported', message: 'Native alarms are not available on web.' };
   }
 
-  if (!prefs.enabled) {
+  // No days picked means the alarm is off (Home shows it that way); scheduling with an empty
+  // weekday list could otherwise leave a one-off ring behind.
+  if (!prefs.enabled || prefs.weekdays.length === 0) {
     await cancelOsAlarm();
     osRingHandedToSession = false;
     return { ok: true, scheduled: false };

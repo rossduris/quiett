@@ -4,26 +4,33 @@ import { useThemeColors } from '@/lib/theme-provider';
 import { createSettingsStyles } from './settings-styles';
 
 type Props = {
+  /** Uppercase eyebrow above the card. */
   label?: string;
-  /** Optional control on the label row (e.g. a switch). */
+  /** Optional trailing element on the eyebrow row. */
   right?: ReactNode;
+  /** Small explanatory text under the card. */
+  footnote?: string;
   children?: ReactNode;
 };
 
-export function SettingsCard({ label, right, children }: Props) {
+/** Settings section: eyebrow label, borderless card of rows, optional footnote (Profile style). */
+export function SettingsCard({ label, right, footnote, children }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   return (
-    <View style={styles.card}>
+    <View style={styles.section}>
       {label ? (
-        <View style={styles.cardTop}>
-          <Text style={styles.cardLabel} accessibilityRole="header">
+        <View style={styles.sectionHead}>
+          <Text style={styles.eyebrow} accessibilityRole="header">
             {label}
           </Text>
           {right}
         </View>
       ) : null}
-      {children}
+      <View style={styles.card}>
+        <View style={styles.cardInner}>{children}</View>
+      </View>
+      {footnote ? <Text style={styles.footnote}>{footnote}</Text> : null}
     </View>
   );
 }

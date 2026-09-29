@@ -187,12 +187,14 @@ export default function PaywallScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const close = useSafeBack('/');
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  /** iPhone SE / mini class heights: tighter hero, gaps and footer so the plans stay in view. */
+  const compact = height < 700;
   const reduceMotion = useReduceMotion();
   const counts = useMemo(() => libraryCounts(), []);
   const heroIds = useMemo(() => heroTrackIds(), []);
   const heroW = Math.min(width - spacing.lg * 2, 460);
-  const heroH = Math.round(Math.min(230, heroW * 0.62));
+  const heroH = Math.round(Math.min(230, heroW * 0.62, height * (compact ? 0.2 : 0.26)));
   /** Section entrance: gentle rise, or a plain fade under Reduce Motion. */
   const enter = (i: number) => (reduceMotion ? FadeIn.duration(200) : FadeInDown.delay(120 + i * 90).duration(420));
   const {
@@ -284,7 +286,7 @@ export default function PaywallScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close"
-          hitSlop={8}
+          hitSlop={10}
           onPress={close}
           style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
         >
@@ -294,14 +296,14 @@ export default function PaywallScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, compact && styles.contentCompact]}
         showsVerticalScrollIndicator={false}
       >
         <PremiumHero width={heroW} height={heroH} trackIds={heroIds} reduceMotion={reduceMotion} />
 
         <Animated.View entering={enter(0)} style={styles.hero}>
           <Text style={styles.kicker}>Quiett Premium</Text>
-          <Text style={styles.title} accessibilityRole="header">
+          <Text style={[styles.title, compact && styles.titleCompact]} accessibilityRole="header">
             Open the full sound library
           </Text>
           <Text style={styles.lead}>
@@ -381,7 +383,9 @@ export default function PaywallScreen() {
                   </View>
                   <View style={styles.planText}>
                     <View style={styles.planTitleRow}>
-                      <Text style={styles.planTitle}>{info.title}</Text>
+                      <Text style={styles.planTitle} numberOfLines={1}>
+                        {info.title}
+                      </Text>
                       {isAnnual && savings ? (
                         <View style={styles.badge}>
                           <Text style={styles.badgeText}>Save {savings}%</Text>
@@ -395,7 +399,9 @@ export default function PaywallScreen() {
                     {perMonth ? <Text style={styles.planSub}>{perMonth}</Text> : null}
                   </View>
                   <View style={styles.planPriceCol}>
-                    <Text style={styles.planPrice}>{pkg.product.priceString}</Text>
+                    <Text style={styles.planPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {pkg.product.priceString}
+                    </Text>
                     {info.per ? <Text style={styles.planPer}>per {info.per}</Text> : null}
                   </View>
                 </Pressable>
@@ -429,7 +435,7 @@ export default function PaywallScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+      <View style={[styles.footer, compact && styles.footerCompact, { paddingBottom: insets.bottom + (compact ? spacing.sm : spacing.md) }]}>
         {showActive ? (
           <PrimaryButton label="Done" onPress={close} />
         ) : (
@@ -440,28 +446,32 @@ export default function PaywallScreen() {
           />
         )}
         {!showActive && selected && available ? (
-          <Text style={styles.disclosure}>{disclosure(selected)}</Text>
+          <Text style={styles.disclosure}>
+            {disclosure(selected)}
+          </Text>
         ) : null}
         <View style={styles.linksRow}>
           <Pressable
             accessibilityRole="button"
             onPress={() => void onRestore()}
             disabled={!available || !!busy}
-            hitSlop={6}
+            hitSlop={10}
+            style={styles.linkHit}
           >
             <Text style={[styles.link, (!available || !!busy) && styles.linkDisabled]}>
               {busy === 'restore' ? 'Restoring\u2026' : 'Restore purchases'}
             </Text>
           </Pressable>
           <Text style={styles.linkDot}>·</Text>
-          <Pressable accessibilityRole="link" onPress={() => openUrl(TERMS_OF_USE_URL)} hitSlop={6}>
+          <Pressable accessibilityRole="link" onPress={() => openUrl(TERMS_OF_USE_URL)} hitSlop={10} style={styles.linkHit}>
             <Text style={styles.link}>Terms of Use</Text>
           </Pressable>
           <Text style={styles.linkDot}>·</Text>
           <Pressable
             accessibilityRole="link"
             onPress={() => openUrl(PRIVACY_POLICY_URL)}
-            hitSlop={6}
+            hitSlop={10}
+            style={styles.linkHit}
           >
             <Text style={styles.link}>Privacy Policy</Text>
           </Pressable>
@@ -510,8 +520,8 @@ function createStyles(colors: ColorTokens) {
       paddingHorizontal: spacing.md,
     },
     closeBtn: {
-      width: 36,
-      height: 36,
+      width: 40,
+      height: 40,
       borderRadius: radii.full,
       backgroundColor: colors.bgCard,
       borderWidth: 1,
@@ -526,6 +536,10 @@ function createStyles(colors: ColorTokens) {
       paddingBottom: spacing.lg,
       gap: spacing.lg,
     },
+    contentCompact: { gap: spacing.md },
+    titleCompact: { fontSize: 24, lineHeight: 30 },
+    footerCompact: { paddingTop: spacing.sm, gap: spacing.xs },
+    linkHit: { paddingVertical: 6 },
     hero: { alignItems: 'center', gap: spacing.sm },
     chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.xs },
     chip: {
@@ -615,8 +629,8 @@ function createStyles(colors: ColorTokens) {
     radioOn: { borderColor: colors.calm },
     radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.calm },
     planText: { flex: 1, gap: 2 },
-    planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    planTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
+    planTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: spacing.sm, rowGap: 4 },
+    planTitle: { color: colors.text, fontSize: 16, fontWeight: '600', flexShrink: 1 },
     planSub: { color: colors.textMuted, fontSize: 13 },
     badge: {
       backgroundColor: colors.accentStrong,
@@ -625,7 +639,7 @@ function createStyles(colors: ColorTokens) {
       paddingVertical: 2,
     },
     badgeText: { color: colors.onAccent, fontSize: 11, fontWeight: '700' },
-    planPriceCol: { alignItems: 'flex-end' },
+    planPriceCol: { alignItems: 'flex-end', flexShrink: 0, maxWidth: '38%' },
     planPrice: { color: colors.text, fontSize: 16, fontWeight: '600' },
     planPer: { color: colors.textDim, fontSize: 12 },
     stateCard: {

@@ -1,22 +1,18 @@
 /**
  * Legal + support links (Settings → Legal / Help, the paywall and the subscription screen).
  *
- * TODO(before App Review): fill in every value marked PLACEHOLDER below.
- *  - PRIVACY_POLICY_URL: the real hosted policy (App Store Connect needs the same URL in
- *    App Privacy settings).
- *  - SUPPORT_EMAIL: the inbox for Settings → Help → Contact support.
- *  - TERMS_OF_USE_URL: Apple's standard EULA is valid as-is; replace only if Quiett adopts
- *    its own terms.
- * Dev builds log a warning on launch while any placeholder is still in use.
+ * Before App Review, make sure each URL below is live.
+ * Dev builds log a warning on launch if any value falls back to an example.com placeholder.
  */
+/** Apple's standard EULA (valid as-is; swap for https://quiett.app/terms if Quiett adopts its own). */
 export const TERMS_OF_USE_URL =
   'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
-/** PLACEHOLDER (TODO): replace with the real hosted privacy policy URL. */
-export const PRIVACY_POLICY_URL = 'https://example.com/quiett/privacy';
+/** Hosted privacy policy (use the same URL in App Store Connect → App Privacy). */
+export const PRIVACY_POLICY_URL = 'https://quiett.app/privacy';
 
-/** PLACEHOLDER (TODO): replace with the real support inbox. */
-export const SUPPORT_EMAIL = 'support@example.com';
+/** Support inbox (Settings → Help → Contact support). */
+export const SUPPORT_EMAIL = 'hello@quiett.app';
 
 const PLACEHOLDERS: { name: string; value: string }[] = [
   { name: 'PRIVACY_POLICY_URL', value: PRIVACY_POLICY_URL },

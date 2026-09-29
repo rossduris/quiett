@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { isBody3DPoseAvailable } from 'quiett-pose';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -68,15 +68,17 @@ export function DevSettingsCard() {
 
   return (
     <SettingsCard label="Developer">
-      <Text style={styles.hint}>Unlock length (release builds are locked to 2 minutes)</Text>
-      <PillGroup
-        options={sitOptions}
-        selected={sitMinutes}
-        onSelect={(m) => {
-          setSitMinutes(m);
-          void saveSitMinutes(m);
-        }}
-      />
+      <View style={styles.block}>
+        <Text style={styles.hint}>Unlock length (release builds are locked to 2 minutes)</Text>
+        <PillGroup
+          options={sitOptions}
+          selected={sitMinutes}
+          onSelect={(m) => {
+            setSitMinutes(m);
+            void saveSitMinutes(m);
+          }}
+        />
+      </View>
       <SettingsLinkRow
         icon="refresh-outline"
         label="Replay onboarding (dev)"
@@ -107,9 +109,11 @@ export function DevSettingsCard() {
         onChange={(on) => void setDevFlag('voiceGuides', on)}
       />
       {devVoiceGuides ? (
-        <Text style={styles.hint}>
-          Pick a voice in Library → Voice (dev). It plays over your sound during the meditation.
-        </Text>
+        <View style={styles.block}>
+          <Text style={styles.hint}>
+            Pick a voice in Library → Voice (dev). It plays over your sound during the meditation.
+          </Text>
+        </View>
       ) : null}
       <SettingsSwitchRow
         icon="person-circle-outline"
@@ -117,25 +121,31 @@ export function DevSettingsCard() {
         value={devAccountUi}
         onChange={(on) => void setDevFlag('accountUi', on)}
       />
-      <Text style={styles.hint}>Cover style (dev)</Text>
-      <PillGroup
-        options={COVER_STYLES.map((cs) => ({ value: cs, label: cs === 'scenes' ? 'Scenes' : 'Classic' }))}
-        selected={coverStyle}
-        onSelect={(cs) => void setCoverStyle(cs)}
-      />
+      <View style={styles.block}>
+        <Text style={styles.hint}>Cover style (dev)</Text>
+        <PillGroup
+          options={COVER_STYLES.map((cs) => ({ value: cs, label: cs === 'scenes' ? 'Scenes' : 'Classic' }))}
+          selected={coverStyle}
+          onSelect={(cs) => void setCoverStyle(cs)}
+        />
+      </View>
       <SettingsLinkRow
         icon="grid-outline"
         label="Cover gallery (dev)"
         onPress={() => router.push('/cover-gallery' as Href)}
       />
-      <Text style={styles.hint}>Pose detector (dev)</Text>
-      <PillGroup
-        options={POSE_DETECTOR_MODES.map((m) => ({ value: m, label: POSE_DETECTOR_LABELS[m] }))}
-        selected={poseDetectorMode}
-        onSelect={(m) => void setPoseDetectorMode(m)}
-      />
+      <View style={styles.block}>
+        <Text style={styles.hint}>Pose detector (dev)</Text>
+        <PillGroup
+          options={POSE_DETECTOR_MODES.map((m) => ({ value: m, label: POSE_DETECTOR_LABELS[m] }))}
+          selected={poseDetectorMode}
+          onSelect={(m) => void setPoseDetectorMode(m)}
+        />
+      </View>
       {poseDetectorMode === 'body3d' && !body3DAvailable ? (
-        <Text style={styles.hint}>3D body pose needs iOS 17 and a native rebuild — falls back to 2D body.</Text>
+        <View style={styles.block}>
+          <Text style={styles.hint}>3D body pose needs iOS 17 and a native rebuild — native falls back to 2D body each frame.</Text>
+        </View>
       ) : null}
       <SettingsSwitchRow
         icon="body-outline"
@@ -143,16 +153,18 @@ export function DevSettingsCard() {
         value={poseDebugOverlay}
         onChange={(on) => void setPoseDebugOverlay(on)}
       />
-      <Text style={styles.hint}>
-        RevenueCat:{' '}
-        {premium.available
-          ? premium.offerings
-            ? `ready · offering "${premium.offerings.identifier}" (${premium.offerings.availablePackages.length} packages)`
-            : 'ready · no current offering yet'
-          : premium.unavailableReason
-            ? describeUnavailableReason(premium.unavailableReason)
-            : 'unavailable'}
-      </Text>
+      <View style={styles.block}>
+        <Text style={styles.hint}>
+          RevenueCat:{' '}
+          {premium.available
+            ? premium.offerings
+              ? `ready · offering "${premium.offerings.identifier}" (${premium.offerings.availablePackages.length} packages)`
+              : 'ready · no current offering yet'
+            : premium.unavailableReason
+              ? describeUnavailableReason(premium.unavailableReason)
+              : 'unavailable'}
+        </Text>
+      </View>
     </SettingsCard>
   );
 }

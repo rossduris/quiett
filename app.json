@@ -9,14 +9,19 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.rossduris.quiett",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Quiett uses the front camera to check that you’re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSAlarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment."
+        "NSAlarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment.",
+        "NSMotionUsageDescription": "Quiett uses your iPhone’s motion sensors to tell when the phone is propped up for your morning check. This stays on your iPhone."
       },
-      "appleTeamId": "EY7Z8634G7"
+      "appleTeamId": "EY7Z8634G7",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -97,7 +102,14 @@
           "microphonePermission": false
         }
       ],
-      "./plugins/withoutPushEntitlement.js"
+      "./plugins/withoutPushEntitlement.js",
+      "expo-localization",
+      [
+        "./plugins/withAccentColor.js",
+        {
+          "color": "#BA5838"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

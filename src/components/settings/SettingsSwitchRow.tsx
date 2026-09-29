@@ -9,6 +9,7 @@ import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { createSettingsStyles } from './settings-styles';
+import { PressableScale } from '@/components/PressableScale';
 
 /** Small visual switch (the Pressable around it owns the accessibility role). */
 export function MiniSwitch({ on, size = 'md' }: { on: boolean; size?: 'md' | 'lg' }) {
@@ -68,7 +69,8 @@ export function SettingsSwitchRow({ icon, label, value, onChange }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={0.98}
       onPress={() => {
         hapticSelect();
         onChange(!value);
@@ -76,14 +78,14 @@ export function SettingsSwitchRow({ icon, label, value, onChange }: Props) {
       accessibilityRole="switch"
       accessibilityLabel={label}
       accessibilityState={{ checked: value }}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={styles.row}
     >
       <View style={styles.rowLeft}>
-        <Ionicons name={icon} size={20} color={colors.text} />
+        <Ionicons name={icon} size={20} color={colors.textMuted} />
         <Text style={styles.rowText}>{label}</Text>
       </View>
       <MiniSwitch on={value} />
-    </Pressable>
+    </PressableScale>
   );
 }
 

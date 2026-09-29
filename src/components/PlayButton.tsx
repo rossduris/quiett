@@ -88,6 +88,8 @@ export const PlayButton = memo(function PlayButton({
       <Animated.View pointerEvents="none" style={[styles.halo, ring, halo2]} />
       <Pressable
         {...rest}
+        accessibilityRole={rest.accessibilityRole ?? 'button'}
+        accessibilityLabel={rest.accessibilityLabel ?? (playing ? 'Stop preview' : 'Play preview')}
         hitSlop={rest.hitSlop ?? 8}
         onPressIn={press.handlers.onPressIn}
         onPressOut={press.handlers.onPressOut}

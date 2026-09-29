@@ -47,7 +47,7 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
             <Text style={styles.sheetEyebrow}>Step 1</Text>
             <Text style={styles.sheetTitle}>Wake-up alarm</Text>
             <Text style={styles.sheetLead}>
-              Rings until you're still, and on the lock screen. Tap to hear it. Intense cuts
+              Rings until you’re still, and on the lock screen. Tap to hear it. Intense cuts
               through; laid-back is softer. System uses the iOS default.
             </Text>
           </View>

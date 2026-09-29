@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
@@ -23,12 +23,13 @@ export function SurpriseOffNote({
 }) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [shown, setShown] = useState(false);
+  const [opacity] = useState(() => new Animated.Value(0));
+  // Shown for the latest trigger until its fade-out finishes (derived, no setState in the effect).
+  const [doneFor, setDoneFor] = useState(0);
+  const shown = trigger !== 0 && doneFor !== trigger;
 
   useEffect(() => {
     if (trigger === 0) return;
-    setShown(true);
     AccessibilityInfo.announceForAccessibility(MESSAGE);
     opacity.setValue(0);
     const anim = Animated.sequence([
@@ -37,7 +38,7 @@ export function SurpriseOffNote({
       Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }),
     ]);
     anim.start(({ finished }) => {
-      if (finished) setShown(false);
+      if (finished) setDoneFor(trigger);
     });
     return () => anim.stop();
   }, [trigger, opacity]);

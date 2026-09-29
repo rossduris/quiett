@@ -11,6 +11,7 @@ import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { longestScheduledStreak, nextStreakGoal } from '@/lib/streak-calendar';
 import { loadLifetimeStats } from '@/lib/lifetime-stats';
+import { formatClock } from '@/lib/time-format';
 import {
   getIsoWeekday,
   loadStreakDeadlinePrefs,
@@ -19,7 +20,6 @@ import {
   type StreakData,
   type StreakDeadlinePrefs,
   WEEKDAY_DISPLAY_ORDER,
-  type Weekday,
 } from '@/lib/storage';
 
 type Props = {
@@ -40,9 +40,6 @@ type StreakDue = {
   note?: string;
 };
 
-function formatClock(d: Date): string {
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -60,7 +57,7 @@ function dayWord(target: Date, now: Date): string {
 function todayRingAt(time: string, now: Date): Date {
   const [h, m] = time.split(':').map((n) => parseInt(n, 10));
   const d = new Date(now);
-  d.setHours(h || 7, m || 0, 0, 0);
+  d.setHours(Number.isFinite(h) ? h! : 7, Number.isFinite(m) ? m! : 0, 0, 0); // 00:xx is valid
   return d;
 }
 

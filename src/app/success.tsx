@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AppState, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AppState, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,17 +17,18 @@ import { sunriseLayout } from '@/components/onboarding/art/scene-layouts';
 import { BadgeMedallion } from '@/components/profile/BadgeMedallion';
 import { MedalSheen } from '@/components/MedalSheen';
 import { ALL_BADGES } from '@/constants/badges';
-import { radii } from '@/constants/theme';
 import { hapticCelebrate, hapticSuccess } from '@/lib/haptics';
 import { DURATION, EASE, SPRING_BOUNCY, enterStagger } from '@/lib/motion';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import type { ColorTokens } from '@/constants/themes';
-import { dayKey, loadWakeIntentionsByDay } from '@/lib/storage';
+import { dayKey, loadAlarmPrefs, loadWakeIntentionsByDay, nextAlarmDate } from '@/lib/storage';
+import { relativeDayLabel } from '@/lib/home-status';
+import { formatClock } from '@/lib/time-format';
 import { fadeOutBacktrack, stopBacktrack } from '@/lib/audio';
 
 export default function SuccessScreen() {
@@ -51,9 +52,25 @@ export default function SuccessScreen() {
     return ALL_BADGES.filter((b) => ids.includes(b.id)).slice(0, 3);
   }, [badges]);
   const reduce = useReduceMotion();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const sceneW = width - spacing.lg * 2;
-  const sceneH = Math.round(Math.min(newBadges.length ? 160 : 220, sceneW * 0.52));
+  // Shorter scene on small phones / when milestones need the room.
+  const sceneCap = (newBadges.length ? 150 : 210) * (height < 700 ? 0.72 : 1);
+  const sceneH = Math.round(Math.min(sceneCap, sceneW * 0.52));
+  // The unlock just happened: this screen opens straight from the session.
+  const [unlockedAt] = useState(() => formatClock(new Date()));
+  const [nextAlarm, setNextAlarm] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadAlarmPrefs().then((a) => {
+      if (!alive || !a.enabled || !a.weekdays.length) return;
+      const next = nextAlarmDate(a.time, a.weekdays, new Date());
+      if (next) setNextAlarm(`${relativeDayLabel(next)} ${formatClock(next)}`);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const layout = useMemo(() => sunriseLayout(sceneW, sceneH, artPalette(colors), { rings: true }), [sceneW, sceneH, colors]);
 
   // Haptics: a success tap as the screen lands, a fuller pattern when the streak ticks / badge lands.
@@ -94,64 +111,77 @@ export default function SuccessScreen() {
     router.replace('/');
   };
 
+  const showStreak = Number.isFinite(count) && count > 0;
+
   return (
-    <View
-      style={[
-        styles.screen,
-        { backgroundColor: colors.bg, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg },
-      ]}
-    >
-      <Animated.View entering={enterStagger(0, reduce)} style={styles.scene}>
-        <AnimatedScene layout={layout} reduceMotion={reduce} radius={radii.xl} />
-      </Animated.View>
-      <Animated.Text entering={enterStagger(1, reduce, 120)} style={[styles.kicker, { color: colors.textDim }]}>
-        Morning complete
-      </Animated.Text>
-      <Animated.Text entering={enterStagger(2, reduce, 120)} style={[styles.title, { color: colors.text }]}>
-        Morning unlocked
-      </Animated.Text>
-      <Animated.Text entering={enterStagger(3, reduce, 120)} style={[styles.body, { color: colors.textMuted }]}>
-        You held still through the gate. Alarm off — the day can start quieter.
-      </Animated.Text>
-      {intention ? (
-        <Animated.Text entering={enterStagger(4, reduce, 120)} style={styles.intention}>
-          “{intention}”
+    <View style={[styles.screen, { paddingTop: insets.top + spacing.md }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <Animated.View entering={enterStagger(0, reduce)} style={styles.scene}>
+          <AnimatedScene layout={layout} reduceMotion={reduce} radius={radii.xl} />
+        </Animated.View>
+        <Animated.Text entering={enterStagger(1, reduce, 120)} style={styles.kicker}>
+          Morning unlocked · {unlockedAt}
         </Animated.Text>
-      ) : null}
-      <Animated.View entering={enterStagger(5, reduce, 120)} style={styles.streak}>
-        <StreakTick count={count} prev={ticked ? prevCount : null} reduce={reduce} colors={colors} styles={styles} />
-        <Text style={styles.streakLabel}>day streak</Text>
+        <Animated.Text entering={enterStagger(2, reduce, 120)} style={styles.title} accessibilityRole="header">
+          Your day is open
+        </Animated.Text>
+        <Animated.Text entering={enterStagger(3, reduce, 120)} style={styles.body}>
+          Alarm off. You gave the morning a quiet start.
+        </Animated.Text>
+        {intention ? (
+          <Animated.View entering={enterStagger(4, reduce, 120)} style={styles.intentionCard}>
+            <Text style={styles.intentionLabel}>Today&apos;s intention</Text>
+            <Text style={styles.intention}>{intention}</Text>
+          </Animated.View>
+        ) : null}
+        {showStreak ? (
+          <Animated.View entering={enterStagger(5, reduce, 120)} style={styles.streak}>
+            <StreakTick count={count} prev={ticked ? prevCount : null} reduce={reduce} colors={colors} styles={styles} />
+            <Text style={styles.streakLabel}>day streak</Text>
+          </Animated.View>
+        ) : null}
+        {newBadges.length ? (
+          <View style={styles.badges} accessibilityRole="summary">
+            {newBadges.map((b, i) => (
+              <Animated.View
+                key={b.id}
+                entering={
+                  reduce
+                    ? enterStagger(0, true)
+                    : ZoomIn.delay(1000 + i * 140).springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220)
+                }
+                style={styles.badge}
+                accessible
+                accessibilityLabel={`New milestone: ${b.label}`}
+              >
+                <MedalSheen size={60} play delay={1500 + i * 140} id={`sheen-success-${b.id}`}>
+                  <BadgeMedallion badge={b} earned size={60} colors={colors} idPrefix={`success-${b.id}`} />
+                </MedalSheen>
+                <Text style={styles.badgeKicker}>New milestone</Text>
+                <Text style={styles.badgeLabel} numberOfLines={2}>
+                  {b.label}
+                </Text>
+              </Animated.View>
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
+
+      {/* Pinned so the next action is always visible, even on an SE with milestones. */}
+      <Animated.View entering={enterStagger(6, reduce, 120)} style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+        {nextAlarm ? (
+          <View style={styles.nextRow}>
+            <Ionicons name="alarm-outline" size={15} color={colors.textDim} />
+            <Text style={styles.nextText}>Next alarm · {nextAlarm}</Text>
+          </View>
+        ) : null}
+        <PrimaryButton label="Start your day" onPress={beginDay} style={styles.cta} />
       </Animated.View>
-      {newBadges.length ? (
-        <View style={styles.badges} accessibilityRole="summary">
-          {newBadges.map((b, i) => (
-            <Animated.View
-              key={b.id}
-              entering={
-                reduce
-                  ? enterStagger(0, true)
-                  : ZoomIn.delay(1000 + i * 140).springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220)
-              }
-              style={styles.badge}
-              accessible
-              accessibilityLabel={`New milestone: ${b.label}`}
-            >
-              <MedalSheen size={60} play delay={1500 + i * 140} id={`sheen-success-${b.id}`}>
-                <BadgeMedallion badge={b} earned size={60} colors={colors} idPrefix={`success-${b.id}`} />
-              </MedalSheen>
-              <Text style={styles.badgeKicker}>New milestone</Text>
-              <Text style={styles.badgeLabel} numberOfLines={1}>
-                {b.label}
-              </Text>
-            </Animated.View>
-          ))}
-        </View>
-      ) : null}
-      <PrimaryButton
-        label="Begin your day"
-        onPress={beginDay}
-        style={styles.cta}
-      />
     </View>
   );
 }
@@ -236,47 +266,45 @@ const sparkBase = StyleSheet.create({
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-  },
-  kicker: {
-    color: colors.calm,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    fontSize: 12,
-  },
-  title: { ...typography.title, color: colors.text, marginTop: spacing.sm },
-  body: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    lineHeight: 24,
-    maxWidth: 320,
-  },
-  intention: {
-    ...typography.body,
-    fontStyle: 'italic',
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    maxWidth: 320,
-  },
-  scene: { marginBottom: spacing.lg, borderRadius: radii.xl, overflow: 'hidden' },
-  streak: { marginTop: spacing.xl, alignItems: 'center' },
-  tickRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  tickNum: { alignItems: 'center', justifyContent: 'center', minWidth: 60 },
-  tickAbs: { position: 'absolute' },
-  badges: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, marginTop: spacing.lg },
-  badge: { alignItems: 'center', width: 96 },
-  badgeKicker: { ...typography.eyebrow, color: colors.calm, marginTop: spacing.xs, fontSize: 10 },
-  badgeLabel: { ...typography.caption, color: colors.text, fontWeight: '600' },
-  streakNum: { fontSize: 64, fontWeight: '200', color: colors.calm },
-  streakLabel: { color: colors.textMuted },
-  cta: { marginTop: 'auto', alignSelf: 'stretch' },
-});
+    screen: { flex: 1, backgroundColor: colors.bg },
+    scroll: { flex: 1 },
+    content: { flexGrow: 1, alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+    kicker: { ...typography.eyebrow, color: colors.calm },
+    title: { ...typography.title, color: colors.text, marginTop: spacing.sm, textAlign: 'center' },
+    body: {
+      ...typography.body,
+      color: colors.textMuted,
+      textAlign: 'center',
+      marginTop: spacing.sm,
+      lineHeight: 24,
+      maxWidth: 320,
+    },
+    intentionCard: {
+      alignSelf: 'stretch',
+      marginTop: spacing.lg,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radii.xl,
+      backgroundColor: colors.bgCard,
+      alignItems: 'center',
+      gap: 4,
+    },
+    intentionLabel: { ...typography.eyebrow, fontSize: 11, color: colors.textDim },
+    intention: { ...typography.body, fontStyle: 'italic', color: colors.text, textAlign: 'center', lineHeight: 23 },
+    scene: { marginBottom: spacing.lg, borderRadius: radii.xl, overflow: 'hidden' },
+    streak: { marginTop: spacing.lg, alignItems: 'center' },
+    tickRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    tickNum: { alignItems: 'center', justifyContent: 'center', minWidth: 60 },
+    tickAbs: { position: 'absolute' },
+    badges: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginTop: spacing.lg },
+    badge: { alignItems: 'center', width: 96 },
+    badgeKicker: { ...typography.eyebrow, color: colors.calm, marginTop: spacing.xs, fontSize: 10 },
+    badgeLabel: { ...typography.caption, color: colors.text, fontWeight: '600', textAlign: 'center' },
+    streakNum: { fontSize: 56, fontWeight: '200', color: colors.calm },
+    streakLabel: { ...typography.caption, color: colors.textMuted },
+    footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm, backgroundColor: colors.bg },
+    nextRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+    nextText: { ...typography.caption, color: colors.textDim },
+    cta: { alignSelf: 'stretch' },
+  });
 }

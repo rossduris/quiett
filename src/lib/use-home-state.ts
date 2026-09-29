@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { DEFAULT_ALARM_SOUND_ID } from '@/constants/sounds';
 import { DEFAULT_UNLOCK_TRACK_ID, pickSurpriseTrack, type UnlockTrack } from '@/constants/unlock-tracks';
 import { showGuided } from '@/lib/dev-flags';
-import { isUnlockedForToday } from '@/lib/home-status';
+import { homeStatusMode, isUnlockedForToday } from '@/lib/home-status';
+import { refreshClockPreference } from '@/lib/time-format';
 import { syncEveningReminder } from '@/lib/notifications';
 import { applyAlarmSoundChange, openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 import { stopPreview } from '@/lib/audio';
@@ -21,6 +22,7 @@ import {
   loadAlarmSoundId,
   loadCompletedDays,
   loadGetStartedDismissed,
+  loadMorningLog,
   loadReliabilityCheckCompleted,
   loadStreak,
   loadSurpriseMe,
@@ -28,6 +30,7 @@ import {
   loadTestMorningCompleted,
   loadUnlockTrackId,
   loadWakeIntention,
+  loadWakeIntentionsByDay,
   nextAlarmDate,
   saveAlarmPrefs,
   saveAlarmSoundId,
@@ -51,7 +54,9 @@ export function useHomeState() {
   const { isPremium, loading: premiumLoading, trackResetVersion } = usePremium();
   // Async callbacks read Premium through a ref so they are never stale.
   const isPremiumRef = useRef(isPremium);
-  isPremiumRef.current = isPremium;
+  useLayoutEffect(() => {
+    isPremiumRef.current = isPremium;
+  });
 
   const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({ ...DEFAULT_ALARM, weekdays: [...DEFAULT_ALARM.weekdays] }));
   const [alarmSavedAt, setAlarmSavedAt] = useState<number | null>(null);
@@ -66,6 +71,12 @@ export function useHomeState() {
   const [getStartedDismissed, setGetStartedDismissed] = useState(false);
   const [wakeIntention, setWakeIntention] = useState('');
   const [testMorningDone, setTestMorningDone] = useState(false);
+  /** Any real morning recorded yet (drives the first-day card). */
+  const [hasAnyMorning, setHasAnyMorning] = useState(true);
+  /** Today's unlock time from the morning log (null when unknown, e.g. an emergency end). */
+  const [unlockAt, setUnlockAt] = useState<number | null>(null);
+  /** The intention saved with today's morning (falls back to the current one). */
+  const [todayIntention, setTodayIntention] = useState<string | null>(null);
   /** Refreshed on focus / foreground / local-day rollover (not every minute). */
   const [now, setNow] = useState(() => new Date());
   const [loaded, setLoaded] = useState(false);
@@ -73,8 +84,19 @@ export function useHomeState() {
   /** Bumps when picking a track turns Surprise me off (drives a brief note). */
   const [surpriseOffTick, setSurpriseOffTick] = useState(0);
 
+  /** Morning log + per-day intention → first-day / unlocked-at state. */
+  const loadMorningFacts = useCallback(async () => {
+    const [log, intentions, days, s] = await Promise.all([loadMorningLog(), loadWakeIntentionsByDay(), loadCompletedDays(), loadStreak()]);
+    const today = dayKey(0);
+    setHasAnyMorning(Object.keys(log).length > 0 || days.length > 0 || s.count > 0);
+    setUnlockAt(log[today]?.at ?? null);
+    setTodayIntention(intentions[today] ?? null);
+  }, []);
+
   const alarmSoundIdRef = useRef(alarmSoundId);
-  alarmSoundIdRef.current = alarmSoundId;
+  useLayoutEffect(() => {
+    alarmSoundIdRef.current = alarmSoundId;
+  });
   const lastSynced = useRef<string | null>(null);
 
   useFocusEffect(
@@ -112,6 +134,8 @@ export function useHomeState() {
         setWakeIntention(intention);
         setTestMorningDone(testDone);
         setUnlockTrackId(unlockId);
+        await loadMorningFacts();
+        if (!alive) return;
         setLoaded(true);
         setFocusTick((t) => t + 1);
         // Re-sync the OS alarm only when the prefs or sound changed since the last sync
@@ -127,7 +151,7 @@ export function useHomeState() {
         // Leaving Home (tab switch, Settings, session) ends any preview.
         stopPreview();
       };
-    }, []),
+    }, [loadMorningFacts]),
   );
 
   // Surprise me rotates once per local day. Waits for Premium to settle so a paying user is
@@ -157,11 +181,12 @@ export function useHomeState() {
     void loadUnlockTrackId().then(setUnlockTrackId);
   }, [trackResetVersion]);
 
-  // Local-day rollover while Home stays open (the minute countdown lives in AlarmCard).
+  // Local-day / hour rollover while Home stays open (the minute countdown lives in AlarmCard).
+  // Hourly granularity lets the evening prep card appear at 6 PM without a tab switch.
   useEffect(() => {
     const id = setInterval(() => {
       const d = new Date();
-      setNow((prev) => (dayKey(0, prev) === dayKey(0, d) ? prev : d));
+      setNow((prev) => (dayKey(0, prev) === dayKey(0, d) && prev.getHours() === d.getHours() ? prev : d));
     }, 60_000);
     return () => clearInterval(id);
   }, []);
@@ -171,20 +196,28 @@ export function useHomeState() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
+      // The 12/24-hour switch may have changed while we were away.
+      refreshClockPreference();
       void (async () => {
         const [s, days, resolved] = await Promise.all([loadStreak(), loadCompletedDays(), isWakeResolvedToday()]);
         setStreak(s);
         setCompletedDays(days);
         setWakeResolved(resolved);
+        await loadMorningFacts();
         setNow(new Date());
       })();
     });
     return () => sub.remove();
-  }, []);
+  }, [loadMorningFacts]);
 
   const unlockedToday = useMemo(
     () => isUnlockedForToday(streak, completedDays, wakeResolved, now),
     [streak, completedDays, wakeResolved, now],
+  );
+
+  const status = useMemo(
+    () => homeStatusMode({ alarm, unlockedToday, dayOpenDismissed, hasAnyMorning, now }),
+    [alarm, unlockedToday, dayOpenDismissed, hasAnyMorning, now],
   );
 
   const getStarted = {
@@ -270,6 +303,9 @@ export function useHomeState() {
 
   const setAlarmTime = (hhmm: string) => persistAlarm({ ...alarm, time: hhmm });
   const toggleAlarmEnabled = () => persistAlarm({ ...alarm, enabled: !alarm.enabled });
+  /** "No alarm set" → on (restores the default weekdays if none are picked). */
+  const turnAlarmOn = () =>
+    persistAlarm({ ...alarm, enabled: true, weekdays: alarm.weekdays.length ? alarm.weekdays : [...DEFAULT_ALARM.weekdays] });
   const toggleWeekday = async (day: Weekday) => {
     const current = new Set(alarm.weekdays);
     if (current.has(day)) {
@@ -289,7 +325,14 @@ export function useHomeState() {
     completedDays,
     now,
     unlockedToday,
-    showDayOpen: unlockedToday && !dayOpenDismissed,
+    showDayOpen: loaded && status.mode === 'unlocked',
+    // Nothing until storage has loaded (avoids a flash of "No alarm set" from the defaults).
+    statusMode: loaded ? status.mode : null,
+    nextRing: status.nextRing,
+    isEvening: status.evening,
+    hasAnyMorning,
+    unlockAt,
+    todayIntention: todayIntention ?? wakeIntention,
     alarmSoundId,
     unlockTrackId,
     surpriseMe,
@@ -306,6 +349,7 @@ export function useHomeState() {
     toggleSurprise,
     setAlarmTime,
     toggleAlarmEnabled,
+    turnAlarmOn,
     toggleWeekday,
   };
 }

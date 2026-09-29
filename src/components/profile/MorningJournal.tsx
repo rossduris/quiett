@@ -6,6 +6,8 @@ import { groupJournal, type JournalEntry } from '@/lib/profile-insights';
 import { useThemeColors } from '@/lib/theme-provider';
 import { createProfileStyles } from './profile-styles';
 import { SectionHeader } from './SectionHeader';
+import { EmptyState } from '@/components/EmptyState';
+import { splitClock } from '@/lib/time-format';
 
 const INITIAL = 3;
 const PAGE = 30;
@@ -26,9 +28,7 @@ function formatDay(key: string): string {
 
 /** "8:02" + "AM" (split so the time can be large and the period small). */
 function splitTime(ts: number): { time: string; period: string } {
-  const s = new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const m = /^(.*?)\s*([AaPp]\.?[Mm]\.?)$/.exec(s);
-  return m ? { time: m[1]!, period: m[2]!.toUpperCase() } : { time: s, period: '' };
+  return splitClock(ts);
 }
 
 /**
@@ -56,7 +56,12 @@ export function MorningJournal({ days, unlockTimes, intentionsByDay, onChangeInt
       />
       <View style={[shared.card, styles.card]}>
         {days.length === 0 ? (
-          <Text style={styles.empty}>Your first quiet morning will show up here.</Text>
+          <EmptyState
+            bare
+            scene="still"
+            title="Your first morning will land here"
+            body="The time you unlocked and your intention, kept for each morning."
+          />
         ) : (
           groups.map((g, gi) => (
             <View key={`${g.entries[0]!.day}-${gi}`} style={styles.group}>

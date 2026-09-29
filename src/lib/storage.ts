@@ -514,7 +514,7 @@ export function isStreakBroken(
 
   if (deadline.enabled && scheduled.has(getIsoWeekday(now))) {
     const [h, m] = alarm.time.split(':').map((n) => parseInt(n, 10));
-    const ring = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h || 7, m || 0, 0, 0);
+    const ring = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number.isFinite(h) ? h! : 7, Number.isFinite(m) ? m! : 0, 0, 0);
     if (now.getTime() > ring.getTime() + deadline.minutes * 60_000) return true;
   }
   return false;
@@ -822,12 +822,15 @@ export function nextAlarmDate(time: string, weekdays: Weekday[], from = new Date
   if (weekdays.length === 0) return null;
   
   const [h, m] = time.split(':').map(n => parseInt(n, 10));
+  // 00:xx is a real time: only fall back when the stored value doesn't parse.
+  const hour = Number.isFinite(h) ? h! : 7;
+  const minute = Number.isFinite(m) ? m! : 0;
   const now = from;
   const scheduledDays = new Set(weekdays);
   
   for (let offset = 0; offset < 14; offset++) {
     const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-    candidate.setHours(h || 7, m || 0, 0, 0);
+    candidate.setHours(hour, minute, 0, 0);
     
     const isoWeekday = getIsoWeekday(candidate);
     if (scheduledDays.has(isoWeekday) && candidate > now) {
@@ -871,7 +874,7 @@ export async function signInWithAppleStub(): Promise<AccountData> {
     signedIn: true,
     provider: 'apple',
     displayName: 'Test user',
-    email: 't••••@example.com',
+    email: 't••••@privaterelay.appleid.com',
   };
   await saveAccount(account);
   return account;

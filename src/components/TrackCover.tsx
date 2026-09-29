@@ -15,11 +15,13 @@ type Props = {
   locked?: boolean;
   /** Animate the scene (previewing / selected main sound). See SceneCover. */
   animate?: boolean;
+  /** Placeholder first, SVG mounted via the stagger queue (long lists). See SceneCover. */
+  defer?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 /** Track cover: the generative scene for this track (recolours with the theme). */
-function TrackCoverBase({ trackId, size, height, radius = 0, locked, animate, style }: Props) {
+function TrackCoverBase({ trackId, size, height, radius = 0, locked, animate, defer, style }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const h = height ?? size;
@@ -28,7 +30,7 @@ function TrackCoverBase({ trackId, size, height, radius = 0, locked, animate, st
 
   return (
     <View style={[styles.frame, { width: size, height: h, borderRadius: radius }, style]}>
-      <SceneCover scene={sceneSpecFor(trackId)} size={size} height={h} animate={locked ? undefined : animate} />
+      <SceneCover scene={sceneSpecFor(trackId)} size={size} height={h} animate={locked ? undefined : animate} defer={defer} />
       {locked ? (
         <SceneLockBadge size={badge} style={[styles.lock, { right: inset, bottom: inset }]} />
       ) : null}

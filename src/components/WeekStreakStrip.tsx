@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useMemo } from 'react';
+import { useAfterFirstPaint } from '@/lib/use-after-first-paint';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
 import { SPRING_BOUNCY } from '@/lib/motion';
@@ -37,11 +38,8 @@ function WeekStreakStripBase({ completedDays, scheduledWeekdays, todayKey }: Pro
   const scheduled = scheduledWeekdays ? new Set(scheduledWeekdays) : null;
   // After first paint, a day that turns completed (e.g. back from /success) springs its fill in.
   const reduce = useReduceMotion();
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-  }, []);
-  const fillIn = mounted.current && !reduce ? ZoomIn.springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220) : undefined;
+  const mounted = useAfterFirstPaint();
+  const fillIn = mounted && !reduce ? ZoomIn.springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220) : undefined;
   
   const cells: DayCell[] = keys.map((key, i) => {
     const isoWeekday: Weekday = WEEKDAY_DISPLAY_ORDER[i] ?? 7;

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { premiumEntitlement } from '@/lib/purchases';
 import { usePremium } from '@/lib/premium-provider';
@@ -175,7 +175,7 @@ function createStyles(colors: ColorTokens) {
     },
     planCard: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.xl,
       borderWidth: 1,
       borderColor: colors.border,
@@ -220,7 +220,7 @@ function createStyles(colors: ColorTokens) {
     },
     legalCard: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,

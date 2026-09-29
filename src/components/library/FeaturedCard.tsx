@@ -4,11 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
 import { SurpriseOffNote } from '@/components/SurpriseOffNote';
 import { TrackCover } from '@/components/TrackCover';
-import { PlayButton } from '@/components/PlayButton';
+import { PreviewOverlay } from '@/components/PreviewOverlay';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { kindLabel, type UnlockTrack } from '@/constants/unlock-tracks';
-import { previewA11yActions, previewButtonA11yHidden } from '@/lib/preview-a11y';
+import { previewA11yActions } from '@/lib/preview-a11y';
 import { useThemeColors } from '@/lib/theme-provider';
 import { chip, chipActive, playFab, pressedStyle } from './library-styles';
 
@@ -65,6 +65,22 @@ export function FeaturedCard({
         </Pressable>
       </View>
 
+      <PreviewOverlay
+        button={
+          preview
+            ? {
+                playing: previewing,
+                onPress: preview,
+                colors,
+                size: 36,
+                iconSize: 16,
+                style: styles.fab,
+                activeStyle: styles.fabActive,
+                accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${track.title}`,
+              }
+            : null
+        }
+        renderRow={(slot) => (
       <View
         accessible
         accessibilityLabel={`Your next meditation: ${track.title}. ${track.blurb} ${kindLabel(track.kind)}, 2 minutes${
@@ -95,19 +111,10 @@ export function FeaturedCard({
           </Text>
           <Text style={styles.meta}>{meta}</Text>
         </View>
-        {preview ? (
-          <PlayButton
-            {...previewButtonA11yHidden}
-            playing={previewing}
-            onPress={preview}
-            colors={colors}
-            size={36}
-            iconSize={16}
-            style={styles.fab}
-            activeStyle={styles.fabActive}
-          />
-        ) : null}
+        {slot}
       </View>
+        )}
+      />
     </View>
   );
 }

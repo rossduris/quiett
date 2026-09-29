@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { contactSupport } from '@/lib/support';
@@ -26,7 +26,7 @@ const HELP_SECTIONS: HelpSection[] = [
       'Check that Do Not Disturb and Focus modes allow alarms to sound.',
       'Go to Settings > Sounds & Haptics and drag Ringer and Alerts to max volume.',
       'On the same screen, turn off "Change with Buttons" so the side buttons can\'t lower your alarm.',
-      'Confirm your alarm is enabled on the Home screen (toggle should be green).',
+      'Confirm your alarm is turned on from the Home screen.',
     ],
   },
   {
@@ -34,7 +34,7 @@ const HELP_SECTIONS: HelpSection[] = [
     title: 'Camera or lighting trouble?',
     tips: [
       'Make sure you\'ve allowed Quiett camera access in iPhone Settings > Quiett.',
-      'For propping the phone, facing the camera and lighting, see Camera setup tips in Settings \u2192 Help.',
+      'For propping the phone, facing the camera and lighting, open Settings and expand Camera setup tips.',
       'Go to Settings > Face ID & Passcode and turn off "Attention Aware Features" so iOS won\'t lower alarm volume when you look at the camera.',
     ],
   },
@@ -124,7 +124,7 @@ function createStyles(colors: ColorTokens) {
     },
     section: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,
@@ -175,7 +175,7 @@ function createStyles(colors: ColorTokens) {
     },
     actionsCard: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,

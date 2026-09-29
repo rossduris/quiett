@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import {
@@ -19,7 +19,7 @@ import {
   cancelEveningReminder,
   previewEveningReminder,
 } from '@/lib/notifications';
-import { deviceUses24h } from '@/lib/time-format';
+import { deviceUses24h, formatClock } from '@/lib/time-format';
 import type { ColorTokens } from '@/constants/themes';
 
 function parseTime(hhmm: string): Date {
@@ -34,7 +34,7 @@ function toHhMm(d: Date): string {
 }
 
 function displayTime(hhmm: string): string {
-  return parseTime(hhmm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return formatClock(parseTime(hhmm));
 }
 
 export default function NotificationsScreen() {
@@ -130,7 +130,7 @@ export default function NotificationsScreen() {
           </View>
 
           <Text style={styles.cardBody}>
-            Get a notification the night before a scheduled alarm day to remind you about tomorrow's
+            Get a notification the night before a scheduled alarm day to remind you about tomorrow’s
             wake-up.
           </Text>
 
@@ -186,7 +186,7 @@ export default function NotificationsScreen() {
                     <Text style={styles.exampleTime}>now</Text>
                   </View>
                   <Text style={styles.exampleTitle}>
-                    Tomorrow's wake-up is set for{' '}
+                    Tomorrow’s wake-up is set for{' '}
                     <Text style={styles.exampleBold}>{example?.time ?? '…'}</Text>
                   </Text>
                   <Text style={styles.exampleBody}>{example?.track ?? ''}</Text>
@@ -218,7 +218,7 @@ function createStyles(colors: ColorTokens) {
     },
     card: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.lg,
       borderWidth: 1,
       borderColor: colors.border,
@@ -243,7 +243,7 @@ function createStyles(colors: ColorTokens) {
     switch: {
       width: 51,
       height: 31,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       backgroundColor: colors.border,
       justifyContent: 'center',
       paddingHorizontal: 2,
@@ -267,7 +267,7 @@ function createStyles(colors: ColorTokens) {
       justifyContent: 'space-between',
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.md,
-      borderRadius: 12,
+      borderRadius: radii.md,
       backgroundColor: colors.bgElevated,
       borderWidth: 1,
       borderColor: colors.border,
@@ -289,7 +289,7 @@ function createStyles(colors: ColorTokens) {
     },
     timePickerWrap: {
       backgroundColor: colors.bgElevated,
-      borderRadius: 12,
+      borderRadius: radii.md,
       borderWidth: 1,
       borderColor: colors.border,
       overflow: 'hidden',
@@ -298,7 +298,7 @@ function createStyles(colors: ColorTokens) {
     },
     exampleCard: {
       backgroundColor: colors.bg,
-      borderRadius: 12,
+      borderRadius: radii.md,
       padding: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
@@ -313,7 +313,7 @@ function createStyles(colors: ColorTokens) {
     },
     exampleNotif: {
       backgroundColor: colors.bgElevated,
-      borderRadius: 12,
+      borderRadius: radii.md,
       padding: spacing.md,
       gap: spacing.xs,
     },
@@ -361,7 +361,7 @@ function createStyles(colors: ColorTokens) {
       alignItems: 'flex-start',
       gap: spacing.sm,
       padding: spacing.md,
-      borderRadius: 12,
+      borderRadius: radii.md,
       backgroundColor: colors.bgCard,
       borderWidth: 1,
       borderColor: colors.border,

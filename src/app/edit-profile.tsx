@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useAfterFirstPaint } from '@/lib/use-after-first-paint';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,16 +34,14 @@ export default function EditProfileScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const identity = useProfileIdentity();
 
-  const [name, setName] = useState('');
-  const [touched, setTouched] = useState(false);
+  // null until the user types: the field shows the stored name, then their draft.
+  const [draft, setDraft] = useState<string | null>(null);
+  const name = draft ?? (identity.loaded ? (identity.name ?? '') : '');
   const [busyPhoto, setBusyPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const reduce = useReduceMotion();
   // Only animate photo swaps made on this screen, not the initial load.
-  const settled = useRef(false);
-  useEffect(() => {
-    if (identity.loaded) settled.current = true;
-  }, [identity.loaded]);
+  const settled = useAfterFirstPaint(identity.loaded);
   const avatarPress = usePressScale(0.95);
   // Name field border warms to the accent while focused.
   const focus = useSharedValue(0);
@@ -52,13 +51,9 @@ export default function EditProfileScreen() {
     borderColor: interpolateColor(focus.value, [0, 1], [borderIdle, borderFocus]),
   }));
   const setFocused = (on: boolean) => {
-    focus.value = withTiming(on ? 1 : 0, { duration: DURATION.base, easing: EASE });
+    focus.set(withTiming(on ? 1 : 0, { duration: DURATION.base, easing: EASE }));
   };
 
-  // Seed the field once the stored name has loaded (don't clobber typing afterwards).
-  useEffect(() => {
-    if (identity.loaded && !touched) setName(identity.name ?? '');
-  }, [identity.loaded, identity.name, touched]);
 
   const error = validateName(name);
   const hasChanges = normalizeName(name) !== (identity.name ?? '');
@@ -127,7 +122,7 @@ export default function EditProfileScreen() {
               <Animated.View
                 key={identity.photoUri ?? 'initials'}
                 entering={
-                  !settled.current || reduce
+                  !settled || reduce
                     ? undefined
                     : ZoomIn.springify().damping(SPRING_BOUNCY.damping ?? 11).stiffness(SPRING_BOUNCY.stiffness ?? 220).withInitialValues({ transform: [{ scale: 0.86 }] })
                 }
@@ -178,11 +173,12 @@ export default function EditProfileScreen() {
             style={styles.input}
             value={name}
             onChangeText={(t) => {
-              setTouched(true);
-              setName(t.replace(/\n/g, ''));
+              setDraft(t.replace(/\n/g, ''));
             }}
             placeholder="What should we call you?"
             placeholderTextColor={colors.textDim}
+            keyboardAppearance={colors.statusBarStyle === 'light' ? 'dark' : 'light'}
+            selectionColor={colors.calm}
             maxLength={NAME_MAX + 8}
             autoCapitalize="words"
             autoCorrect={false}

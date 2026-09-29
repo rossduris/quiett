@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { PressableScale } from '@/components/PressableScale';
 import { Ionicons } from '@expo/vector-icons';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { SETUP_LEAD, SETUP_NOTE, SETUP_TIPS } from '@/constants/setup-tips';
 import { useThemeColors } from '@/lib/theme-provider';
 
-/** Collapsible camera setup tips (Settings → Help). Styled to match the Settings link rows. */
+/** Collapsible camera setup tips (Settings → Help). A row inside the Help card, expanding in place. */
 export function SetupTips() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -14,18 +15,19 @@ export function SetupTips() {
 
   return (
     <View style={styles.wrap}>
-      <Pressable
+      <PressableScale
+        scaleTo={0.98}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         onPress={() => setExpanded((v) => !v)}
-        style={({ pressed }) => [styles.header, pressed && styles.pressed]}
+        style={styles.header}
       >
         <View style={styles.left}>
-          <Ionicons name="camera-outline" size={20} color={colors.text} />
+          <Ionicons name="camera-outline" size={20} color={colors.textMuted} />
           <Text style={styles.headerText}>Camera setup tips</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textDim} />
-      </Pressable>
+      </PressableScale>
       {expanded ? (
         <View style={styles.content}>
           <Text style={styles.lead}>{SETUP_LEAD}</Text>
@@ -36,7 +38,7 @@ export function SetupTips() {
             </View>
           ))}
           <View style={styles.noteRow}>
-            <Ionicons name="warning-outline" size={14} color={colors.warning} style={styles.noteIcon} />
+            <Ionicons name="warning-outline" size={14} color={colors.accentStrong} style={styles.noteIcon} />
             <Text style={styles.note}>{SETUP_NOTE}</Text>
           </View>
         </View>
@@ -47,36 +49,23 @@ export function SetupTips() {
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-    wrap: {
-      borderRadius: radii.md,
-      backgroundColor: colors.bgElevated,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: 'hidden',
-    },
+    wrap: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: 12,
-      paddingHorizontal: 12,
+      minHeight: 52,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.lg,
     },
-    left: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-    headerText: { ...typography.body, fontSize: 15, fontWeight: '500', color: colors.text },
-    content: {
-      paddingHorizontal: 12,
-      paddingBottom: 12,
-      gap: spacing.sm,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-    },
-    lead: { ...typography.body, fontSize: 15, lineHeight: 22, color: colors.textMuted, marginTop: 12 },
+    left: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
+    headerText: { ...typography.body, fontWeight: '500', color: colors.text },
+    content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.sm },
+    lead: { ...typography.body, fontSize: 15, lineHeight: 22, color: colors.textMuted },
     tip: {
-      backgroundColor: colors.bg,
-      borderRadius: radii.md,
+      backgroundColor: colors.bgElevated,
+      borderRadius: radii.lg,
       padding: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
       gap: spacing.xs,
     },
     tipTitle: { ...typography.body, color: colors.text, fontWeight: '600' },

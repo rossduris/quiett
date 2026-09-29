@@ -50,7 +50,7 @@ export function GetStartedCard({ steps, onDismiss }: Props) {
             accessibilityState={{ checked: step.done }}
           >
             <View style={[styles.check, step.done && styles.checkDone]}>
-              {step.done ? <Ionicons name="checkmark" size={14} color={colors.bg} /> : null}
+              {step.done ? <Ionicons name="checkmark" size={14} color={colors.onAccent} /> : null}
             </View>
             <Text style={[styles.text, step.done && styles.textDone]}>{step.label}</Text>
           </Pressable>
@@ -97,7 +97,7 @@ function createStyles(colors: ColorTokens) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    checkDone: { backgroundColor: colors.calm, borderColor: colors.calm },
+    checkDone: { backgroundColor: colors.accentStrong, borderColor: colors.accentStrong },
     text: { ...typography.body, flex: 1, color: colors.text, fontWeight: '500' },
     textDone: { color: colors.textMuted },
   });

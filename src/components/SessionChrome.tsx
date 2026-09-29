@@ -178,9 +178,8 @@ export function SessionChrome({
   useEffect(() => () => {
     if (revealTimer.current) clearTimeout(revealTimer.current);
   }, []);
-  useEffect(() => {
-    if (!isMeditate) setReveal(false);
-  }, [isMeditate]);
+  // Leaving the meditation hides the revealed time (adjusted during render, no effect).
+  if (!isMeditate && reveal) setReveal(false);
 
   // ── Wake intention: once, softly, after the first lock-in ──────────────────
   const intentionShown = useRef(false);
@@ -196,7 +195,7 @@ export function SessionChrome({
   useEffect(() => {
     if (!isMeditate) {
       cancelAnimation(intent);
-      intent.value = withTiming(0, { duration: DURATION.base });
+      intent.set(withTiming(0, { duration: DURATION.base }));
     }
   }, [isMeditate, intent]);
   const intentStyle = useAnimatedStyle(() => ({ opacity: intent.value }));
@@ -308,8 +307,8 @@ export function SessionChrome({
                 exiting={FadeOut.duration(DURATION.slow)}
                 style={styles.center}
               >
-                <Text style={styles.time}>{timerLabel}</Text>
-                <Text style={styles.timeNote}>left</Text>
+                <Text style={styles.time} maxFontSizeMultiplier={1.3}>{timerLabel}</Text>
+                <Text style={styles.timeNote} maxFontSizeMultiplier={1.3}>left</Text>
               </Animated.View>
             ) : null}
 

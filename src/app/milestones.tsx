@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
 import { useThemeColors } from '@/lib/theme-provider';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import {
@@ -18,6 +18,7 @@ import { ALL_BADGES, type Badge } from '@/constants/badges';
 import { EnterStagger } from '@/components/EnterStagger';
 import { MedalSheen } from '@/components/MedalSheen';
 import { BadgeMedallion } from '@/components/profile/BadgeMedallion';
+import { EmptyState } from '@/components/EmptyState';
 
 const SECTIONS: [Badge['category'], string][] = [
   ['streak', 'Streak achievements'],
@@ -101,8 +102,18 @@ export default function MilestonesScreen() {
           </View>
         </EnterStagger>
 
+        {earnedCount === 0 ? (
+          <EnterStagger index={1}>
+            <EmptyState
+              scene="sunrise"
+              title="Nothing earned yet, and that's fine"
+              body="Your first unlocked morning earns your first milestone. The rest follow as mornings add up."
+            />
+          </EnterStagger>
+        ) : null}
+
         {SECTIONS.map(([cat, title], si) => (
-          <EnterStagger key={cat} index={si + 1} style={styles.section}>
+          <EnterStagger key={cat} index={si + 2} style={styles.section}>
             <Text style={styles.sectionTitle}>{title}</Text>
             <View style={styles.badgeGrid}>
               {byCategory[cat]?.map((badge, bi) => {
@@ -142,10 +153,8 @@ function createStyles(colors: ColorTokens) {
     },
     summaryCard: {
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.xl,
       padding: spacing.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
       gap: spacing.lg,
     },
     summaryHero: {
@@ -206,7 +215,7 @@ function createStyles(colors: ColorTokens) {
     badgeCard: {
       width: '47%',
       backgroundColor: colors.bgCard,
-      borderRadius: 16,
+      borderRadius: radii.lg,
       padding: spacing.md,
       borderWidth: 1,
       borderColor: colors.calm,

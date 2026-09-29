@@ -105,15 +105,19 @@ export const ProfileHero = memo(function ProfileHero(props: Props) {
               </Animated.View>
             </View>
           </Pressable>
-          <View style={styles.stats} accessible accessibilityLabel={hasMornings ? `Best streak ${days(best)}. ${mornings} mornings unlocked` : 'No mornings yet'}>
-            <Text style={styles.stat}>
-              <Text style={styles.statNum}>{hasMornings ? best : '—'}</Text> best
-            </Text>
-            <View style={styles.statDot} />
-            <Text style={styles.stat}>
-              <Text style={styles.statNum}>{hasMornings ? mornings : '—'}</Text> {mornings === 1 ? 'morning' : 'mornings'}
-            </Text>
-          </View>
+          {hasMornings ? (
+            <View style={styles.stats} accessible accessibilityLabel={`Best streak ${days(best)}. ${mornings} mornings unlocked`}>
+              <Text style={styles.stat}>
+                <Text style={styles.statNum}>{best}</Text> best
+              </Text>
+              <View style={styles.statDot} />
+              <Text style={styles.stat}>
+                <Text style={styles.statNum}>{mornings}</Text> {mornings === 1 ? 'morning' : 'mornings'}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.stat}>Your first morning starts the streak.</Text>
+          )}
         </Animated.View>
 
         <Animated.View entering={enter(260)}>

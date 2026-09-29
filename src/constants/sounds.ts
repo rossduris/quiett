@@ -7,6 +7,11 @@ export type SoundOption = {
    * System default uses null (no in-app file).
    */
   url: string | number | null;
+  /**
+   * In-app camera-view ring when it differs from `url` (System default: lock screen uses the
+   * iOS sound, the app rings the bundled Classic tone since it can't play the system one).
+   */
+  inAppUrl?: number;
   /** AlarmKit / Android soundName when bundling a file in the app. */
   soundName?: string;
   /** Picker section. */
@@ -17,6 +22,11 @@ export type SoundOption = {
 export const QUIETT_HARSH_ALARM = require('../../assets/audio/quiett-harsh.m4a');
 /** Denser/hotter render for in-app /session (media stream is quieter than AlarmKit file). */
 export const QUIETT_HARSH_SESSION = require('../../assets/audio/quiett-harsh-session.m4a');
+/**
+ * Classic phone-style ring (original synthesized two-tone ring, 27 s, loops cleanly) for the
+ * in-app ring when the user picked System default. Not registered with AlarmKit.
+ */
+export const QUIETT_CLASSIC_RING = require('../../assets/audio/classic-ring.caf');
 
 const ALARM_ASSET = {
   'rise-and-shine': require('../../assets/audio/alarms/rise-and-shine.caf'),
@@ -129,6 +139,7 @@ export const ALARM_SOUNDS: readonly SoundOption[] = [
     id: 'system_default',
     label: 'System default',
     url: null,
+    inAppUrl: QUIETT_CLASSIC_RING,
     section: 'system',
   },
 ] as const;
@@ -151,7 +162,7 @@ export const ALARM_SOUND_SECTIONS: {
   {
     id: 'system',
     label: 'System',
-    hint: 'Uses the iOS AlarmKit default alert sound.',
+    hint: 'Lock screen uses the iOS default alert. In the app, a classic phone-style ring plays.',
   },
 ];
 

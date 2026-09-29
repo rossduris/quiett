@@ -8,6 +8,7 @@
 import type { ReactElement } from 'react';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import type { ArtPalette } from './art-palette';
+import { mix } from '@/lib/scene-gen';
 import {
   AlarmClockLayer,
   BusyPhoneLayer,
@@ -289,6 +290,49 @@ export function profileHeroLayout(w: number, h: number, p: ArtPalette): SceneLay
         anim: { type: 'floatUp', dy: 20, period: 4600, delay } as AnimSpec,
       })),
       ...hills(w, h, p, [0.8, 0.87, 0.94]),
+    ],
+  };
+}
+
+/**
+ * Evening / night-before: a low moon, a few breathing stars and the phone propped on the
+ * hills facing the viewer (Home's evening prep card). Moon is a disc with a sky-coloured
+ * disc offset over it (a crescent without masks, so the box preview renders it too). The cut
+ * disc is pre-tinted to roughly match the glow behind it at that spot.
+ */
+export function eveningLayout(w: number, h: number, p: ArtPalette): SceneLayout {
+  const moon = Math.min(w, h) * 0.34;
+  const mx = w * 0.72 - moon / 2;
+  const my = h * 0.18;
+  const glow = moon * 2.6;
+  const phoneW = Math.min(34, w * 0.1);
+  const phoneH = phoneW * 1.9;
+  const stars: [number, number, number, number][] = [
+    [0.14, 0.2, 3, 0],
+    [0.3, 0.12, 2, 900],
+    [0.46, 0.3, 2.5, 1800],
+    [0.9, 0.16, 2, 600],
+    [0.58, 0.1, 2, 2400],
+  ];
+  return {
+    w,
+    h,
+    layers: [
+      { key: 'sky', x: 0, y: 0, w, h, node: <SkyLayer w={w} h={h} p={{ ...p, skyBottom: p.accentSoft }} id="evening-sky" /> },
+      { key: 'glow', x: mx + moon / 2 - glow / 2, y: my + moon / 2 - glow / 2, w: glow, h: glow, node: <GlowLayer size={glow} color={p.accent} id="evening-glow" />, anim: { type: 'breathe', period: 7000, min: 0.9, max: 1.05 } },
+      { key: 'moon', x: mx, y: my, w: moon, h: moon, node: <DiscLayer size={moon} fill={p.sunCore} opacity={0.95} /> },
+      { key: 'moon-cut', x: mx + moon * 0.3, y: my - moon * 0.12, w: moon, h: moon, node: <DiscLayer size={moon} fill={mix(p.skyTop, p.accent, 0.4)} /> },
+      ...stars.map(([fx, fy, s, delay], i) => ({
+        key: `star-${i}`,
+        x: w * fx,
+        y: h * fy,
+        w: s,
+        h: s,
+        node: <DiscLayer size={s} fill={p.sunCore} opacity={0.9} />,
+        anim: { type: 'breathe', period: 3600, min: 0.6, max: 1.2, delay } as AnimSpec,
+      })),
+      ...hills(w, h, p, [0.66, 0.76, 0.88], false),
+      { key: 'phone', x: w * 0.24, y: h * 0.9 - phoneH, w: phoneW, h: phoneH, node: <ProppedPhoneLayer w={phoneW} h={phoneH} p={p} /> },
     ],
   };
 }
