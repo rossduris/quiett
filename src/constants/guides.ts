@@ -2,7 +2,7 @@ export type GuideTrack = {
   id: string;
   title: string;
   durationLabel: string;
-  /** Free now vs premium voice (coming soon) — not progress-gated. */
+  /** Legacy premium flag — guided voices are free now (Premium gates the sound library). */
   locked: boolean;
   blurb: string;
   /** Short mood tag shown on the card. */
@@ -25,12 +25,13 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     accentSoft: 'rgba(61,207,176,0.18)',
   },
   {
+    // id kept from the original 'Open Eyes' so saved selections stay valid.
     id: 'open-eyes',
-    title: 'Open Eyes',
+    title: 'Still Lake',
     durationLabel: '2 min',
     locked: false,
-    mood: 'Clear',
-    blurb: 'A gentle arrival — body awake, mind clear.',
+    mood: 'Still',
+    blurb: 'Let the mind settle, smooth as still water.',
     accent: '#A8C5D4',
     accentSoft: 'rgba(168,197,212,0.20)',
   },
@@ -38,7 +39,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'still-horizon',
     title: 'Still Horizon',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Steady',
     blurb: 'Steady voice guiding a calm start.',
     accent: '#5B8CFF',
@@ -48,29 +49,31 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'warm-window',
     title: 'Warm Window',
     durationLabel: '2 min',
-    locked: true,
+    locked: false,
     mood: 'Soft',
     blurb: 'Light tone for mornings that feel heavy.',
     accent: '#F0B429',
     accentSoft: 'rgba(240,180,41,0.16)',
   },
   {
+    // id kept from the original 'Quiet Rise' so saved selections stay valid.
     id: 'quiet-rise',
-    title: 'Quiet Rise',
+    title: 'Drifting Up',
     durationLabel: '2 min',
-    locked: true,
-    mood: 'Slow',
-    blurb: 'Unhurried breath before the day opens.',
+    locked: false,
+    mood: 'Light',
+    blurb: 'Rise slowly and let the heaviness fall away.',
     accent: '#9B8CFF',
     accentSoft: 'rgba(155,140,255,0.18)',
   },
   {
+    // id kept from the original 'Clear Morning' so saved selections stay valid.
     id: 'clear-morning',
-    title: 'Clear Morning',
+    title: 'Mountain Bloom',
     durationLabel: '2 min',
-    locked: true,
-    mood: 'Focus',
-    blurb: 'Short guided focus as the day begins.',
+    locked: false,
+    mood: 'Grounded',
+    blurb: 'Steady as the peaks, soft as the flowers.',
     accent: '#3DCFB0',
     accentSoft: 'rgba(61,207,176,0.14)',
   },

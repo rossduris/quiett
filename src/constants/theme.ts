@@ -44,6 +44,8 @@ export const radii = {
 } as const;
 
 export const typography = {
+  /** Home alarm time on regular-width phones (falls back to `hero` on narrow screens). */
+  display: { fontSize: 72, fontWeight: '200' as const, letterSpacing: -2 },
   hero: { fontSize: 64, fontWeight: '200' as const, letterSpacing: -2 },
   heroSm: { fontSize: 48, fontWeight: '300' as const, letterSpacing: -1 },
   title: { fontSize: 28, fontWeight: '600' as const, letterSpacing: -0.5 },
@@ -51,4 +53,6 @@ export const typography = {
   subtitle: { fontSize: 18, fontWeight: '500' as const },
   body: { fontSize: 16, fontWeight: '400' as const },
   caption: { fontSize: 13, fontWeight: '400' as const },
+  /** Small uppercase section / card label. */
+  eyebrow: { fontSize: 12, fontWeight: '700' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const },
 };

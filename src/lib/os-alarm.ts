@@ -17,11 +17,13 @@ import {
   markPendingSitWake,
   markWakeResolvedToday,
   peekPendingSitWake,
-  saveBailAlarmId,
   saveBailCarrierIds,
   saveBailTimerIds,
   saveNativeAlarmId,
   loadAlarmSoundId,
+  loadAlarmPrefs,
+  loadScheduledAlarmSound,
+  saveScheduledAlarmSound,
   type AlarmPrefs,
 } from '@/lib/storage';
 import {
@@ -30,7 +32,44 @@ import {
   resolveAlarmSoundUri,
 } from '@/lib/harsh-alarm-asset';
 
-const ALARM_TITLE = 'Quiett — sit to begin';
+/**
+ * Lock-screen / AlarmKit copy. Calm and short (the alert truncates long titles); never "sit".
+ * Tint comes from the AccentColor asset (plugins/withAccentColor.js) — native, needs a rebuild.
+ */
+const ALARM_TITLE = 'Good morning. Time to settle in';
+/** Bail / backup one-shots ring when the morning wasn't finished. */
+const BAIL_TITLE = 'Your quiet minute is waiting';
+const STOP_TITLE = 'Stop';
+/** Opens Quiett straight into the morning session (handoff treats it as a live wake). */
+const SECONDARY_TITLE = 'Settle in';
+const COUNTDOWN_TITLE = 'Ringing again soon';
+
+/**
+ * iOS sound options for an AlarmKit alarm.
+ *
+ * Bundled tones (iosAlarmSounds plugin) are referenced by their own file name — unique per tone.
+ * We used to also pass `soundUri`, which makes the scheduler copy the file to
+ * Library/Sounds/alarm-scheduler-<alarmId>.caf: the SAME name for every tone on a given alarm
+ * id. iOS caches alert sounds by name, so after switching tones the daily alarm and its bail
+ * backups kept ringing the previously chosen tone. `soundUri` is now only a fallback for a tone
+ * without a bundled file (Android keeps getting the resolved URI, as before).
+ */
+async function iosAlarmSoundFor(alarmSoundId: string): Promise<{ soundName?: string; soundUri?: string }> {
+  const soundName = alarmKitSoundName(alarmSoundId);
+  if (soundName && Platform.OS === 'ios') return { soundName };
+  try {
+    const soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
+    return soundUri ? { soundUri } : {};
+  } catch (e) {
+    console.warn('[quiett os-alarm] alarm asset', e);
+    return {};
+  }
+}
+
+/** Stored with each schedule; a mismatch with the current selection means the alarm is stale. */
+function soundKey(alarmSoundId: string): string {
+  return `v2:${alarmSoundId}`;
+}
 
 /** True after session silenced the OS ring; cleared on sit success / emergency. */
 let osRingHandedToSession = false;
@@ -69,9 +108,20 @@ async function resolveRingingAlarmId(): Promise<string | null> {
   return loadNativeAlarmId();
 }
 
-/** System swipe-to-stop only (no secondary Sit button — was clunky/inconsistent on iOS). */
+/**
+ * Stop + a calm "Settle in" button that opens the session (secondaryOpen handoff). The old
+ * secondary button was removed for inconsistent behaviour; it now uses openApp explicitly.
+ */
+const iosButtons = {
+  stopButtonTitle: STOP_TITLE,
+  secondaryButtonTitle: SECONDARY_TITLE,
+  secondaryButtonBehavior: 'openApp' as const,
+  countdownTitle: COUNTDOWN_TITLE,
+};
+
 const iosGate = {
   alertTitle: ALARM_TITLE,
+  ...iosButtons,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   metadata: { source: 'quiett-home' },
@@ -79,7 +129,8 @@ const iosGate = {
 
 /** Carriers / bail one-shots — no rescheduleImmediate cascade. */
 const bailIosGate = {
-  alertTitle: ALARM_TITLE,
+  alertTitle: BAIL_TITLE,
+  ...iosButtons,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'openApp' as const,
   metadata: { source: 'quiett-bail' },
@@ -87,7 +138,10 @@ const bailIosGate = {
 
 const androidGate = {
   alertTitle: ALARM_TITLE,
-  alertBody: 'Sit to begin your morning',
+  alertBody: 'A quiet start to your day',
+  stopButtonTitle: STOP_TITLE,
+  secondaryButtonTitle: SECONDARY_TITLE,
+  secondaryButtonBehavior: 'openApp' as const,
   alertActionMode: 'default' as const,
   stopIntentBehavior: 'rescheduleImmediate' as const,
   launchUri: 'quiett://session',
@@ -130,7 +184,9 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     return { ok: false, reason: 'unsupported', message: 'Native alarms are not available on web.' };
   }
 
-  if (!prefs.enabled) {
+  // No days picked means the alarm is off (Home shows it that way); scheduling with an empty
+  // weekday list could otherwise leave a one-off ring behind.
+  if (!prefs.enabled || prefs.weekdays.length === 0) {
     await cancelOsAlarm();
     osRingHandedToSession = false;
     return { ok: true, scheduled: false };
@@ -158,37 +214,62 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
     }
 
     const { hour, minute } = parseHhMm(prefs.time);
+    // Always read the live selection (never a cached pref) right before scheduling.
     const alarmSoundId = await loadAlarmSoundId();
-    let soundUri: string | undefined;
-    try {
-      soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
-    } catch (e) {
-      console.warn('[quiett os-alarm] alarm asset', e);
-    }
-    const soundName = alarmKitSoundName(alarmSoundId);
+    const iosSound = await iosAlarmSoundFor(alarmSoundId);
     const scheduled = await AlarmScheduler.scheduleAlarmAsync({
       id,
       hour,
       minute,
       title: ALARM_TITLE,
       weekdays: prefs.weekdays as AlarmWeekday[],
-      soundUri,
+      soundUri: iosSound.soundUri,
       ios: {
         ...iosGate,
-        ...(soundName ? { soundName } : {}),
-        soundUri,
+        ...(iosSound.soundName ? { soundName: iosSound.soundName } : {}),
+        soundUri: iosSound.soundUri,
       },
       android: {
         ...androidGate,
-        soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
+        soundName: alarmSoundId,
       },
     });
 
     await saveNativeAlarmId(scheduled.id);
+    await saveScheduledAlarmSound('daily', soundKey(alarmSoundId));
     return { ok: true, scheduled: true, id: scheduled.id };
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Could not schedule the OS alarm.';
     return { ok: false, reason: 'error', message };
+  }
+}
+
+export type OsAlarmPermissionState = 'authorized' | 'denied' | 'notDetermined' | 'unavailable';
+
+function toPermissionState(p: AlarmPermissionResponse): OsAlarmPermissionState {
+  if (p.canScheduleExactAlarms || p.status === 'authorized') return 'authorized';
+  if (p.status === 'denied') return 'denied';
+  if (p.status === 'unavailable') return 'unavailable';
+  return 'notDetermined';
+}
+
+/** Current alarm (AlarmKit / exact-alarm) permission without prompting. */
+export async function getOsAlarmPermission(): Promise<OsAlarmPermissionState> {
+  if (Platform.OS === 'web') return 'unavailable';
+  try {
+    return toPermissionState(await AlarmScheduler.getPermissionsAsync());
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/** Show the system alarm permission prompt (once; later calls just report status). */
+export async function requestOsAlarmPermission(): Promise<OsAlarmPermissionState> {
+  if (Platform.OS === 'web') return 'unavailable';
+  try {
+    return toPermissionState(await AlarmScheduler.requestPermissionsAsync());
+  } catch {
+    return 'unavailable';
   }
 }
 
@@ -514,14 +595,20 @@ async function cancelBailTimerWaves(preservePrimaryId?: string | null): Promise<
 
 
 /**
- * Foreground-only: register AlarmKit ids that already carry quiett-harsh in storage.
+ * Foreground-only: register AlarmKit ids that already carry the chosen tone in storage.
  * We complete them immediately so they do not ring as `.alarm`; bail only uses their
  * timer backups (works after lock mutes an unlocked ring).
  */
 export async function prepareBailSoundCarriers(): Promise<void> {
   if (Platform.OS === 'web') return;
+  const alarmSoundId = await loadAlarmSoundId();
+  const key = soundKey(alarmSoundId);
+  // The daily alarm's timer backup is the first bail ring (it reuses the sound stored with that
+  // alarm), so make sure it carries the current tone before anything can bail.
+  await refreshDailyAlarmSoundIfStale(key);
   const existing = await loadBailCarrierIds();
-  if (existing.length >= 2) {
+  // Carriers keep the sound they were created with — reuse them only if it's still the selection.
+  if (existing.length >= 2 && (await loadScheduledAlarmSound('carrier')) === key) {
     for (const id of existing) {
       try {
         await AlarmScheduler.completeNativeAlarmAsync(id);
@@ -534,15 +621,8 @@ export async function prepareBailSoundCarriers(): Promise<void> {
 
   await disposeBailSoundCarriers();
 
-  const alarmSoundId = await loadAlarmSoundId();
-  let soundUri: string | undefined;
-  try {
-    clearAlarmSoundUriCache();
-    soundUri = (await resolveAlarmSoundUri(alarmSoundId)) ?? undefined;
-  } catch (e) {
-    console.warn('[quiett os-alarm] carrier sound', e);
-  }
-  const soundName = alarmKitSoundName(alarmSoundId);
+  clearAlarmSoundUriCache();
+  const iosSound = await iosAlarmSoundFor(alarmSoundId);
 
   const ids: string[] = [];
   for (let i = 0; i < 2; i++) {
@@ -555,16 +635,16 @@ export async function prepareBailSoundCarriers(): Promise<void> {
         minute: when.getMinutes(),
         weekdays: [],
         title: ALARM_TITLE,
-        soundUri,
+        soundUri: iosSound.soundUri,
         ios: {
           ...bailIosGate,
-          ...(soundName ? { soundName } : {}),
-          soundUri,
+          ...(iosSound.soundName ? { soundName: iosSound.soundName } : {}),
+          soundUri: iosSound.soundUri,
         },
         android: {
           ...androidGate,
           stopIntentBehavior: 'openApp',
-          soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
+          soundName: alarmSoundId,
           volume: 1,
           enforceVolume: true,
         },
@@ -579,7 +659,33 @@ export async function prepareBailSoundCarriers(): Promise<void> {
       console.warn('[quiett os-alarm] carrier schedule', e);
     }
   }
-  if (ids.length) await saveBailCarrierIds(ids);
+  if (ids.length) {
+    await saveBailCarrierIds(ids);
+    await saveScheduledAlarmSound('carrier', key);
+  }
+}
+
+/** Reschedule the daily alarm if it was scheduled with a different (or pre-fix) sound. */
+async function refreshDailyAlarmSoundIfStale(key: string): Promise<void> {
+  try {
+    if ((await loadScheduledAlarmSound('daily')) === key) return;
+    const prefs = await loadAlarmPrefs();
+    if (!prefs.enabled) return;
+    const res = await syncOsAlarm(prefs);
+    if (!res.ok) console.warn('[quiett os-alarm] refresh daily sound', res.message);
+  } catch (e) {
+    console.warn('[quiett os-alarm] refresh daily sound', e);
+  }
+}
+
+/**
+ * The alarm sound changed: reschedule the daily alarm (and so its backups) with the new tone and
+ * drop the bail carriers so the next session recreates them with it.
+ */
+export async function applyAlarmSoundChange(prefs: AlarmPrefs): Promise<SyncOsAlarmResult | undefined> {
+  if (Platform.OS === 'web') return undefined;
+  await disposeBailSoundCarriers();
+  return syncOsAlarm(prefs);
 }
 
 export async function disposeBailSoundCarriers(): Promise<void> {
@@ -597,6 +703,7 @@ export async function disposeBailSoundCarriers(): Promise<void> {
     }
   }
   if (ids.length) await clearBailCarrierIds();
+  await saveScheduledAlarmSound('carrier', null);
 }
 
 async function cancelStoredBailOneShot(): Promise<void> {

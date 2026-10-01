@@ -17,9 +17,11 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
   private var mirrored = true
   private var sessionConfigured = false
   private var lastVisionTime: CFTimeInterval = 0
-  /// ~9 fps Vision throttle (target 8–10).
-  private let visionMinInterval: CFTimeInterval = 1.0 / 9.0
   private var visionBusy = false
+  /// Detector mode (legacy / body2d / body3d). Read + written on the Vision queue.
+  private var detectorMode: QuiettDetectorMode = .legacy
+  /// Joint history for body-mode stillness (Vision queue only).
+  private let motionTracker = QuiettPoseMotionTracker()
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -73,6 +75,15 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
       } else if self.session.isRunning {
         self.session.stopRunning()
       }
+    }
+  }
+
+  func setDetectorMode(_ value: String) {
+    let mode = QuiettDetectorMode(rawValue: value) ?? .legacy
+    visionQueue.async { [weak self] in
+      guard let self, self.detectorMode != mode else { return }
+      self.detectorMode = mode
+      self.motionTracker.reset()
     }
   }
 
@@ -182,8 +193,9 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
   ) {
     guard isActive else { return }
     if #available(iOS 14.0, *) {
+      let mode = detectorMode
       let now = CACurrentMediaTime()
-      guard now - lastVisionTime >= visionMinInterval, !visionBusy else { return }
+      guard now - lastVisionTime >= mode.minInterval, !visionBusy else { return }
       lastVisionTime = now
       visionBusy = true
 
@@ -191,11 +203,33 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
 
       guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-      // Front camera + portrait + mirrored connection → leftMirrored for Vision coords.
-      let orientation: CGImagePropertyOrientation = .leftMirrored
-      var result = QuiettPoseVision.analyze(pixelBuffer: pixelBuffer, orientation: orientation)
+      let bw = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+      let bh = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+      // Legacy: unchanged (front camera + portrait + mirrored connection → leftMirrored).
+      // Body modes: the data-output connection is set to portrait + mirrored, so when the buffer
+      // already arrives portrait (w < h) it is upright → `.up`; a landscape buffer still needs
+      // `.leftMirrored`. Body joints are orientation-sensitive, faces much less so.
+      let orientation: CGImagePropertyOrientation
+      if mode == .legacy {
+        orientation = .leftMirrored
+      } else {
+        orientation = bw < bh ? .up : .leftMirrored
+      }
+      let rotated = orientation == .leftMirrored
+      let imageSize = rotated ? CGSize(width: bh, height: bw) : CGSize(width: bw, height: bh)
+      var result = QuiettPoseVision.analyze(
+        pixelBuffer: pixelBuffer,
+        orientation: orientation,
+        mode: mode,
+        tracker: mode == .legacy ? nil : motionTracker,
+        imageSize: imageSize
+      )
       let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
       result["timestamp"] = CMTimeGetSeconds(pts) * 1000
+      result["orientation"] = rotated ? "leftMirrored" : "up"
+      result["bufferWidth"] = Double(bw)
+      result["bufferHeight"] = Double(bh)
+      result["targetFps"] = Int((1.0 / mode.minInterval).rounded())
 
       DispatchQueue.main.async { [weak self] in
         self?.onPoseFrame(result)

@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 import {
   ALARM_SOUND_SECTIONS,
   alarmSoundsBySection,
   type SoundOption,
 } from '@/constants/sounds';
-import { previewSoundUrl } from '@/lib/audio';
+import { followPreviewSelection, previewIds, startPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 
 type Props = {
   visible: boolean;
@@ -19,18 +21,22 @@ type Props = {
 
 export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Props) {
   const insets = useSafeAreaInsets();
-  const [previewing, setPreviewing] = useState(false);
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { playingId, toggle } = usePreviewPlayer();
+  useStopPreviewWhenHidden(visible);
 
+  /** Row tap selects and plays it (keeps playing if it already is). */
   const pick = async (opt: SoundOption) => {
-    await onSelect(opt.id);
-    if (!previewing && opt.url != null) {
-      setPreviewing(true);
-      try {
-        await previewSoundUrl(opt.url);
-      } finally {
-        setPreviewing(false);
-      }
+    const id = previewIds.alarm(opt.id);
+    // Playing → crossfade to the new tone right away; otherwise tap-to-hear (this sheet's rows
+    // are the preview control). System (no url) stops any preview.
+    if (playingId == null) {
+      if (opt.url != null) void startPreview(id, opt.url, 'alarm');
+    } else if (playingId !== id) {
+      followPreviewSelection(id, opt.url, 'alarm');
     }
+    await onSelect(opt.id);
   };
 
   return (
@@ -38,10 +44,11 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
       <View style={[styles.sheet, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.sheetHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sheetTitle}>Alarm sound</Text>
+            <Text style={styles.sheetEyebrow}>Step 1</Text>
+            <Text style={styles.sheetTitle}>Wake-up alarm</Text>
             <Text style={styles.sheetLead}>
-              Wake tone while the morning gate is not held. Intense cuts through;
-              laid-back is softer. System uses the iOS AlarmKit default.
+              Rings until you’re still, and on the lock screen. Tap to hear it. Intense cuts
+              through; laid-back is softer.
             </Text>
           </View>
           <Pressable
@@ -69,10 +76,12 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
                 <View style={styles.list}>
                   {opts.map((opt) => {
                     const selected = opt.id === selectedId;
+                    const playing = playingId === previewIds.alarm(opt.id);
                     return (
                       <Pressable
                         key={opt.id}
                         accessibilityRole="button"
+                        accessibilityLabel={`Wake-up alarm: ${opt.label}`}
                         accessibilityState={{ selected }}
                         onPress={() => void pick(opt)}
                         style={({ pressed }) => [
@@ -83,13 +92,7 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
                       >
                         <View style={styles.rowLeft}>
                           <Ionicons
-                            name={
-                              selected
-                                ? 'volume-high'
-                                : opt.section === 'system'
-                                  ? 'phone-portrait-outline'
-                                  : 'volume-medium-outline'
-                            }
+                            name={selected ? 'volume-high' : 'volume-medium-outline'}
                             size={18}
                             color={selected ? colors.calm : colors.textMuted}
                           />
@@ -97,9 +100,31 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
                             {opt.label}
                           </Text>
                         </View>
-                        {selected ? (
-                          <Ionicons name="checkmark-circle" size={18} color={colors.calm} />
-                        ) : null}
+                        <View style={styles.rowRight}>
+                          {selected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={colors.calm} />
+                          ) : null}
+                          {opt.url != null ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={playing ? 'Stop preview' : `Preview ${opt.label}`}
+                              accessibilityState={{ selected: playing }}
+                              hitSlop={8}
+                              onPress={() => toggle(previewIds.alarm(opt.id), opt.url!, 'alarm')}
+                              style={({ pressed }) => [
+                                styles.previewBtn,
+                                playing && styles.previewBtnActive,
+                                pressed && styles.pressed,
+                              ]}
+                            >
+                              <Ionicons
+                                name={playing ? 'stop' : 'play'}
+                                size={14}
+                                color={playing ? colors.calm : colors.text}
+                              />
+                            </Pressable>
+                          ) : null}
+                        </View>
                       </Pressable>
                     );
                   })}
@@ -107,14 +132,14 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
               </View>
             );
           })}
-          {previewing ? <Text style={styles.previewHint}>Previewing…</Text> : null}
         </ScrollView>
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   sheet: { flex: 1, backgroundColor: colors.bg },
   sheetHeader: {
     flexDirection: 'row',
@@ -122,6 +147,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  sheetEyebrow: {
+    color: colors.calm,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   sheetTitle: { ...typography.title, color: colors.text, fontSize: 24 },
   sheetLead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4 },
@@ -153,17 +186,27 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rowSelected: {
-    borderColor: 'rgba(224,122,85,0.55)',
-    backgroundColor: 'rgba(224,122,85,0.08)',
+    borderColor: colors.calm,
+    backgroundColor: colors.calmSoft,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
   rowTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
   rowTitleSelected: { color: colors.calm },
-  previewHint: {
-    color: colors.textDim,
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  previewBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewBtnActive: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
   },
   pressed: { opacity: 0.8 },
-});
+  });
+}

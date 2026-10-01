@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type PropsWithChildren } from 'react';
-import { useColorScheme } from 'react-native';
+import { Appearance } from 'react-native';
 import {
   DEFAULT_THEME_ID,
   getTheme,
@@ -47,6 +47,13 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   };
 
   const theme = getTheme(themeId);
+
+  // Native chrome (alerts, keyboard, action sheets, pickers) follows the in-app theme,
+  // not the system setting: light peach -> 'light', night teal -> 'dark'.
+  const nativeScheme = theme.colors.statusBarStyle === 'dark' ? 'light' : 'dark';
+  useEffect(() => {
+    Appearance.setColorScheme(nativeScheme);
+  }, [nativeScheme]);
 
   const value: ThemeContextValue = {
     theme,

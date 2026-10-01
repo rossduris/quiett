@@ -1,0 +1,256 @@
+import { useCallback, useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { radii, spacing } from '@/constants/theme';
+import { useThemeColors } from '@/lib/theme-provider';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import {
+  loadCompletedDays,
+  loadEarnedBadges,
+  loadStreak,
+  type BadgeId,
+  type StreakData,
+} from '@/lib/storage';
+import type { ColorTokens } from '@/constants/themes';
+import { ALL_BADGES, type Badge } from '@/constants/badges';
+import { EnterStagger } from '@/components/EnterStagger';
+import { MedalSheen } from '@/components/MedalSheen';
+import { BadgeMedallion } from '@/components/profile/BadgeMedallion';
+import { EmptyState } from '@/components/EmptyState';
+
+const SECTIONS: [Badge['category'], string][] = [
+  ['streak', 'Streak achievements'],
+  ['milestone', 'Milestones'],
+  ['variety', 'Variety'],
+];
+
+
+export default function MilestonesScreen() {
+  const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const [earnedIds, setEarnedIds] = useState<Set<BadgeId>>(new Set());
+  const [totalMornings, setTotalMornings] = useState(0);
+  const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
+
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      (async () => {
+        const [badges, days, strk] = await Promise.all([
+          loadEarnedBadges(),
+          loadCompletedDays(),
+          loadStreak(),
+        ]);
+        if (!alive) return;
+        setEarnedIds(new Set(badges));
+        setTotalMornings(days.length);
+        setStreak(strk);
+      })();
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
+
+  const earnedCount = earnedIds.size;
+  const totalCount = ALL_BADGES.length;
+
+  const byCategory = useMemo(() => {
+    const groups: Record<string, Badge[]> = {
+      streak: [],
+      milestone: [],
+      variety: [],
+    };
+    for (const badge of ALL_BADGES) {
+      groups[badge.category]?.push(badge);
+    }
+    return groups;
+  }, []);
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader title="Milestones" fallbackHref="/profile" />
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <EnterStagger index={0} style={styles.summaryCard}>
+          <View style={styles.summaryHero}>
+            <Text style={styles.summaryBig}>{earnedCount}</Text>
+            <Text style={styles.summaryLabel}>
+              of {totalCount} {totalCount === 1 ? 'badge' : 'badges'} earned
+            </Text>
+          </View>
+          <View style={styles.summaryStats}>
+            <View style={styles.summaryCol}>
+              <Ionicons name="flame" size={20} color={colors.calm} />
+              <Text style={styles.summaryNum}>{streak.count}</Text>
+              <Text style={styles.summaryText}>Current streak</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryCol}>
+              <Ionicons name="sunny" size={20} color={colors.calm} />
+              <Text style={styles.summaryNum}>{totalMornings}</Text>
+              <Text style={styles.summaryText}>Total mornings</Text>
+            </View>
+          </View>
+        </EnterStagger>
+
+        {earnedCount === 0 ? (
+          <EnterStagger index={1}>
+            <EmptyState
+              scene="sunrise"
+              title="Nothing earned yet, and that's fine"
+              body="Your first unlocked morning earns your first milestone. The rest follow as mornings add up."
+            />
+          </EnterStagger>
+        ) : null}
+
+        {SECTIONS.map(([cat, title], si) => (
+          <EnterStagger key={cat} index={si + 2} style={styles.section}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            <View style={styles.badgeGrid}>
+              {byCategory[cat]?.map((badge, bi) => {
+                const earned = earnedIds.has(badge.id);
+                return (
+                  <View
+                    key={badge.id}
+                    style={[styles.badgeCard, !earned && styles.badgeCardLocked]}
+                    accessible
+                    accessibilityLabel={`${badge.label}, ${earned ? 'earned' : 'not yet earned'}. ${badge.description}`}
+                  >
+                    <MedalSheen size={56} play={earned} delay={450 + si * 180 + Math.min(bi, 4) * 110} id={`sheen-ms-${badge.id}`}>
+                      <BadgeMedallion badge={badge} earned={earned} size={56} colors={colors} idPrefix={`ms-${badge.id}`} />
+                    </MedalSheen>
+                    <Text style={[styles.badgeLabel, !earned && styles.badgeLabelLocked]}>
+                      {badge.label}
+                    </Text>
+                    <Text style={styles.badgeDesc}>{badge.description}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </EnterStagger>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.bg },
+    scroll: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      gap: spacing.xl,
+    },
+    summaryCard: {
+      backgroundColor: colors.bgCard,
+      borderRadius: radii.xl,
+      padding: spacing.xl,
+      gap: spacing.lg,
+    },
+    summaryHero: {
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    summaryBig: {
+      fontSize: 56,
+      fontWeight: '200',
+      color: colors.calm,
+      letterSpacing: -1.5,
+    },
+    summaryLabel: {
+      color: colors.textMuted,
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    summaryStats: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      paddingTop: spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    summaryCol: {
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    summaryDivider: {
+      width: 1,
+      backgroundColor: colors.border,
+    },
+    summaryNum: {
+      fontSize: 24,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    summaryText: {
+      color: colors.textDim,
+      fontSize: 12,
+      fontWeight: '500',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    section: {
+      gap: spacing.md,
+    },
+    sectionTitle: {
+      color: colors.text,
+      fontSize: 20,
+      fontWeight: '600',
+    },
+    badgeGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+    },
+    badgeCard: {
+      width: '47%',
+      backgroundColor: colors.bgCard,
+      borderRadius: radii.lg,
+      padding: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.calm,
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    badgeCardLocked: {
+      borderColor: colors.border,
+      opacity: 0.6,
+    },
+    badgeIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.calmSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    badgeIconLocked: {
+      backgroundColor: colors.bgElevated,
+    },
+    badgeLabel: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    badgeLabelLocked: {
+      color: colors.textMuted,
+    },
+    badgeDesc: {
+      color: colors.textDim,
+      fontSize: 12,
+      textAlign: 'center',
+      lineHeight: 16,
+    },
+  });
+}

@@ -29,6 +29,10 @@ export type ColorTokens = {
   mist: string;
   /** General accent / link color. */
   accent: string;
+  /** Filled primary-button background: a deeper accent so `onAccent` text passes 4.5:1. */
+  accentStrong: string;
+  /** Text / icons on `accentStrong` (and other strong accent fills). Never follows the system scheme. */
+  onAccent: string;
   /** Primary calm / success accent (meditation, unlock, success). */
   calm: string;
   /** Calm soft background / tint. */
@@ -45,8 +49,34 @@ export type ColorTokens = {
   sunriseSoft: string;
   /** Sunrise deep / shadow. */
   sunriseDeep: string;
+  /** Frosted badge fill that stays readable over any scene cover. */
+  frostBg: string;
+  /** Hairline border for frosted badges. */
+  frostBorder: string;
   /** Status bar style for this theme. */
   statusBarStyle: 'light' | 'dark';
+
+  // ── Session (camera + meditation) — warm dusk palette ─────────────────
+  // The session screen is always a dim, warm "dusk" room regardless of theme,
+  // so the camera window and aura feel calm at 6am in both light and dark.
+  /** Dusk gradient top (deep warm plum-brown). */
+  sessionBgTop: string;
+  /** Dusk gradient middle (warm plum / rosewood). */
+  sessionBgMid: string;
+  /** Dusk gradient bottom (ember toward peach). */
+  sessionBgBottom: string;
+  /** Primary text on the dusk background (warm cream). */
+  sessionText: string;
+  /** Secondary text on the dusk background. */
+  sessionTextMuted: string;
+  /** Lock-in aura / progress glow (peach). */
+  sessionGlow: string;
+  /** Soft glow fill (hold fills, active chip wash). */
+  sessionGlowSoft: string;
+  /** Frosted chip / pill background on dusk. */
+  sessionChipBg: string;
+  /** Hairline borders + ring track on dusk. */
+  sessionHairline: string;
 };
 
 export type ThemeId = 'peachCream' | 'nightTeal';
@@ -73,9 +103,11 @@ export const PEACH_CREAM: Theme = {
     border: '#F5D5C8',
     text: '#2A1810',
     textMuted: '#6B5248',
-    textDim: '#9B8278',
+    textDim: '#806B63', // 4.5:1 on bgCard (was #9B8278, 3.3:1)
     mist: '#E8C4B5',
     accent: '#E89B7A',
+    accentStrong: '#BA5838', // white on this = 4.6:1
+    onAccent: '#FFFFFF',
     // Primary action / selected / success — warm peach (not teal)
     calm: '#E07A55',
     calmSoft: 'rgba(224,122,85,0.14)',
@@ -85,7 +117,18 @@ export const PEACH_CREAM: Theme = {
     sunrise: '#E8A06A',
     sunriseSoft: 'rgba(232,160,106,0.15)',
     sunriseDeep: 'rgba(200,120,80,0.20)',
+    frostBg: 'rgba(255,248,244,0.78)',
+    frostBorder: 'rgba(42,24,16,0.14)',
     statusBarStyle: 'dark',
+    sessionBgTop: '#26151D',
+    sessionBgMid: '#4A2530',
+    sessionBgBottom: '#9A5040',
+    sessionText: '#FFF3EA',
+    sessionTextMuted: 'rgba(255,243,234,0.72)',
+    sessionGlow: '#F4A57F',
+    sessionGlowSoft: 'rgba(244,165,127,0.26)',
+    sessionChipBg: 'rgba(255,243,234,0.10)',
+    sessionHairline: 'rgba(255,243,234,0.18)',
   },
 };
 
@@ -102,12 +145,14 @@ export const NIGHT_TEAL: Theme = {
     bg: '#0A1220',
     bgElevated: '#121C2A',
     bgCard: '#162033',
-    border: '#243247',
+    border: '#2A3A52', // was #243247: dividers/outlines vanished on bgCard
     text: '#E8EEF5',
     textMuted: '#8B9BB0',
-    textDim: '#5C6B7E',
+    textDim: '#7A8AA3', // 4.6:1 on bgCard (was #5C6B7E, 3.0:1)
     mist: '#A8C5D4',
     accent: '#5B8CFF',
+    accentStrong: '#17806C', // deep teal (was off-brand blue); white on this = 4.8:1
+    onAccent: '#FFFFFF',
     calm: '#3DCFB0',
     calmSoft: 'rgba(61,207,176,0.14)',
     alarm: '#FF5C5C',
@@ -115,8 +160,19 @@ export const NIGHT_TEAL: Theme = {
     warning: '#F0B429',
     sunrise: '#E8A06A',
     sunriseSoft: 'rgba(232,160,106,0.18)',
-    sunriseDeep: 'rgba(180,90,40,0.28)',
+    sunriseDeep: 'rgba(232,160,106,0.16)', // was rgba(180,90,40,0.28): read as a muddy brown disc on the alarm card
+    frostBg: 'rgba(18,28,42,0.72)',
+    frostBorder: 'rgba(232,238,245,0.28)',
     statusBarStyle: 'light',
+    sessionBgTop: '#150E18',
+    sessionBgMid: '#36202D',
+    sessionBgBottom: '#7E4436',
+    sessionText: '#FFF3EA',
+    sessionTextMuted: 'rgba(255,243,234,0.70)',
+    sessionGlow: '#F4A57F',
+    sessionGlowSoft: 'rgba(244,165,127,0.24)',
+    sessionChipBg: 'rgba(255,243,234,0.09)',
+    sessionHairline: 'rgba(255,243,234,0.16)',
   },
 };
 

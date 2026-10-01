@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radii, spacing } from '@/constants/theme';
+import { radii, spacing } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { useThemeColors } from '@/lib/theme-provider';
 
 const HOLD_MS = 2000;
 
 type Props = { onConfirm: () => void };
 
 export function EmergencyHoldButton({ onConfirm }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [progress, setProgress] = useState(0);
   const [holding, setHolding] = useState(false);
   const startRef = useRef<number | null>(null);
@@ -41,7 +45,8 @@ export function EmergencyHoldButton({ onConfirm }: Props) {
     <View style={styles.wrap}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Hold to emergency dismiss"
+        accessibilityLabel="Hold to end early"
+        accessibilityHint="Hold for two seconds. For emergencies only — this resets your streak."
         onPressIn={() => {
           doneRef.current = false;
           startRef.current = Date.now();
@@ -53,43 +58,45 @@ export function EmergencyHoldButton({ onConfirm }: Props) {
       >
         <View style={[styles.fill, { width: `${progress * 100}%` }]} />
         <Text style={[styles.label, holding && styles.labelActive]}>
-          {holding ? 'Keep holding…' : 'Hold to dismiss'}
+          {holding ? 'Keep holding\u2026' : 'Hold to end early'}
         </Text>
       </Pressable>
-      <Text style={styles.hint}>Emergency only · breaks your streak</Text>
+      <Text style={styles.hint}>For emergencies · resets your streak</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', gap: spacing.sm, width: '100%' },
-  btn: {
-    overflow: 'hidden',
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,92,92,0.45)',
-    paddingVertical: 14,
-    paddingHorizontal: spacing.lg,
-    minWidth: 220,
-    width: '72%',
-    maxWidth: 320,
-    alignItems: 'center',
-    backgroundColor: 'rgba(61,26,26,0.55)',
-  },
-  btnActive: { borderColor: colors.alarm },
-  fill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,92,92,0.28)',
-  },
-  label: {
-    color: 'rgba(255,92,92,0.9)',
-    fontWeight: '600',
-    fontSize: 14,
-    letterSpacing: 0.2,
-  },
-  labelActive: { color: colors.text },
-  hint: { color: colors.textDim, fontSize: 11, letterSpacing: 0.2 },
-});
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
+    wrap: { alignItems: 'center', gap: spacing.sm, width: '100%' },
+    btn: {
+      overflow: 'hidden',
+      borderRadius: radii.full,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.sessionHairline,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.lg,
+      minWidth: 220,
+      width: '72%',
+      maxWidth: 320,
+      alignItems: 'center',
+      backgroundColor: colors.sessionChipBg,
+    },
+    btnActive: { borderColor: colors.sessionGlow },
+    fill: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      backgroundColor: colors.sessionGlowSoft,
+    },
+    label: {
+      color: colors.sessionTextMuted,
+      fontWeight: '500',
+      fontSize: 15,
+      letterSpacing: 0.2,
+    },
+    labelActive: { color: colors.sessionText },
+    hint: { color: colors.sessionTextMuted, opacity: 0.75, fontSize: 12, letterSpacing: 0.2 },
+  });
+}

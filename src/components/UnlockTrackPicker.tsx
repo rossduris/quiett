@@ -1,17 +1,30 @@
+import { useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { TrackCover } from '@/components/TrackCover';
+import { useCoverStyle } from '@/lib/scene-cover-pref';
+import { radii, spacing, typography } from '@/constants/theme';
+import type { ColorTokens } from '@/constants/themes';
+import { meditationSoundById } from '@/constants/sounds';
+import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
+import { useThemeColors } from '@/lib/theme-provider';
+import { usePremium } from '@/lib/premium-provider';
+import { useShowGuided } from '@/lib/dev-flags';
+import { previewA11yActions } from '@/lib/preview-a11y';
+import { PreviewOverlay } from '@/components/PreviewOverlay';
 import {
   kindLabel,
   kindSectionHint,
+  orderTracksForUser,
   unlockTracksByKind,
+  visibleKinds,
   type UnlockTrack,
   type UnlockTrackKind,
 } from '@/constants/unlock-tracks';
 
-const KINDS: UnlockTrackKind[] = ['guided', 'music', 'ambient'];
 
 type Props = {
   visible: boolean;
@@ -33,15 +46,46 @@ function kindIcon(kind: UnlockTrackKind): keyof typeof Ionicons.glyphMap {
 
 export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Props) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { playingId, toggle } = usePreviewPlayer();
+  // Selecting a row while a preview plays hands the preview to the new track; it keeps playing
+  // after the sheet closes (Home's meditation row picks up the halo). Any other close stops it.
+  const handoff = useRef<string | null>(null);
+  useEffect(() => {
+    if (visible) handoff.current = null;
+  }, [visible]);
+  useStopPreviewWhenHidden(visible, () => handoff.current);
+  const router = useRouter();
+  const { isPremium } = usePremium();
+  const coverStyle = useCoverStyle();
+  // Guided shelf is hidden for launch (dev switch brings it back).
+  const guidedOn = useShowGuided();
+
+  /** Locked premium row → close this sheet, then open the paywall (RN Modal sits above nav). */
+  const openPaywall = () => {
+    stopPreview();
+    onClose();
+    setTimeout(() => router.push('/paywall'), 450);
+  };
+
+  const preview = (track: UnlockTrack) => {
+    if (track.locked && !isPremium) return;
+    const url = meditationSoundById(track.playbackSoundId).url;
+    if (url == null) return;
+    toggle(previewIds.track(track.id), url, 'track');
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={[styles.sheet, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.sheetHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sheetTitle}>Morning sound</Text>
+            <Text style={styles.sheetEyebrow}>Step 2</Text>
+            <Text style={styles.sheetTitle}>Meditation</Text>
             <Text style={styles.sheetLead}>
-              What plays once you stay still. Guided, healing tones, or ambient — pick freely.
+              Your 2-minute meditation, once you’re still. {guidedOn ? 'Guided, tones & music' : 'Tones & music'} or ambient.
+              Tap play to preview.
             </Text>
           </View>
           <Pressable
@@ -59,8 +103,8 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
         >
-          {KINDS.map((kind) => {
-            const tracks = unlockTracksByKind(kind);
+          {visibleKinds(guidedOn).map((kind) => {
+            const tracks = orderTracksForUser(unlockTracksByKind(kind), isPremium);
             return (
               <View key={kind} style={styles.section}>
                 <View style={styles.sectionHead}>
@@ -72,45 +116,81 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                 <View style={styles.list}>
                   {tracks.map((track) => {
                     const selected = track.id === selectedId;
-                    const disabled = track.locked;
+                    // Premium tracks are locked only for free users; tapping one opens the paywall.
+                    const disabled = track.locked && !isPremium;
+                    const playing = playingId === previewIds.track(track.id);
                     return (
-                      <Pressable
+                      <PreviewOverlay
                         key={track.id}
-                        disabled={disabled}
+                        button={
+                          disabled
+                            ? null
+                            : {
+                                playing,
+                                onPress: () => preview(track),
+                                colors,
+                                size: 34,
+                                iconSize: 14,
+                                style: styles.previewBtn,
+                                activeStyle: styles.previewBtnActive,
+                                accessibilityLabel: `${playing ? 'Stop' : 'Play'} preview of ${track.title}`,
+                              }
+                        }
+                        renderRow={(slot) => (
+                      <Pressable
                         accessibilityRole="button"
-                        accessibilityState={{ selected, disabled }}
+                        accessibilityLabel={`Meditation: ${track.title}${
+                          disabled ? ', premium, opens Quiett Premium' : ''
+                        }`}
+                        accessibilityState={{ selected }}
+                        {...previewA11yActions(playing, disabled ? undefined : () => preview(track))}
                         onPress={() => {
-                          if (!disabled) onSelect(track);
+                          if (disabled) {
+                            openPaywall();
+                            return;
+                          }
+                          const id = previewIds.track(track.id);
+                          if (playingId != null) {
+                            followPreviewSelection(id, meditationSoundById(track.playbackSoundId).url, 'track');
+                            handoff.current = id;
+                          }
+                          onSelect(track);
                         }}
                         style={({ pressed }) => [
                           styles.row,
                           selected && styles.rowSelected,
                           disabled && styles.rowLocked,
-                          pressed && !disabled && styles.pressed,
+                          pressed && styles.pressed,
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.art,
-                            { backgroundColor: track.accentSoft, borderColor: track.accent },
-                          ]}
-                        >
-                          {disabled ? (
-                            <Ionicons name="lock-closed" size={16} color={colors.textDim} />
-                          ) : (
-                            <LibraryTrackMark
-                              trackId={track.id}
-                              kind={track.kind}
-                              color={track.accent}
-                              size={28}
-                            />
-                          )}
-                          {disabled ? (
-                            <View style={styles.artLock}>
-                              <Ionicons name="sparkles-outline" size={10} color={colors.text} />
-                            </View>
-                          ) : null}
-                        </View>
+                        {coverStyle !== 'classic' ? (
+                          <View style={[styles.art, styles.artScene]}>
+                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} animate={playing} defer />
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.art,
+                              { backgroundColor: track.accentSoft, borderColor: track.accent },
+                            ]}
+                          >
+                            {disabled ? (
+                              <Ionicons name="lock-closed" size={16} color={colors.textDim} />
+                            ) : (
+                              <LibraryTrackMark
+                                trackId={track.id}
+                                kind={track.kind}
+                                color={track.accent}
+                                size={28}
+                              />
+                            )}
+                            {disabled ? (
+                              <View style={styles.artLock}>
+                                <Ionicons name="sparkles-outline" size={10} color={colors.text} />
+                              </View>
+                            ) : null}
+                          </View>
+                        )}
                         <View style={styles.rowBody}>
                           <View style={styles.rowTop}>
                             <Text style={styles.rowTitle} numberOfLines={1}>
@@ -131,7 +211,10 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             {track.durationLabel} · {track.mood}
                           </Text>
                         </View>
+                        {slot}
                       </Pressable>
+                        )}
+                      />
                     );
                   })}
                 </View>
@@ -144,7 +227,8 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
   sheet: { flex: 1, backgroundColor: colors.bg },
   sheetHeader: {
     flexDirection: 'row',
@@ -152,6 +236,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  sheetEyebrow: {
+    color: colors.calm,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   sheetTitle: { ...typography.title, color: colors.text, fontSize: 24 },
   sheetLead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4 },
@@ -182,8 +274,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowSelected: {
-    borderColor: 'rgba(224,122,85,0.55)',
-    backgroundColor: 'rgba(224,122,85,0.08)',
+    borderColor: colors.calm,
+    backgroundColor: colors.calmSoft,
   },
   rowLocked: { opacity: 0.55 },
   art: {
@@ -195,6 +287,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  artScene: { borderColor: colors.border },
   artLock: {
     position: 'absolute',
     right: 4,
@@ -204,7 +297,9 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(11,15,20,0.55)',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   rowBody: { flex: 1, gap: 3 },
   rowTop: {
@@ -219,11 +314,26 @@ const styles = StyleSheet.create({
   lockBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 999,
+    borderRadius: radii.full,
     backgroundColor: colors.bgElevated,
     borderWidth: 1,
     borderColor: colors.border,
   },
   lockBadgeText: { color: colors.textDim, fontSize: 10, fontWeight: '700' },
+  previewBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewBtnActive: {
+    backgroundColor: colors.calmSoft,
+    borderColor: colors.calm,
+  },
   pressed: { opacity: 0.8 },
-});
+  });
+}

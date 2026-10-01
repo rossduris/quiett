@@ -2,6 +2,34 @@ declare module 'quiett-pose' {
   import type { ComponentType } from 'react';
   import type { StyleProp, ViewStyle } from 'react-native';
 
+  export type PoseDetectorMode = 'legacy' | 'body2d' | 'body3d';
+
+  export type NativePoseCheck = {
+    name: string;
+    value?: number;
+    limit: number;
+    pass: boolean;
+    available: boolean;
+    unit: string;
+    kind?: 'max' | 'min' | 'bool';
+    note?: string;
+  };
+
+  export type NativePoseDetectorResult = {
+    mode: PoseDetectorMode;
+    modeUsed: PoseDetectorMode;
+    fallback?: string;
+    pass: boolean;
+    score: number;
+    personFound: boolean;
+    checks: Record<string, NativePoseCheck>;
+    checkOrder?: string[];
+    jointsDetected: string[];
+    jointCount: number;
+    processingMs?: number;
+    extra?: Record<string, unknown>;
+  };
+
   export type NativePoseJoint = {
     x: number;
     y: number;
@@ -18,12 +46,23 @@ declare module 'quiett-pose' {
     mouthVisible?: boolean;
     handNearFace?: boolean;
     /** True when any hand/wrist/elbow is in frame (zero-hands gate). */
-  handsVisible?: boolean;
+    handsVisible?: boolean;
     handCount?: number;
     faceYaw?: number;
     faceRoll?: number;
     facePitch?: number;
+    brightness?: number;
+    brightEnough?: boolean;
     timestamp?: number;
+    detectorMode?: PoseDetectorMode;
+    detector?: NativePoseDetectorResult;
+    processingMs?: number;
+    imageWidth?: number;
+    imageHeight?: number;
+    orientation?: 'up' | 'leftMirrored';
+    bufferWidth?: number;
+    bufferHeight?: number;
+    targetFps?: number;
   };
 
   export type PoseFrameEvent = NativePoseResult;
@@ -31,6 +70,7 @@ declare module 'quiett-pose' {
 
   export function isNativePoseAvailable(): boolean;
   export function isLivePoseCameraAvailable(): boolean;
+  export function isBody3DPoseAvailable(): boolean;
   export function analyzePoseImage(uri: string): Promise<NativePoseResult>;
   export function analyzePoseBase64(base64: string): Promise<NativePoseResult>;
   export const analyzeImage: typeof analyzePoseImage;
@@ -46,6 +86,7 @@ declare module 'quiett-pose' {
     style?: StyleProp<ViewStyle>;
     isActive?: boolean;
     mirror?: boolean;
+    detectorMode?: PoseDetectorMode;
     onPoseFrame?: (frame: NativePoseResult) => void;
     onCameraReady?: () => void;
     onMountError?: (message: string) => void;
