@@ -6,6 +6,7 @@ import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import type { MorningGoal, MorningGoalId } from '@/constants/onboarding';
 import type { UnlockTrack } from '@/constants/unlock-tracks';
+import { ALARM_SOUND_SECTIONS, alarmSoundsBySection, type SoundOption } from '@/constants/sounds';
 import { sceneSpecFor } from '@/constants/scene-covers';
 import { SceneCover } from '@/components/SceneCover';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -36,7 +37,7 @@ type HowStep = { kind: 'ring' | 'still' | 'calm'; title: string; body: string };
 
 export const HOW_STEPS: readonly HowStep[] = [
   { kind: 'ring', title: 'Your alarm rings', body: 'It keeps going until you’re up.' },
-  { kind: 'still', title: 'Get up and be still', body: 'Prop your phone and face it. The camera sees you’re settled.' },
+  { kind: 'still', title: 'Get up and be still', body: 'Hold the phone steady and face it. The camera sees you’re settled.' },
   { kind: 'calm', title: 'Two calm minutes', body: 'The alarm fades into your sound. Then your day begins.' },
 ];
 
@@ -164,6 +165,70 @@ export function SoundChoices({
   );
 }
 
+/**
+ * Alarm-tone picker for onboarding. Same list and sections as the Home sheet.
+ * Tap a tone to select it and play the short preview (the row is the play/stop control).
+ */
+export function ToneChoices({
+  selected,
+  playingId,
+  onSelect,
+}: {
+  selected: string;
+  playingId: string | null;
+  onSelect: (opt: SoundOption) => void;
+}) {
+  const { colors, styles } = useStyles();
+  return (
+    <View style={styles.toneList}>
+      {ALARM_SOUND_SECTIONS.map((section) => {
+        const opts = alarmSoundsBySection(section.id);
+        if (opts.length === 0) return null;
+        return (
+          <View key={section.id} style={styles.toneSection} accessibilityRole="radiogroup">
+            <Text style={styles.toneHeading}>{section.label}</Text>
+            <Text style={styles.soundMood}>{section.hint}</Text>
+            {opts.map((opt) => {
+              const on = opt.id === selected;
+              const playing = playingId === `alarm:${opt.id}`;
+              const canPreview = opt.url != null;
+              return (
+                <Pressable
+                  key={opt.id}
+                  onPress={() => onSelect(opt)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={`Alarm tone: ${opt.label}`}
+                  accessibilityHint={
+                    !canPreview
+                      ? section.hint
+                      : playing
+                        ? 'Playing a short preview. Tap again to stop.'
+                        : 'Selects this tone and plays a short preview'
+                  }
+                  style={({ pressed }) => [styles.choice, on && styles.choiceOn, pressed && styles.pressed]}
+                >
+                  <Ionicons
+                    name="volume-medium-outline"
+                    size={20}
+                    color={on ? colors.calm : colors.textMuted}
+                  />
+                  <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{opt.label}</Text>
+                  <Ionicons
+                    name={playing ? 'pause-circle' : on ? 'checkmark-circle' : canPreview ? 'play-circle-outline' : 'ellipse-outline'}
+                    size={26}
+                    color={on || playing ? colors.calm : colors.textDim}
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /** Checkbox row (evening reminder opt-in on the alarm step). */
 export function CheckRow({ checked, title, body, onToggle, disabled }: { checked: boolean; title: string; body: string; onToggle: () => void; disabled?: boolean }) {
   const { colors, styles } = useStyles();
@@ -211,6 +276,9 @@ function createStyles(colors: ColorTokens) {
     howNum: { ...typography.eyebrow, color: colors.calm, fontSize: 11 },
     howTitle: { ...typography.subtitle, fontSize: 17, fontWeight: '600', color: colors.text },
     howBody: { ...typography.body, fontSize: 15, lineHeight: 21, color: colors.textMuted },
+    toneList: { gap: spacing.lg },
+    toneSection: { gap: spacing.sm },
+    toneHeading: { ...typography.subtitle, fontSize: 16, fontWeight: '700', color: colors.text },
     choiceList: { gap: spacing.sm },
     choice: {
       flexDirection: 'row',

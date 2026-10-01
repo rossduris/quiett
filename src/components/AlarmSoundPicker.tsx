@@ -48,7 +48,7 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
             <Text style={styles.sheetTitle}>Wake-up alarm</Text>
             <Text style={styles.sheetLead}>
               Rings until you’re still, and on the lock screen. Tap to hear it. Intense cuts
-              through; laid-back is softer. System uses the iOS default.
+              through; laid-back is softer.
             </Text>
           </View>
           <Pressable
@@ -92,13 +92,7 @@ export function AlarmSoundPicker({ visible, selectedId, onClose, onSelect }: Pro
                       >
                         <View style={styles.rowLeft}>
                           <Ionicons
-                            name={
-                              selected
-                                ? 'volume-high'
-                                : opt.section === 'system'
-                                  ? 'phone-portrait-outline'
-                                  : 'volume-medium-outline'
-                            }
+                            name={selected ? 'volume-high' : 'volume-medium-outline'}
                             size={18}
                             color={selected ? colors.calm : colors.textMuted}
                           />

@@ -3,7 +3,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { meditationSoundById } from '@/constants/sounds';
 import {
   DEFAULT_UNLOCK_TRACK_ID,
-  pickSurpriseTrack,
   unlockTrackById,
   visibleKinds,
   type UnlockTrack,
@@ -20,7 +19,6 @@ import {
   loadVoiceGuideId,
   markLibraryCategoryUsed,
   saveSurpriseMe,
-  saveSurpriseTrackDate,
   saveUnlockTrackId,
   saveVoiceGuideId,
 } from '@/lib/storage';
@@ -128,20 +126,10 @@ export function useLibraryState() {
 
   const toggleSurprise = async () => {
     const next = !surpriseMe;
-    if (next) {
-      const picked = pickSurpriseTrack(selectedId, isPremium, guidedOn);
-      const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
-      await saveSurpriseTrackDate();
-      setSelectedId(id);
-      const track = unlockTrackById(id);
-      followPreviewSelection(
-        previewIds.track(track.id),
-        track.locked && !isPremium ? null : meditationSoundById(track.playbackSoundId).url,
-        'track',
-      );
-    }
+    // Mode only. The track is rolled when the morning meditation starts.
     setSurpriseMe(next);
     await saveSurpriseMe(next);
+    if (next) stopPreview();
     void syncEveningReminder();
   };
 

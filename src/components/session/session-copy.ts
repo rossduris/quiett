@@ -15,24 +15,34 @@ export type SessionCopy = {
   tone: 'guide' | 'nudge' | 'calm';
 };
 
-/** What the camera still needs, in the gate order (phone → light → face → hands → posture → stillness). */
-export function posePrompt(status: PoseStatus): string {
+export type PoseLine = { prompt: string; note?: string };
+
+/**
+ * One plain reason, then what to do. Gate order: phone upright, light, a face filling
+ * the frame, facing, then stillness. Holding the phone is allowed. Never tell them to put it down.
+ */
+export function posePrompt(status: PoseStatus): PoseLine {
   switch (status) {
     case 'not_upright':
-      return 'Prop your phone up, facing you';
-    case 'too_dark':
-      return 'A little more light helps';
-    case 'hands_near':
-    case 'arms_moving':
-      return 'Let your hands rest';
-    case 'posture':
-      return 'Soften your shoulders';
+      return { prompt: 'Hold the phone upright.' };
     case 'fidgeting':
-      return 'Settle in';
+      return { prompt: 'Hold still', note: 'Keep the phone steady.' };
+    case 'too_dark':
+      return { prompt: 'It\u2019s too dark', note: 'Turn a light on.' };
+    case 'too_close':
+      return { prompt: 'Give it a little room', note: 'Your face is filling the frame.' };
+    case 'too_far':
+      return { prompt: 'You\u2019re a little far', note: 'Step closer so your head and shoulders fit.' };
+    case 'hands_near':
+      return { prompt: 'Rest your hands', note: 'Let them fall away from your face.' };
+    case 'arms_moving':
+      return { prompt: 'Hold still', note: 'Keep your hands quiet.' };
+    case 'posture':
+      return { prompt: 'Square your shoulders', note: 'Face the phone.' };
     case 'holding':
-      return 'Stay just like this';
+      return { prompt: 'Stay just like this' };
     default:
-      return 'Come into the circle';
+      return { prompt: 'Face the camera', note: 'Look toward the phone.' };
   }
 }
 
@@ -60,13 +70,17 @@ export function sessionCopy(opts: {
 }): SessionCopy {
   const { phase, pose, paused, durationLabel, meditatingStep } = opts;
   switch (phase) {
-    case 'alarming':
+    case 'alarming': {
       if (paused) {
-        // A break mid-meditation: a calm nudge back, not a warning.
-        const need = pose === 'absent' || pose === 'holding' ? 'Come back to center' : posePrompt(pose);
-        return { prompt: need, note: 'Your minutes are saved', tone: 'nudge' };
+        const need = pose === 'absent' || pose === 'holding' ? { prompt: 'Come back to center' } : posePrompt(pose);
+        return { prompt: need.prompt, note: 'Your minutes are saved', tone: 'nudge' };
       }
-      return { prompt: posePrompt(pose), note: `Then ${durationLabel} of quiet`, tone: 'guide' };
+      const line = posePrompt(pose);
+      if (pose === 'holding') {
+        return { prompt: line.prompt, note: `Then ${durationLabel} of quiet`, tone: 'guide' };
+      }
+      return { prompt: line.prompt, note: line.note, tone: 'guide' };
+    }
     case 'detecting':
       return { prompt: 'Stay just like this', note: 'The alarm will fade', tone: 'guide' };
     case 'meditating':
@@ -101,6 +115,8 @@ export function haloWarmth(phase: SessionPhase, pose: PoseStatus, confirmProgres
       return 0.36;
     case 'too_dark':
     case 'not_upright':
+    case 'too_close':
+    case 'too_far':
       return 0.2;
     default:
       return 0.1;

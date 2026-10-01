@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import type { ColorTokens } from '@/constants/themes';
@@ -130,57 +130,90 @@ function fmt(c: PoseCheck): string {
 
 type ReadoutProps = { diagnostics?: PoseDiagnostics; fps?: number };
 
+/** Rows always drawn, in this order, so a frame with fewer checks cannot resize the card. */
+const CHECK_ROWS = [
+  'lighting',
+  'facing',
+  'shoulderLevel',
+  'headCentered',
+  'torsoUpright',
+  'handsLow',
+  'stillness',
+  'armStillness',
+] as const;
+
+const EMPTY_CHECK = (name: string): PoseCheck => ({
+  name,
+  limit: 0,
+  pass: false,
+  available: false,
+  unit: '',
+});
+
+/** Ignore a one-frame label change so the fallback line does not strobe. */
+function useHeldLine(value: string, ms = 600): string {
+  const [shown, setShown] = useState(value);
+  useEffect(() => {
+    if (shown === value) return;
+    const id = setTimeout(() => setShown(value), ms);
+    return () => clearTimeout(id);
+  }, [shown, value]);
+  return shown;
+}
+
 /** DEV ONLY. Compact per-check readout: mode, score, ms/frame, each check. */
 export function PoseDebugReadout({ diagnostics, fps }: ReadoutProps) {
   const colors = useThemeColors();
   const styles = useMemo(() => createReadoutStyles(colors), [colors]);
-
-  if (!diagnostics) {
-    return (
-      <View style={styles.panel} pointerEvents="none">
-        <Text style={styles.head}>pose debug · waiting for frames…</Text>
-      </View>
-    );
-  }
   const d = diagnostics;
-  const modeLabel =
-    d.modeUsed === d.mode
-      ? POSE_DETECTOR_LABELS[d.mode]
-      : `${POSE_DETECTOR_LABELS[d.mode]} → ${POSE_DETECTOR_LABELS[d.modeUsed]}`;
-  const ms = d.processingMs != null ? `${d.processingMs.toFixed(0)} ms` : '– ms';
-  const rate = fps != null ? ` · ${fps.toFixed(1)} fps` : '';
+  // Header is the mode the session asked for. A per-frame modeUsed swap used to
+  // rewrite the title ("2D body" ↔ "2D body → Legacy") and resize the card.
+  const modeLabel = d ? POSE_DETECTOR_LABELS[d.mode] : 'pose debug';
+  const liveFallback = d
+    ? d.modeUsed !== d.mode
+      ? (d.fallback ?? `using ${POSE_DETECTOR_LABELS[d.modeUsed]}`)
+      : (d.fallback ?? '')
+    : '';
+  const fallback = useHeldLine(liveFallback);
+  const byName = new Map((d?.checks ?? []).map((c) => [c.name, c]));
+  const ms = d?.processingMs != null ? `${d.processingMs.toFixed(0)} ms` : '– ms';
+  const rate = fps != null ? `${fps.toFixed(1)} fps` : '– fps';
+  const size =
+    d?.imageWidth && d.imageHeight ? `${Math.round(d.imageWidth)}×${Math.round(d.imageHeight)}` : '–';
+  const arms = d?.armMotion ? formatArmMotion(d.armMotion) : 'arms – · LW – RW – LE – RE – · n=–';
+  const jointNames = d?.jointsDetected.length ? d.jointsDetected.join(', ') : '–';
 
   return (
     <View style={styles.panel} pointerEvents="none">
-      <Text style={styles.head}>
-        {modeLabel} · score {d.score} · {ms}
-        {rate}
+      <Text style={styles.head} numberOfLines={1}>
+        {modeLabel} · score {d ? d.score : '–'} · {ms} · {rate}
       </Text>
-      <Text style={styles.sub}>
-        raw {d.rawStatus}
-        {d.phonePropped ? '' : ' · phone flat'}
-        {d.orientation ? ` · ${d.orientation}` : ''}
-        {d.imageWidth && d.imageHeight ? ` ${d.imageWidth}×${d.imageHeight}` : ''}
+      <Text style={styles.sub} numberOfLines={1}>
+        raw {d?.rawStatus ?? '–'} · {d ? (d.phonePropped ? 'upright' : 'flat') : '–'} · {d?.orientation ?? '–'} · {size}
       </Text>
-      {d.fallback ? <Text style={styles.sub}>fallback: {d.fallback}</Text> : null}
-      {d.checks.map((c) => (
-        <View key={c.name} style={styles.row}>
-          <Text style={[styles.flag, c.pass ? styles.ok : styles.bad]}>
-            {!c.available ? '·' : c.pass ? '✓' : '✗'}
-          </Text>
-          <Text style={styles.name}>{c.name}</Text>
-          <Text style={styles.val} numberOfLines={1}>
-            {fmt(c)}
-          </Text>
-        </View>
-      ))}
-      {d.armMotion ? (
-        <Text style={styles.sub} numberOfLines={1}>
-          {formatArmMotion(d.armMotion)}
-        </Text>
-      ) : null}
+      <Text style={styles.sub} numberOfLines={1}>
+        fallback: {fallback || '–'}
+      </Text>
+      {CHECK_ROWS.map((name) => {
+        const c = byName.get(name) ?? EMPTY_CHECK(name);
+        const on = c.available;
+        return (
+          <View key={name} style={styles.row}>
+            <Text style={[styles.flag, on && c.pass ? styles.ok : styles.bad]}>
+              {!on ? '·' : c.pass ? '✓' : '✗'}
+            </Text>
+            <Text style={styles.name} numberOfLines={1}>{name}</Text>
+            <Text style={styles.val} numberOfLines={1}>
+              {on ? fmt(c) : c.note ? `n/a (${c.note})` : '–'}
+            </Text>
+          </View>
+        );
+      })}
+      <Text style={styles.sub} numberOfLines={1}>
+        {arms}
+      </Text>
       <Text style={styles.joints} numberOfLines={2}>
-        joints ({d.jointsDetected.length}): {d.jointsDetected.join(', ') || 'none'}
+        joints ({d?.jointsDetected.length ?? 0}): {jointNames}
       </Text>
     </View>
   );
@@ -196,6 +229,7 @@ function createReadoutStyles(colors: ColorTokens) {
   return StyleSheet.create({
     panel: {
       alignSelf: 'center',
+      width: 320,
       marginTop: 8,
       paddingHorizontal: 12,
       paddingVertical: 8,
@@ -203,17 +237,15 @@ function createReadoutStyles(colors: ColorTokens) {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.sessionHairline,
       backgroundColor: colors.sessionChipBg,
-      minWidth: 240,
-      maxWidth: 340,
     },
-    head: { color: colors.sessionText, fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
-    sub: { color: colors.sessionTextMuted, fontSize: 11, marginTop: 1 },
-    row: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-    flag: { width: 14, fontSize: 11, fontWeight: '700' },
+    head: { color: colors.sessionText, fontSize: 12, lineHeight: 16, height: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+    sub: { color: colors.sessionTextMuted, fontSize: 11, lineHeight: 15, height: 15, marginTop: 1 },
+    row: { flexDirection: 'row', alignItems: 'center', height: 16, marginTop: 1 },
+    flag: { width: 14, fontSize: 11, lineHeight: 14, fontWeight: '700' },
     ok: { color: colors.sessionGlow },
     bad: { color: colors.sessionTextMuted },
-    name: { color: colors.sessionText, fontSize: 11, width: 96 },
-    val: { color: colors.sessionTextMuted, fontSize: 11, flex: 1, fontVariant: ['tabular-nums'] },
-    joints: { color: colors.sessionTextMuted, fontSize: 10, marginTop: 4 },
+    name: { color: colors.sessionText, fontSize: 11, lineHeight: 14, width: 104 },
+    val: { color: colors.sessionTextMuted, fontSize: 11, lineHeight: 14, flex: 1, fontVariant: ['tabular-nums'] },
+    joints: { color: colors.sessionTextMuted, fontSize: 10, lineHeight: 13, height: 26, marginTop: 4 },
   });
 }

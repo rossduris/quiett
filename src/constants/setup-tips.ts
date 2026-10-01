@@ -1,15 +1,15 @@
 export const SETUP_TIPS = [
   {
-    title: 'Prop the phone',
-    body: 'Lean it against a wall or stand — upright, not flat. Holding it on your chest in bed will not count.',
+    title: 'Hold it steady',
+    body: 'You can hold the phone. Keep it steady, with your head and shoulders in view. Shaking it will not count.',
   },
   {
     title: 'Face the camera',
-    body: 'Look toward the front camera so your face fills the guide. Profile or looking away will not count — same idea as Face ID.',
+    body: 'Look toward the front camera so your face and shoulders are in view. Profile or looking away will not count.',
   },
   {
     title: 'Night-before check',
-    body: 'Confirm the camera preview before sleep, then leave the phone in place.',
+    body: 'Confirm the camera preview before sleep, whether you will hold the phone or leave it in place.',
   },
   {
     title: 'Lighting',
@@ -18,7 +18,7 @@ export const SETUP_TIPS = [
 ] as const;
 
 export const SETUP_LEAD =
-  'Quiett needs your face toward the camera, the phone propped up, and you fairly still. Set the phone up the night before so the morning is easy.';
+  'Quiett needs your head and shoulders in view, your face toward the camera, enough light, and the phone fairly still. You can hold it.';
 
 export const SETUP_NOTE =
   'The check stays on your iPhone. Your face needs to be toward the camera — looking away won’t turn the alarm off.';

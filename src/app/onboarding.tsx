@@ -37,12 +37,13 @@ import {
   HowSteps,
   SoundChoices,
   StepText,
+  ToneChoices,
 } from '@/components/onboarding/OnboardingParts';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { MORNING_GOALS, SNOOZE_CHART_COPY, morningGoalById, type MorningGoalId } from '@/constants/onboarding';
 import { freeUnlockTracks, type UnlockTrack } from '@/constants/unlock-tracks';
-import { meditationSoundById } from '@/constants/sounds';
+import { DEFAULT_ALARM_SOUND_ID, alarmSoundById, meditationSoundById } from '@/constants/sounds';
 import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
   getNotificationPermissionStatus,
@@ -54,6 +55,7 @@ import {
   getOsAlarmPermission,
   openOsAlarmSettings,
   requestOsAlarmPermission,
+  applyAlarmSoundChange,
   syncOsAlarm,
   type OsAlarmPermissionState,
 } from '@/lib/os-alarm';
@@ -64,6 +66,7 @@ import {
   WEEKDAY_DISPLAY_ORDER,
   WEEKDAY_SHORT,
   loadAlarmPrefs,
+  loadAlarmSoundId,
   loadEveningReminderPrefs,
   loadOnboardingGoal,
   loadSurpriseMe,
@@ -71,6 +74,7 @@ import {
   loadWakeIntention,
   nextAlarmDate,
   saveAlarmPrefs,
+  saveAlarmSoundId,
   DEFAULT_ALARM,
   saveEveningReminderPrefs,
   saveOnboardingComplete,
@@ -85,11 +89,11 @@ import { useThemeColors } from '@/lib/theme-provider';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 
 /**
- * First-run flow (9 screens): hook → problem → how it works → goal → wake time → first
+ * First-run flow: hook → problem → how it works → goal → wake time → alarm tone → first
  * sound → camera (rationale + prompt) → alarms + optional evening reminder (rationale +
  * prompts) → commitment, which starts the practice run or goes Home. No paywall here.
  */
-const STEPS = ['welcome', 'problem', 'snooze', 'how', 'goal', 'time', 'sound', 'camera', 'alarm', 'commit'] as const;
+const STEPS = ['welcome', 'problem', 'snooze', 'how', 'goal', 'time', 'tone', 'sound', 'camera', 'alarm', 'commit'] as const;
 type StepId = (typeof STEPS)[number];
 
 /** Steps with a full-bleed scene of their own (the background hills step aside). */
@@ -167,6 +171,7 @@ export default function OnboardingScreen() {
   const [wantReminder, setWantReminder] = useState(true);
   const [goal, setGoal] = useState<MorningGoalId | null>(null);
   const [trackId, setTrackId] = useState<string>(FIRST_SOUNDS[0]?.id ?? '');
+  const [toneId, setToneId] = useState(DEFAULT_ALARM_SOUND_ID);
   const [busy, setBusy] = useState(false);
   const launchedPractice = useRef(false);
   const { playingId, toggle: togglePreview } = usePreviewPlayer();
@@ -196,11 +201,19 @@ export default function OnboardingScreen() {
     void loadUnlockTrackId().then((id) => {
       if (alive && FIRST_SOUNDS.some((t) => t.id === id)) setTrackId(id);
     });
+    void loadAlarmSoundId().then((id) => {
+      if (alive) setToneId(alarmSoundById(id).id);
+    });
     void refreshStatuses();
     return () => {
       alive = false;
     };
   }, [refreshStatuses]);
+
+  // Previews belong to the step that started them.
+  useEffect(() => {
+    return () => stopPreview();
+  }, [step]);
 
   // Coming back from iOS Settings: pick up any permission the user just changed.
   useEffect(() => {
@@ -276,6 +289,27 @@ export default function OnboardingScreen() {
       await saveOnboardingGoal(chosen.id);
       // Seed the first wake-up intention, never overwriting one the user wrote.
       if (!(await loadWakeIntention()).trim()) await saveWakeIntention(chosen.intention);
+    }
+    next();
+  };
+
+  const selectTone = (opt: { id: string; url: string | number | null }) => {
+    setToneId(opt.id);
+    const id = previewIds.alarm(opt.id);
+    // Same as the Home sheet: a playing preview follows the new tone, or stops for System
+    // default (no in-app file). Nothing playing yet → the row is play/stop.
+    if (playingId != null && playingId !== id) followPreviewSelection(id, opt.url, 'alarm');
+    else if (opt.url != null) togglePreview(id, opt.url, 'alarm');
+    else stopPreview();
+  };
+
+  const saveToneAndContinue = async () => {
+    stopPreview();
+    await saveAlarmSoundId(toneId);
+    // The time step may already have scheduled the alarm with the previous tone.
+    if (alarmPerm === 'authorized') {
+      const prefs = await loadAlarmPrefs();
+      void applyAlarmSoundChange({ ...prefs, enabled: true });
     }
     next();
   };
@@ -539,6 +573,19 @@ export default function OnboardingScreen() {
         </View>
       );
       primary = { label: 'Continue', onPress: () => void saveTimeAndContinue() };
+      break;
+
+    case 'tone':
+      content = (
+        <View style={styles.block}>
+          <StepText
+            title="Choose your alarm"
+            body="This rings until you’re still, including on the lock screen. Tap a tone to hear a short preview. You can change it anytime on Home."
+          />
+          <ToneChoices selected={toneId} playingId={playingId} onSelect={selectTone} />
+        </View>
+      );
+      primary = { label: 'Continue', onPress: () => void saveToneAndContinue() };
       break;
 
     case 'sound':

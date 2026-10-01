@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -17,11 +17,12 @@ import { BreathingOrb } from '@/components/session/BreathingOrb';
 import { SessionPrompt } from '@/components/session/SessionPrompt';
 import { SessionScene } from '@/components/session/SessionScene';
 import { haloWarmth, PROMPT_ROTATE_MS, sessionCopy } from '@/components/session/session-copy';
+import { useStableGuidance } from '@/components/session/use-stable-copy';
 import { spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useBreathingLight } from '@/lib/breathing-pref';
 import { isDimHour } from '@/lib/gentle-brightness';
-import { hapticSelect, hapticSoft } from '@/lib/haptics';
+import { hapticSoft } from '@/lib/haptics';
 import { DURATION, EASE, EASE_IN_OUT, SPRING_BOUNCY } from '@/lib/motion';
 import type { PoseStatus } from '@/lib/pose/types';
 import type { SessionPhase } from '@/lib/session-machine';
@@ -42,9 +43,9 @@ type Props = {
   /** Whole seconds left while meditating (final-10 s warmth). */
   secondsLeft?: number;
   /**
-   * The camera preview, rendered inside the soft circular window. Must stay mounted across
-   * phases (same element position) so the camera never remounts; while meditating the scene
-   * simply covers it and it keeps running for the checks.
+   * The camera preview. Must stay mounted across phases (same element) so the camera never
+   * remounts; while meditating the scene covers it and it keeps running for the checks.
+   * It is a wide rounded frame, never a face-sized circle.
    */
   camera: ReactNode;
   /** Selected meditation track (its cover becomes the full-screen scene). Null until loaded. */
@@ -57,18 +58,20 @@ type Props = {
   bottomInset: number;
 };
 
-const RING_STROKE = 2;
-const RING_GAP = 14;
+/** Session time ring after the scene covers the camera. Was 2px and easy to miss. */
+const RING_STROKE = 8;
 const COPY_H = 132;
+/** Rounded rect, not a circle. A face-sized circle made people lean in. */
+const FRAME_RADIUS = 28;
+/** Hold progress on the camera frame. Was 2px and easy to miss. */
+const HOLD_BAR = 6;
 
 /**
  * Session screen, two modes:
- *  • Getting in position (alarm ringing / 2.5 s hold): the camera stays clear inside a soft halo
- *    that warms as each check is met, one gentle prompt at a time, a thin arc for the hold.
+ *  • Getting in position: a wide camera frame (head and shoulders), one title and one hint.
  *  • Meditating: the selected track's scene fades up full-screen over the (still running)
- *    camera, a breathing light sits where the window was, a thin ring tracks the time (tap to
- *    see what's left), and the wake intention shows once.
- * All motion is transform/opacity on the UI thread; the scene is the only animated SVG.
+ *    camera, a breathing light and a thin ring track the time (tap to see what's left).
+ * The guidance line is replaced in place, and only after a new reason has stayed put.
  */
 export function SessionChrome({
   phase,
@@ -87,7 +90,7 @@ export function SessionChrome({
 }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const reduce = useReduceMotion();
   const [breathing] = useBreathingLight();
   const [dim] = useState(() => isDimHour());
@@ -97,9 +100,11 @@ export function SessionChrome({
   const immersed = isMeditate || phase === 'completed';
   const paused = phase === 'alarming' && sitProgress > 0.001;
 
-  const windowSize = Math.round(Math.min(width - 104, 272));
-  const ringSize = windowSize + 2 * (RING_STROKE + RING_GAP);
+  const medallion = Math.round(Math.min(width * 0.62, 280));
   const progress = immersed || paused ? sitProgress : isDetect ? confirmProgress : 0;
+  const [frame, setFrame] = useState({ w: width, h: 0 });
+  const copyBlock = COPY_H;
+  const frameGap = spacing.md;
 
   // ── Prompt rotation while meditating ────────────────────────────────────────
   const [step, setStep] = useState(-1);
@@ -111,12 +116,14 @@ export function SessionChrome({
     const id = setInterval(() => setStep((s) => (s < 0 ? 0 : s + 1)), PROMPT_ROTATE_MS);
     return () => clearInterval(id);
   }, [isMeditate]);
-  const copy = sessionCopy({ phase, pose, paused, durationLabel, meditatingStep: step });
-  const prompt = copy.prompt;
+  const rawCopy = sessionCopy({ phase, pose, paused, durationLabel, meditatingStep: step });
+  // A flickering reason waits. Phase changes (the hold, the quiet) replace the line at once.
+  const held = useStableGuidance(rawCopy, pose, phase !== 'alarming');
+  const copy = held.copy;
+  const shownPose = held.pose;
 
   // ── Halo warmth (framing) ───────────────────────────────────────────────────
-  const warmth = haloWarmth(phase, pose, confirmProgress);
-  // Three crisp states instead of a glow: not yet → nearly → ready / holding.
+  const warmth = haloWarmth(phase, shownPose, confirmProgress);
   const readyColor = warmth >= 0.6 ? colors.sessionGlow : warmth >= 0.3 ? colors.sessionTextMuted : colors.sessionHairline;
 
   // ── Mode blend: 0 = getting in position, 1 = immersed ──────────────────────
@@ -125,7 +132,14 @@ export function SessionChrome({
     mode.value = withTiming(immersed ? 1 : 0, { duration: immersed ? 1400 : 220, easing: immersed ? EASE_IN_OUT : EASE });
   }, [immersed, mode]);
   const orbStyle = useAnimatedStyle(() => ({ opacity: mode.value }));
-  const rimStyle = useAnimatedStyle(() => ({ opacity: 1 - mode.value }));
+
+  // The camera should arrive, not pop in unfinished. Opacity only, so the frame never scales into a circle.
+  const arrive = useSharedValue(reduce ? 1 : 0);
+  useEffect(() => {
+    arrive.value = withTiming(1, { duration: reduce ? 0 : 700, easing: EASE });
+  }, [arrive, reduce]);
+  const arriveVeil = useAnimatedStyle(() => ({ opacity: 1 - arrive.value }));
+  const frameEdge = useAnimatedStyle(() => ({ opacity: (1 - mode.value) * arrive.value }));
 
   // Ring: hidden until there's something to show (hold, meditation, banked minutes).
   const ringOn = useSharedValue(0);
@@ -135,7 +149,7 @@ export function SessionChrome({
   }, [showRing, ringOn]);
   const ringStyle = useAnimatedStyle(() => ({ opacity: ringOn.value }));
 
-  // ── Lock-in pulse, final-10 s warmth, completion bloom (kept from before) ───
+  // ── Lock-in pulse, final-10 s warmth, completion bloom ─────────────────────
   const lockPulse = useSharedValue(1);
   const bloom = useSharedValue(0);
   const finale = useSharedValue(0);
@@ -157,29 +171,11 @@ export function SessionChrome({
     finale.value = withTiming(inFinale ? 1 : 0, { duration: 900, easing: Easing.inOut(Easing.cubic) });
   }, [inFinale, finale]);
   const lockStyle = useAnimatedStyle(() => ({ transform: [{ scale: lockPulse.value }] }));
-  // Completion: one faint thin ring drifting outward (no filled disc over the window).
   const bloomStyle = useAnimatedStyle(() => ({
     opacity: bloom.value <= 0 ? 0 : 0.35 * (1 - bloom.value),
     transform: [{ scale: reduce ? 1 : 1 + 0.18 * bloom.value }],
   }));
-  // Final 10 s: the ring just firms up a little (no glow spilling inward).
   const finaleStyle = useAnimatedStyle(() => ({ opacity: 0.45 * finale.value }));
-
-  // ── Tap to reveal the time for a moment ─────────────────────────────────────
-  const [reveal, setReveal] = useState(false);
-  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onRevealTime = () => {
-    if (!isMeditate) return;
-    hapticSelect();
-    setReveal(true);
-    if (revealTimer.current) clearTimeout(revealTimer.current);
-    revealTimer.current = setTimeout(() => setReveal(false), 2600);
-  };
-  useEffect(() => () => {
-    if (revealTimer.current) clearTimeout(revealTimer.current);
-  }, []);
-  // Leaving the meditation hides the revealed time (adjusted during render, no effect).
-  if (!isMeditate && reveal) setReveal(false);
 
   // ── Wake intention: once, softly, after the first lock-in ──────────────────
   const intentionShown = useRef(false);
@@ -200,8 +196,6 @@ export function SessionChrome({
   }, [isMeditate, intent]);
   const intentStyle = useAnimatedStyle(() => ({ opacity: intent.value }));
 
-  // ── End veil: the instant the session ends, cover the (now stopping) camera so its last
-  // frame never shows as a freeze while we navigate away. Fast fade, never reverses.
   const ending = phase === 'completed' || phase === 'emergency';
   const veil = useSharedValue(ending ? 1 : 0);
   useEffect(() => {
@@ -210,37 +204,40 @@ export function SessionChrome({
   const veilStyle = useAnimatedStyle(() => ({ opacity: veil.value }));
 
   const a11yLabel = isMeditate ? `${timerLabel} remaining` : isDetect ? 'Settling in' : 'Camera view';
-
-  // Two identical flex columns (below and above the scene) keep the window and the ring/orb aligned.
-  const column = [styles.column, { paddingTop: topInset, paddingBottom: bottomInset }];
+  const frameBottom = bottomInset + copyBlock + frameGap;
+  const barPct = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%` as const;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* ── Below the scene: the clear camera window (nothing drawn over the face) ── */}
-      <View style={column} pointerEvents="none">
-        <View style={{ width: ringSize, height: ringSize }}>
-          <View
-            style={[
-              styles.window,
-              { width: windowSize, height: windowSize, borderRadius: windowSize / 2, left: RING_STROKE + RING_GAP, top: RING_STROKE + RING_GAP },
-            ]}
-          >
-            {camera}
-            <Animated.View
-              pointerEvents="none"
-              style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgMid }, veilStyle]}
-            />
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        const h = Math.round(e.nativeEvent.layout.height);
+        setFrame((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+      }}
+    >
+      {/* Wide camera: head and shoulders, with a calm edge. Not a face target. */}
+      <Animated.View pointerEvents="none" style={[styles.frame, { top: topInset, bottom: frameBottom }]}>
+        {camera}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgTop }, arriveVeil]} />
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgMid }, veilStyle]} />
+        {isDetect || paused ? (
+          <View style={styles.track}>
+            <View style={[styles.bar, { width: barPct, backgroundColor: colors.sessionGlow }]} />
           </View>
-        </View>
-        <View style={{ height: COPY_H }} />
-      </View>
+        ) : null}
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.frameEdge, { top: topInset, bottom: frameBottom, borderColor: readyColor }, frameEdge]}
+      />
 
-      {/* ── The scene (meditating) ── */}
-      {trackId ? (
+      {trackId && frame.h > 0 ? (
         <SessionScene
           trackId={trackId}
-          width={width}
-          height={height}
+          width={frame.w}
+          height={frame.h}
           shown={immersed}
           maxOpacity={debugOverlay ? 0.55 : 1}
           dim={dim}
@@ -249,88 +246,60 @@ export function SessionChrome({
         />
       ) : null}
 
-      {/* ── Above the scene: rim, ring, breathing light, time, copy ── */}
-      <View style={column} pointerEvents="box-none">
-        <Animated.View style={[{ width: ringSize, height: ringSize }, lockStyle]}>
-          <Pressable
-            onPress={onRevealTime}
-            disabled={!isMeditate}
-            style={StyleSheet.absoluteFill}
-            accessible
-            accessibilityRole="progressbar"
-            accessibilityLabel={a11yLabel}
-            accessibilityHint={isMeditate ? 'Double-tap to show the time left' : undefined}
-            accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}
-          >
-            {/* Crisp edge on the window; its colour says how ready you are (outside the face). */}
-            <Animated.View pointerEvents="none" style={[styles.center, rimStyle]}>
-              <View
-                style={{
-                  width: windowSize + 3,
-                  height: windowSize + 3,
-                  borderRadius: (windowSize + 3) / 2,
-                  borderWidth: 1.5,
-                  borderColor: readyColor,
-                }}
-              />
-            </Animated.View>
-
-            {/* Breathing light, meditating only (the scene covers the camera then). */}
-            {immersed ? (
-            <Animated.View pointerEvents="none" style={[styles.center, orbStyle]}>
-              <BreathingOrb
-                size={Math.round(windowSize * 0.56)}
-                color={colors.sessionGlow}
-                core={colors.sessionText}
-                breathing={breathing}
-                playing={isMeditate}
-                reduceMotion={reduce}
-                finale={finale}
-              />
-            </Animated.View>
-            ) : null}
-
-            {/* Thin arc: the 2.5 s hold, then the meditation. */}
-            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ringStyle]}>
-              <ProgressRing size={ringSize} strokeWidth={RING_STROKE} progress={progress} color={colors.sessionGlow} trackColor={colors.sessionChipBg} />
-            </Animated.View>
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.finaleRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }, finaleStyle]}
-            />
-
-            {/* Remaining time, for a moment, on tap. */}
-            {reveal && isMeditate ? (
+      {/* Breathing light and time, only after the scene covers the camera. */}
+      <View style={styles.medallionLayer} pointerEvents="box-none">
+        {immersed ? (
+          <Animated.View style={[{ width: medallion, height: medallion }, lockStyle]}>
+            <View
+              style={StyleSheet.absoluteFill}
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={a11yLabel}
+              accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}
+            >
+              <Animated.View pointerEvents="none" style={[styles.center, orbStyle]}>
+                <BreathingOrb
+                  size={Math.round(medallion * 0.46)}
+                  color={colors.sessionGlow}
+                  core={colors.sessionText}
+                  breathing={breathing}
+                  playing={isMeditate}
+                  reduceMotion={reduce}
+                  finale={finale}
+                />
+              </Animated.View>
+              <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, ringStyle]}>
+                <ProgressRing size={medallion} strokeWidth={RING_STROKE} progress={progress} color={colors.sessionGlow} trackColor={colors.sessionChipBg} />
+              </Animated.View>
               <Animated.View
                 pointerEvents="none"
-                entering={FadeIn.duration(DURATION.base)}
-                exiting={FadeOut.duration(DURATION.slow)}
-                style={styles.center}
-              >
-                <Text style={styles.time} maxFontSizeMultiplier={1.3}>{timerLabel}</Text>
-                <Text style={styles.timeNote} maxFontSizeMultiplier={1.3}>left</Text>
-              </Animated.View>
-            ) : null}
+                style={[styles.finaleRing, { width: medallion, height: medallion, borderRadius: medallion / 2 }, finaleStyle]}
+              />
+              {isMeditate ? (
+                <Animated.View
+                  pointerEvents="none"
+                  entering={reduce ? undefined : FadeIn.duration(DURATION.base)}
+                  exiting={reduce ? undefined : FadeOut.duration(DURATION.slow)}
+                  style={styles.center}
+                >
+                  <Text style={styles.time} maxFontSizeMultiplier={1.3}>{timerLabel}</Text>
+                  <Text style={styles.timeNote} maxFontSizeMultiplier={1.3}>left</Text>
+                </Animated.View>
+              ) : null}
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.bloom, { width: medallion, height: medallion, borderRadius: medallion / 2 }, bloomStyle]}
+              />
+            </View>
+          </Animated.View>
+        ) : null}
+      </View>
 
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.bloom, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }, bloomStyle]}
-            />
-          </Pressable>
-        </Animated.View>
-
-        <View style={styles.copy} pointerEvents="none">
-          <SessionPrompt
-            prompt={prompt}
-            note={copy.note}
-            promptStyle={styles.prompt}
-            noteStyle={styles.note}
-            height={COPY_H - 44}
-          />
-          <Animated.Text style={[styles.intention, intentStyle]} numberOfLines={2} accessibilityElementsHidden={!isMeditate}>
-            {wakeIntention.trim() ? `\u201C${wakeIntention.trim()}\u201D` : ''}
-          </Animated.Text>
-        </View>
+      <View style={[styles.copy, { bottom: bottomInset, height: copyBlock }]} pointerEvents="none">
+        <SessionPrompt prompt={copy.prompt} note={copy.note} promptStyle={styles.prompt} noteStyle={styles.note} />
+        <Animated.Text style={[styles.intention, intentStyle]} numberOfLines={2} accessibilityElementsHidden={!isMeditate}>
+          {wakeIntention.trim() ? `\u201C${wakeIntention.trim()}\u201D` : ''}
+        </Animated.Text>
       </View>
     </View>
   );
@@ -338,17 +307,36 @@ export function SessionChrome({
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-    column: {
+    frame: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      borderRadius: FRAME_RADIUS,
+      overflow: 'hidden',
+      backgroundColor: colors.sessionBgTop,
+    },
+    frameEdge: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      borderRadius: FRAME_RADIUS,
+      borderWidth: 1.5,
+    },
+    track: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      bottom: spacing.md,
+      height: HOLD_BAR,
+      borderRadius: HOLD_BAR / 2,
+      backgroundColor: colors.sessionChipBg,
+      overflow: 'hidden',
+    },
+    bar: { height: HOLD_BAR, borderRadius: HOLD_BAR / 2 },
+    medallionLayer: {
       ...StyleSheet.absoluteFill,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: spacing.lg,
-      gap: spacing.lg,
-    },
-    window: {
-      position: 'absolute',
-      overflow: 'hidden',
-      backgroundColor: colors.sessionBgTop,
     },
     center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
     finaleRing: {
@@ -370,28 +358,29 @@ function createStyles(colors: ColorTokens) {
       textShadowOffset: { width: 0, height: 0 },
     },
     timeNote: { ...typography.caption, color: colors.sessionTextMuted, letterSpacing: 1.2, textTransform: 'uppercase', marginTop: 2 },
-    copy: { height: COPY_H, alignSelf: 'stretch', alignItems: 'center' },
+    copy: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      paddingHorizontal: spacing.lg,
+      alignItems: 'center',
+    },
     prompt: {
       fontSize: 24,
+      lineHeight: 30,
       fontWeight: '400',
       letterSpacing: 0.2,
       color: colors.sessionText,
       textAlign: 'center',
-      textShadowColor: colors.sessionBgTop,
-      textShadowRadius: 12,
-      textShadowOffset: { width: 0, height: 0 },
     },
-    note: { ...typography.caption, color: colors.sessionTextMuted, textAlign: 'center', letterSpacing: 0.3 },
+    note: { ...typography.caption, color: colors.sessionTextMuted, textAlign: 'center', letterSpacing: 0.3, lineHeight: 18 },
     intention: {
       ...typography.body,
       fontStyle: 'italic',
       color: colors.sessionTextMuted,
       textAlign: 'center',
       paddingHorizontal: spacing.lg,
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: 0,
+      marginTop: spacing.sm,
     },
   });
 }

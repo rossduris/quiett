@@ -52,8 +52,7 @@ const COUNTDOWN_TITLE = 'Ringing again soon';
  * Library/Sounds/alarm-scheduler-<alarmId>.caf: the SAME name for every tone on a given alarm
  * id. iOS caches alert sounds by name, so after switching tones the daily alarm and its bail
  * backups kept ringing the previously chosen tone. `soundUri` is now only a fallback for a tone
- * without a bundled file (Android keeps getting the resolved URI, as before). System default →
- * neither (AlarmKit default sound).
+ * without a bundled file (Android keeps getting the resolved URI, as before).
  */
 async function iosAlarmSoundFor(alarmSoundId: string): Promise<{ soundName?: string; soundUri?: string }> {
   const soundName = alarmKitSoundName(alarmSoundId);
@@ -232,7 +231,7 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
       },
       android: {
         ...androidGate,
-        soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
+        soundName: alarmSoundId,
       },
     });
 
@@ -596,7 +595,7 @@ async function cancelBailTimerWaves(preservePrimaryId?: string | null): Promise<
 
 
 /**
- * Foreground-only: register AlarmKit ids that already carry quiett-harsh in storage.
+ * Foreground-only: register AlarmKit ids that already carry the chosen tone in storage.
  * We complete them immediately so they do not ring as `.alarm`; bail only uses their
  * timer backups (works after lock mutes an unlocked ring).
  */
@@ -645,7 +644,7 @@ export async function prepareBailSoundCarriers(): Promise<void> {
         android: {
           ...androidGate,
           stopIntentBehavior: 'openApp',
-          soundName: alarmSoundId === 'system_default' ? undefined : alarmSoundId,
+          soundName: alarmSoundId,
           volume: 1,
           enforceVolume: true,
         },

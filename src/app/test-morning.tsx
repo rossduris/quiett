@@ -13,6 +13,8 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { radii, spacing, typography } from '@/constants/theme';
+import { rollSurpriseTrack } from '@/lib/surprise-session';
+import { usePremium } from '@/lib/premium-provider';
 import {
   crossfadeToMeditation,
   playHarshAlarm,
@@ -32,7 +34,7 @@ import {
   type SessionEvent,
   type SessionPhase,
 } from '@/lib/session-machine';
-import { loadUnlockTrackId, saveTestMorningCompleted } from '@/lib/storage';
+import { loadSurpriseMe, loadUnlockTrackId, saveTestMorningCompleted } from '@/lib/storage';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,11 +54,24 @@ export default function TestMorningScreen() {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [bottomH, setBottomH] = useState(56);
   const [topH, setTopH] = useState(40);
+  const { isPremium, loading: premiumLoading } = usePremium();
+  const [surpriseOn, setSurpriseOn] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const surpriseRolled = useRef(false);
   useEffect(() => {
     let alive = true;
-    void loadUnlockTrackId()
-      .then((id) => alive && setTrackId(id))
-      .catch(() => {});
+    void (async () => {
+      try {
+        const [id, surprise] = await Promise.all([loadUnlockTrackId(), loadSurpriseMe()]);
+        if (!alive) return;
+        setSurpriseOn(surprise);
+        if (!surprise) setTrackId(id);
+      } catch {
+        /* keep the saved track unset */
+      } finally {
+        if (alive) setPrefsReady(true);
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -178,8 +193,15 @@ export default function TestMorningScreen() {
       confirmStart.current = null;
     }
 
-    if (phase === 'meditating') {
-      void crossfadeToMeditation();
+    if (phase === 'meditating' && prefsReady && !(surpriseOn && premiumLoading)) {
+      void (async () => {
+        if (surpriseOn && !surpriseRolled.current) {
+          surpriseRolled.current = true;
+          const id = await rollSurpriseTrack(isPremium);
+          setTrackId(id);
+        }
+        await crossfadeToMeditation();
+      })();
       if (sitStart.current == null) sitStart.current = Date.now();
       interval = setInterval(() => {
         const start = sitStart.current;
@@ -197,7 +219,7 @@ export default function TestMorningScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [phase]);
+  }, [phase, prefsReady, surpriseOn, premiumLoading, isPremium]);
 
   useEffect(() => {
     if (phase === 'completed') {

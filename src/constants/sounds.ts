@@ -4,29 +4,13 @@ export type SoundOption = {
   /**
    * Playback source for in-app audio / preview.
    * Bundled assets use `require(...)`; remotes stay as https URLs.
-   * System default uses null (no in-app file).
    */
   url: string | number | null;
-  /**
-   * In-app camera-view ring when it differs from `url` (System default: lock screen uses the
-   * iOS sound, the app rings the bundled Classic tone since it can't play the system one).
-   */
-  inAppUrl?: number;
   /** AlarmKit / Android soundName when bundling a file in the app. */
   soundName?: string;
   /** Picker section. */
-  section: 'intense' | 'laid_back' | 'system';
+  section: 'intense' | 'laid_back';
 };
-
-/** Canonical Quiett wake tone — same file AlarmKit uses on the lock screen. */
-export const QUIETT_HARSH_ALARM = require('../../assets/audio/quiett-harsh.m4a');
-/** Denser/hotter render for in-app /session (media stream is quieter than AlarmKit file). */
-export const QUIETT_HARSH_SESSION = require('../../assets/audio/quiett-harsh-session.m4a');
-/**
- * Classic phone-style ring (original synthesized two-tone ring, 27 s, loops cleanly) for the
- * in-app ring when the user picked System default. Not registered with AlarmKit.
- */
-export const QUIETT_CLASSIC_RING = require('../../assets/audio/classic-ring.caf');
 
 const ALARM_ASSET = {
   'rise-and-shine': require('../../assets/audio/alarms/rise-and-shine.caf'),
@@ -44,13 +28,6 @@ const ALARM_ASSET = {
 } as const;
 
 export const ALARM_SOUNDS: readonly SoundOption[] = [
-  {
-    id: 'quiett_harsh',
-    label: 'Quiett harsh',
-    url: QUIETT_HARSH_ALARM,
-    soundName: 'quiett-harsh.caf',
-    section: 'intense',
-  },
   {
     id: 'rise_and_shine',
     label: 'Rise and Shine',
@@ -135,13 +112,6 @@ export const ALARM_SOUNDS: readonly SoundOption[] = [
     soundName: 'new-breath.caf',
     section: 'laid_back',
   },
-  {
-    id: 'system_default',
-    label: 'System default',
-    url: null,
-    inAppUrl: QUIETT_CLASSIC_RING,
-    section: 'system',
-  },
 ] as const;
 
 export const ALARM_SOUND_SECTIONS: {
@@ -158,11 +128,6 @@ export const ALARM_SOUND_SECTIONS: {
     id: 'laid_back',
     label: 'Laid-back',
     hint: 'Softer morning tones — still an alarm, gentler edge.',
-  },
-  {
-    id: 'system',
-    label: 'System',
-    hint: 'Lock screen uses the iOS default alert. In the app, a classic phone-style ring plays.',
   },
 ];
 
@@ -356,11 +321,11 @@ export function isToneSound(id: string): boolean {
 /** Every in-app playback source (ambient + music beds). */
 const PLAYBACK_SOUNDS: readonly SoundOption[] = [...MEDITATION_SOUNDS, ...MUSIC_SOUNDS];
 
-export const DEFAULT_ALARM_SOUND_ID = 'quiett_harsh';
+export const DEFAULT_ALARM_SOUND_ID = 'rise_and_shine';
 export const DEFAULT_MEDITATION_SOUND_ID = MEDITATION_SOUNDS[0]!.id;
 
 export function alarmSoundById(id: string): SoundOption {
-  return ALARM_SOUNDS.find((s) => s.id === id) ?? ALARM_SOUNDS[0]!;
+  return ALARM_SOUNDS.find((s) => s.id === id) ?? ALARM_SOUNDS.find((s) => s.id === DEFAULT_ALARM_SOUND_ID)!;
 }
 
 export function meditationSoundById(id: string): SoundOption {

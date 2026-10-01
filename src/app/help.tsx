@@ -34,7 +34,7 @@ const HELP_SECTIONS: HelpSection[] = [
     title: 'Camera or lighting trouble?',
     tips: [
       'Make sure you\'ve allowed Quiett camera access in iPhone Settings > Quiett.',
-      'For propping the phone, facing the camera and lighting, open Settings and expand Camera setup tips.',
+      'For framing, facing the camera and lighting, open Settings and expand Camera setup tips.',
       'Go to Settings > Face ID & Passcode and turn off "Attention Aware Features" so iOS won\'t lower alarm volume when you look at the camera.',
     ],
   },

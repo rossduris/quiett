@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ALARM_SOUNDS,
   DEFAULT_ALARM_SOUND_ID,
   DEFAULT_MEDITATION_SOUND_ID,
 } from '@/constants/sounds';
@@ -104,9 +105,16 @@ export async function loadSitMinutes(): Promise<SitMinutes> {
 export async function saveSitMinutes(minutes: SitMinutes): Promise<void> {
   await AsyncStorage.setItem(KEYS.sitMinutes, String(minutes));
 }
+/** Removed from the picker. A saved copy is rewritten to Rise and Shine on the next read. */
+const RETIRED_ALARM_SOUND_IDS = new Set(['quiett_harsh', 'system_default']);
+
 export async function loadAlarmSoundId(): Promise<string> {
   const raw = await AsyncStorage.getItem(KEYS.alarmSoundId);
-  return raw || DEFAULT_ALARM_SOUND_ID;
+  if (raw && ALARM_SOUNDS.some((sound) => sound.id === raw)) return raw;
+  if (raw && (RETIRED_ALARM_SOUND_IDS.has(raw) || !ALARM_SOUNDS.some((sound) => sound.id === raw))) {
+    await AsyncStorage.setItem(KEYS.alarmSoundId, DEFAULT_ALARM_SOUND_ID);
+  }
+  return DEFAULT_ALARM_SOUND_ID;
 }
 
 export async function saveAlarmSoundId(id: string): Promise<void> {

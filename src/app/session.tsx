@@ -14,6 +14,8 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
+import { rollSurpriseTrack } from '@/lib/surprise-session';
+import { usePremium } from '@/lib/premium-provider';
 import {
   crossfadeToMeditation,
   handoffBacktrackToSuccess,
@@ -47,6 +49,7 @@ import {
   type BadgeId,
   loadWakeIntention,
   loadUnlockTrackId,
+  loadSurpriseMe,
 } from '@/lib/storage';
 import { useGentleBrightness } from '@/lib/gentle-brightness';
 import {
@@ -125,20 +128,29 @@ export default function SessionScreen() {
     setPhase((prev) => reduceSession(prev, event));
   };
 
+  const { isPremium, loading: premiumLoading } = usePremium();
+  const [surpriseOn, setSurpriseOn] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const surpriseRolled = useRef(false);
+
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [minutes, intention, track] = await Promise.all([
+      const [minutes, intention, track, surprise] = await Promise.all([
         loadSitMinutes(),
         loadWakeIntention(),
         loadUnlockTrackId().catch(() => null),
+        loadSurpriseMe(),
       ]);
       if (!alive) return;
-      setTrackId(track);
+      setSurpriseOn(surprise);
+      // Surprise me does not reveal a track until the meditation starts.
+      if (!surprise) setTrackId(track);
       setSitMinutes(minutes);
       setSitLeft(sitDurationMs(minutes));
       setDurationReady(true);
       setWakeIntention(intention);
+      setPrefsReady(true);
     })();
     return () => {
       alive = false;
@@ -320,8 +332,15 @@ export default function SessionScreen() {
       confirmStart.current = null;
     }
 
-    if (phase === 'meditating' && durationReady) {
-      void crossfadeToMeditation();
+    if (phase === 'meditating' && durationReady && prefsReady && !(surpriseOn && premiumLoading)) {
+      void (async () => {
+        if (surpriseOn && !surpriseRolled.current) {
+          surpriseRolled.current = true;
+          const id = await rollSurpriseTrack(isPremium);
+          setTrackId(id);
+        }
+        await crossfadeToMeditation();
+      })();
       if (sitStart.current == null) sitStart.current = Date.now();
       interval = setInterval(() => {
         const start = sitStart.current;
@@ -339,7 +358,7 @@ export default function SessionScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [phase, durationMs, durationReady]);
+  }, [phase, durationMs, durationReady, prefsReady, surpriseOn, premiumLoading, isPremium]);
 
   useEffect(() => {
     // Session end must feel instant: the camera window is veiled the moment the phase flips

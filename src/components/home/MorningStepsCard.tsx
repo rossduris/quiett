@@ -47,12 +47,18 @@ export function MorningStepsCard({
   const preview = usePreviewPlayer();
 
   const alarmUrl = alarmSound.url;
-  const trackUrl = unlockTrack.locked && !isPremium ? null : meditationSoundById(unlockTrack.playbackSoundId).url;
+  const trackUrl = surpriseMe || (unlockTrack.locked && !isPremium) ? null : meditationSoundById(unlockTrack.playbackSoundId).url;
   const alarmPreviewId = previewIds.alarm(alarmSound.id);
   const trackPreviewId = previewIds.track(unlockTrack.id);
   const kind = kindLabel(unlockTrack.kind);
+  const trackTitle = surpriseMe ? 'Surprise me' : unlockTrack.title;
+  const trackMeta = surpriseMe ? 'A random track in the morning' : `${kind} · 2 min`;
 
-  const trackArt =
+  const trackArt = surpriseMe ? (
+      <View style={[styles.art, styles.artAlarm]}>
+        <Ionicons name="shuffle-outline" size={24} color={colors.calm} />
+      </View>
+    ) :
     coverStyle !== 'classic' ? (
       <View style={[styles.art, { borderColor: colors.border }]}>
         <TrackCover trackId={unlockTrack.id} size={ART - 2} radius={radii.md - 1} animate />
@@ -98,9 +104,9 @@ export function MorningStepsCard({
           step={2}
           art={trackArt}
           eyebrow="Meditation"
-          title={unlockTrack.title}
-          meta={`${kind}${surpriseMe ? ' · rotating' : ''} · 2 min`}
-          a11yLabel={`Step 2, meditation: ${unlockTrack.title}. ${kind}, 2 minutes${surpriseMe ? ', rotating' : ''}.`}
+          title={trackTitle}
+          meta={trackMeta}
+          a11yLabel={surpriseMe ? 'Step 2, meditation: Surprise me. A random track in the morning.' : `Step 2, meditation: ${unlockTrack.title}. ${kind}, 2 minutes.`}
           a11yHint="Choose your meditation"
           onPress={onOpenTrack}
           previewPlaying={preview.playingId === trackPreviewId}
@@ -112,7 +118,7 @@ export function MorningStepsCard({
         <Pressable
           accessibilityRole="switch"
           accessibilityLabel="Surprise me"
-          accessibilityHint="Picks a different meditation each morning"
+          accessibilityHint="A random track when the morning meditation starts"
           accessibilityState={{ checked: surpriseMe }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={onToggleSurprise}

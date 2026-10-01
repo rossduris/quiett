@@ -40,9 +40,19 @@ export const SessionScene = memo(function SessionScene({ trackId, width, height,
   }, [shown, maxOpacity, reduceMotion, o]);
   const fade = useAnimatedStyle(() => ({ opacity: o.value }));
 
+  // Covers are drawn square. Regenerating them at the phone's tall aspect stretches the
+  // picture (ridges, sun, motifs). Scale the square uniformly and crop it to this view
+  // so the shape matches the cover. An opaque backing sits under it so the circular
+  // camera can never show through a gap or a transparent patch.
+  const side = Math.ceil(Math.max(width, height));
+  const left = (width - side) / 2;
+  const top = (height - side) / 2;
+
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, fade]}>
-      <SceneCover scene={spec} size={width} height={height} mode={mode} lod="lite" animate={shown && !reduceMotion} />
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden', backgroundColor: colors.sessionBgTop }, fade]}>
+      <View pointerEvents="none" style={{ position: 'absolute', width: side, height: side, left, top }}>
+        <SceneCover scene={spec} size={side} mode={mode} lod="lite" animate={shown && !reduceMotion} />
+      </View>
       {/* Quiet veil (dimmer at dawn) + soft scrims: the scene sits back, the prompt and ring read. */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgTop, opacity: dim ? 0.42 : light ? 0.32 : 0.26 }]} />
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>

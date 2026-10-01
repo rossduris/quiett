@@ -26,9 +26,13 @@ import {
   MIN_JOINT_CONFIDENCE,
   STILLNESS_MAX_MOTION,
   ARM_MOTION_MAX,
+  HANDHELD_STILLNESS_MAX,
+  SHOULDER_SQUARE_MAX,
 } from './thresholds';
-import { createProppedMonitor } from './device-propped';
 import { createArmMotionTracker } from './arm-motion';
+import { createHandMotionTracker } from './hand-motion';
+import { createProppedMonitor } from './device-propped';
+import { distanceStatus, shoulderSpan, shoulderSquareOffset } from './distance';
 import type {
   PoseCheck,
   PoseDetector,
@@ -150,7 +154,7 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
 /**
  * On-device meditation-pose / in-frame detector (iOS Apple Vision via QuiettPose).
  *
- * Gate: propped + face looking at camera + still → holding. Live Vision preferred; capture fallback.
+ * Gate: light + facing + shoulders in view + upright enough + still. Holding the phone is allowed.
  */
 export function createOnDevicePoseDetector(
   options: OnDevicePoseDetectorOptions,
@@ -164,13 +168,14 @@ export function createOnDevicePoseDetector(
   let lastConfidence = 0;
   let motion: MotionSample[] = [];
   let unsubLive: (() => void) | null = null;
-  let unsubPropped: (() => void) | null = null;
+  let unsubUpright: (() => void) | null = null;
   let lastPresent = false;
   let lastFaceLooking = false;
   let lastBrightEnough = true;
   let lastConf = 0;
-  const proppedMonitor = createProppedMonitor();
   const armTracker = createArmMotionTracker();
+  const handTracker = createHandMotionTracker();
+  const uprightMonitor = createProppedMonitor();
   const hysteresis = createHoldingHysteresis(
     ENTER_HOLDING_FRAMES,
     LEAVE_HOLDING_FRAMES,
@@ -234,9 +239,14 @@ export function createOnDevicePoseDetector(
     const checks: PoseCheck[] = order
       .map((k) => det.checks?.[k])
       .filter((c): c is PoseCheck => !!c);
-    // Arm stillness (JS): wrists / elbows vs shoulders over a short window.
-    if (!phonePropped || !det.personFound) armTracker.reset();
+    // Shoulder-relative arms when the torso is found. Free-hand motion (nose-relative
+    // wrists/elbows) always runs in 2D, including a head view where shoulders are missing.
+    if (!phonePropped) {
+      armTracker.reset();
+      handTracker.reset();
+    }
     const arm = phonePropped && det.personFound ? armTracker.push(landmarks) : undefined;
+    const hand = phonePropped ? handTracker.push(landmarks) : undefined;
     const armMotion = arm
       ? {
           source: arm.source,
@@ -247,31 +257,83 @@ export function createOnDevicePoseDetector(
           limit: arm.limit,
         }
       : undefined;
+    const handsFailing = !!arm?.failing || !!hand?.failing;
     checks.push({
       name: 'armStillness',
-      value: arm?.value,
+      value: arm?.value ?? hand?.value,
       limit: ARM_MOTION_MAX,
-      pass: !arm?.failing,
-      available: !!arm?.available,
-      unit: '×sw',
+      pass: !handsFailing,
+      available: !!arm?.available || !!hand?.available,
+      unit: arm?.available ? '×sw' : 'image',
       kind: 'max',
-      note: arm?.available ? undefined : arm && arm.source !== 'none' ? 'warming up' : 'no arms',
+      note: handsFailing
+        ? hand?.nearFace
+          ? 'hand at face'
+          : undefined
+        : arm?.available || hand?.available
+          ? undefined
+          : 'no hands',
     });
     const byName = (n: string) => checks.find((c) => c.name === n);
     const fails = (n: string) => {
       const c = byName(n);
       return !!c && c.available && !c.pass;
     };
+    const span = shoulderSpan(landmarks.joints);
+    const dist = distanceStatus(span);
+    const faceSeen = (landmarks.faceCount ?? 0) > 0;
+    // Missing shoulders is normal on a head view. Only a measured edge-to-edge span is "too close".
+    const shouldersInView = det.personFound || (span != null && dist !== 'too_close');
+    // Native stillness (0.07 × shoulder width) was tuned for a phone that does not move.
+    // A steady hand is allowed through; a real shake still fails.
+    const stillCheck = byName('stillness');
+    if (
+      stillCheck &&
+      stillCheck.available &&
+      stillCheck.value != null &&
+      stillCheck.value <= HANDHELD_STILLNESS_MAX
+    ) {
+      stillCheck.pass = true;
+      stillCheck.limit = HANDHELD_STILLNESS_MAX;
+    }
+    // Facing only checks the face, so a phone held off to the side still looks
+    // "at the camera". Square is the nose over the shoulders. Slight angle stays.
+    const square = shoulderSquareOffset(landmarks.joints);
+    if (square != null && square > SHOULDER_SQUARE_MAX) {
+      const head = byName('headCentered');
+      if (head) {
+        head.value = square;
+        head.limit = SHOULDER_SQUARE_MAX;
+        head.pass = false;
+        head.available = true;
+        head.note = 'not square';
+      } else {
+        checks.push({
+          name: 'headCentered',
+          value: square,
+          limit: SHOULDER_SQUARE_MAX,
+          pass: false,
+          available: true,
+          unit: '×sw',
+          kind: 'max',
+          note: 'not square',
+        });
+      }
+    }
     let raw: PoseStatus;
+    // Hands on the phone are expected. They do not block.
+    // Phone orientation first, then light, then an extreme close crop, then facing, then square, then still.
     if (!phonePropped) raw = 'not_upright';
     else if (fails('lighting')) raw = 'too_dark';
-    else if (!det.personFound || fails('facing')) raw = 'absent';
-    else if (fails('handsLow')) raw = 'hands_near';
-    else if (fails('shoulderLevel') || fails('headCentered') || fails('torsoUpright'))
+    else if (dist === 'too_close') raw = 'too_close';
+    else if (dist === 'too_far') raw = 'too_far';
+    else if ((!faceSeen && !shouldersInView) || fails('facing')) raw = 'absent';
+    else if (shouldersInView && (fails('shoulderLevel') || fails('headCentered') || fails('torsoUpright')))
       raw = 'posture';
+    else if (shouldersInView && fails('stillness')) raw = 'fidgeting';
     else if (fails('armStillness')) raw = 'arms_moving';
-    else if (fails('stillness')) raw = 'fidgeting';
-    else raw = 'holding';
+    else if (shouldersInView || faceSeen) raw = 'holding';
+    else raw = 'absent';
 
     const diagnostics: PoseDiagnostics = {
       ...baseDiagnostics(landmarks, phonePropped),
@@ -296,7 +358,8 @@ export function createOnDevicePoseDetector(
   const processLandmarks = (landmarks: PoseLandmarks) => {
     // Runtime fallback: steps body3d → body2d → legacy when a body mode isn't working here.
     if (mode === 'live' && usingNative) notePoseFrameForFallback(detector, landmarks);
-    const phonePropped = proppedMonitor.isPropped();
+    // Roughly vertical portrait. Missing sensor fails open inside the monitor (~3.5s).
+    const phonePropped = uprightMonitor.isPropped();
 
     if (detector !== 'legacy' && landmarks.available && landmarks.detector) {
       motion = [];
@@ -304,12 +367,12 @@ export function createOnDevicePoseDetector(
       return;
     }
     armTracker.reset();
+    handTracker.reset();
 
     if (!phonePropped) {
       motion = [];
-      // Keep hysteresis from sticking on holding while phone goes flat.
       const published = hysteresis.push('not_upright');
-      emit(published, 0);
+      emit(published, lastConf);
       return;
     }
 
@@ -365,33 +428,24 @@ export function createOnDevicePoseDetector(
       motion = [];
     }
 
-    // ZERO HANDS is independent of eyes/face — both must pass at once.
-    const handsFromFlag =
-      landmarks.handsVisible === true || landmarks.handNearFace === true;
-    const j = landmarks.joints;
-    const wristOrElbow = (key: string) => {
-      const pt = j[key];
-      return !!pt && pt.confidence >= 0.12;
-    };
-    const handsFromBody =
-      wristOrElbow('leftWrist') || wristOrElbow('rightWrist');
-    const handsVisible = handsFromFlag || handsFromBody || (landmarks.handCount ?? 0) > 0;
-
     const travel = facePresent ? stillnessTravel(motion, now) : undefined;
     const still = facePresent ? isStill(motion, now) : false;
-    // Holding only if brightEnough AND faceLooking AND zero hands AND still (toPoseStatus enforces).
+    // Holding the phone is allowed, including hands on the device.
     const brightEnough =
       landmarks.brightEnough === undefined ? true : landmarks.brightEnough === true;
-    const raw = toPoseStatus(
+    let raw = toPoseStatus(
       facePresent,
       classified.upright,
       still,
       classified.hasShoulders,
       true,
       faceLooking,
-      handsVisible,
+      false,
       brightEnough,
     );
+    // Distance wins over facing, never over light. An unreadable span does not block.
+    const dist = distanceStatus(shoulderSpan(landmarks.joints));
+    if (dist && raw !== 'too_dark') raw = dist;
     lastPresent = facePresent;
     lastFaceLooking = faceLooking;
     lastBrightEnough = brightEnough;
@@ -419,9 +473,9 @@ export function createOnDevicePoseDetector(
       },
       {
         name: 'handsAway',
-        value: landmarks.handCount ?? (handsVisible ? 1 : 0),
+        value: landmarks.handCount ?? 0,
         limit: 0,
-        pass: !handsVisible,
+        pass: true,
         available: true,
         unit: 'hands',
         kind: 'bool',
@@ -450,28 +504,6 @@ export function createOnDevicePoseDetector(
     };
     const published = hysteresis.push(raw);
     emit(published, classified.confidence, diagnostics);
-  };
-
-  const onProppedChange = () => {
-    if (stopped || simulated != null) return;
-    if (!proppedMonitor.isPropped()) {
-      const published = hysteresis.push('not_upright');
-      emit(published, lastConf);
-      return;
-    }
-    // Phone became propped again — publish from last known presence until next Vision frame.
-    const raw = toPoseStatus(
-      lastPresent,
-      undefined,
-      true,
-      undefined,
-      true,
-      lastFaceLooking,
-      false,
-      lastBrightEnough,
-    );
-    const published = hysteresis.push(raw);
-    emit(published, lastConf);
   };
 
   const tickCapture = async (captureFrame: CaptureFn) => {
@@ -522,10 +554,16 @@ export function createOnDevicePoseDetector(
       hysteresis.reset();
       motion = [];
       armTracker.reset();
+      handTracker.reset();
       lastDiagnostics = undefined;
-      proppedMonitor.start();
-      unsubPropped = proppedMonitor.subscribe(() => onProppedChange());
-
+      uprightMonitor.start();
+      unsubUpright = uprightMonitor.subscribe(() => {
+        if (stopped || simulated != null) return;
+        if (!uprightMonitor.isPropped()) {
+          const published = hysteresis.push('not_upright');
+          emit(published, lastConf);
+        }
+      });
       if (mode === 'live') {
         const liveOpts = options as LivePoseDetectorOptions;
         const subscribe =
@@ -550,13 +588,14 @@ export function createOnDevicePoseDetector(
         unsubLive();
         unsubLive = null;
       }
-      if (unsubPropped) {
-        unsubPropped();
-        unsubPropped = null;
+      if (unsubUpright) {
+        unsubUpright();
+        unsubUpright = null;
       }
-      proppedMonitor.stop();
+      uprightMonitor.stop();
       motion = [];
       armTracker.reset();
+      handTracker.reset();
       hysteresis.reset();
     },
     simulate(status: PoseStatus) {
@@ -567,6 +606,7 @@ export function createOnDevicePoseDetector(
       simulated = null;
       motion = [];
       armTracker.reset();
+      handTracker.reset();
       hysteresis.reset();
     },
     subscribe(listener: PoseDetectorListener) {

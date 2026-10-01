@@ -2,8 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Alert, AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { DEFAULT_ALARM_SOUND_ID } from '@/constants/sounds';
-import { DEFAULT_UNLOCK_TRACK_ID, pickSurpriseTrack, type UnlockTrack } from '@/constants/unlock-tracks';
-import { showGuided } from '@/lib/dev-flags';
+import { DEFAULT_UNLOCK_TRACK_ID, type UnlockTrack } from '@/constants/unlock-tracks';
 import { homeStatusMode, isUnlockedForToday } from '@/lib/home-status';
 import { refreshClockPreference } from '@/lib/time-format';
 import { syncEveningReminder } from '@/lib/notifications';
@@ -26,7 +25,6 @@ import {
   loadReliabilityCheckCompleted,
   loadStreak,
   loadSurpriseMe,
-  loadSurpriseTrackDate,
   loadTestMorningCompleted,
   loadUnlockTrackId,
   loadWakeIntention,
@@ -36,7 +34,6 @@ import {
   saveAlarmSoundId,
   saveGetStartedDismissed,
   saveSurpriseMe,
-  saveSurpriseTrackDate,
   saveUnlockTrackId,
   type AlarmPrefs,
   type StreakData,
@@ -47,16 +44,11 @@ import {
 const syncKey = (a: AlarmPrefs, soundId: string) => JSON.stringify([a.time, a.enabled, a.weekdays, soundId]);
 
 /**
- * All Home tab state + actions: storage loading on focus / foreground, the daily Surprise me
- * rotation, alarm persistence + OS sync. The screen and its cards stay presentational.
+ * All Home tab state + actions: storage loading on focus / foreground, Surprise me
+ * (mode only), alarm persistence + OS sync. The screen and its cards stay presentational.
  */
 export function useHomeState() {
-  const { isPremium, loading: premiumLoading, trackResetVersion } = usePremium();
-  // Async callbacks read Premium through a ref so they are never stale.
-  const isPremiumRef = useRef(isPremium);
-  useLayoutEffect(() => {
-    isPremiumRef.current = isPremium;
-  });
+  const { isPremium, trackResetVersion } = usePremium();
 
   const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({ ...DEFAULT_ALARM, weekdays: [...DEFAULT_ALARM.weekdays] }));
   const [alarmSavedAt, setAlarmSavedAt] = useState<number | null>(null);
@@ -154,27 +146,6 @@ export function useHomeState() {
     }, [loadMorningFacts]),
   );
 
-  // Surprise me rotates once per local day. Waits for Premium to settle so a paying user is
-  // never rotated onto the free-only pool during a cold start.
-  const rotating = useRef(false);
-  useEffect(() => {
-    if (!loaded || premiumLoading || !surpriseMe || rotating.current) return;
-    rotating.current = true;
-    void (async () => {
-      try {
-        if ((await loadSurpriseTrackDate()) === dayKey(0)) return;
-        const premium = isPremiumRef.current;
-        const current = await loadUnlockTrackId();
-        const picked = pickSurpriseTrack(current, premium, showGuided());
-        const id = await saveUnlockTrackId(picked.id, { premium });
-        await saveSurpriseTrackDate();
-        setUnlockTrackId(id);
-      } finally {
-        rotating.current = false;
-      }
-    })();
-  }, [loaded, premiumLoading, surpriseMe, focusTick]);
-
   // Premium lapsed → the provider saved the default free track; reflect it here.
   useEffect(() => {
     if (trackResetVersion === 0) return;
@@ -261,13 +232,7 @@ export function useHomeState() {
 
   const toggleSurprise = async () => {
     const next = !surpriseMe;
-    if (next) {
-      // Pick + stamp today's date before flipping the flag so the daily rotation doesn't re-pick.
-      const picked = pickSurpriseTrack(unlockTrackId, isPremium, showGuided());
-      const id = await saveUnlockTrackId(picked.id, { premium: isPremium });
-      await saveSurpriseTrackDate();
-      setUnlockTrackId(id);
-    }
+    // Mode only. A track is chosen when the morning meditation starts.
     setSurpriseMe(next);
     await saveSurpriseMe(next);
     void syncEveningReminder();

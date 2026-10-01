@@ -40,8 +40,10 @@ export function FeaturedCard({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [width, setWidth] = useState(0);
   const onLayout = useCallback((e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width)), []);
-  const preview = locked ? undefined : () => onPreview(track);
-  const meta = `${kindLabel(track.kind)} · ${track.durationLabel}${surpriseMe ? ' · rotating' : ''}`;
+  const preview = surpriseMe || locked ? undefined : () => onPreview(track);
+  const title = surpriseMe ? 'Surprise me' : track.title;
+  const blurb = surpriseMe ? 'A random track in the morning.' : track.blurb;
+  const meta = surpriseMe ? '2 min' : `${kindLabel(track.kind)} · ${track.durationLabel}`;
 
   return (
     <View style={styles.wrap}>
@@ -54,7 +56,7 @@ export function FeaturedCard({
         <Pressable
           accessibilityRole="switch"
           accessibilityLabel="Surprise me"
-          accessibilityHint="Picks a different meditation each morning"
+          accessibilityHint="A random track when the morning meditation starts"
           accessibilityState={{ checked: surpriseMe }}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           onPress={onToggleSurprise}
@@ -76,16 +78,14 @@ export function FeaturedCard({
                 iconSize: 16,
                 style: styles.fab,
                 activeStyle: styles.fabActive,
-                accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${track.title}`,
+                accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${title}`,
               }
             : null
         }
         renderRow={(slot) => (
       <View
         accessible
-        accessibilityLabel={`Your next meditation: ${track.title}. ${track.blurb} ${kindLabel(track.kind)}, 2 minutes${
-          surpriseMe ? ', rotating each morning' : ''
-        }.`}
+        accessibilityLabel={surpriseMe ? 'Your next meditation: Surprise me. A random track in the morning.' : `Your next meditation: ${track.title}. ${track.blurb} ${kindLabel(track.kind)}, 2 minutes.`}
         {...previewA11yActions(previewing, preview)}
         onLayout={scenes ? onLayout : undefined}
         style={[
@@ -93,7 +93,11 @@ export function FeaturedCard({
           scenes ? styles.cardScene : { backgroundColor: track.accentSoft, borderColor: track.accent },
         ]}
       >
-        {scenes ? (
+        {surpriseMe ? (
+          <View style={styles.markWrap}>
+            <Ionicons name="shuffle-outline" size={64} color={colors.calm} />
+          </View>
+        ) : scenes ? (
           <View style={styles.art}>
             {width > 0 ? <TrackCover trackId={track.id} size={width - 2} height={ART_H} animate /> : null}
           </View>
@@ -104,10 +108,10 @@ export function FeaturedCard({
         )}
         <View style={styles.body}>
           <Text style={styles.title} numberOfLines={1}>
-            {track.title}
+            {title}
           </Text>
           <Text style={styles.blurb} numberOfLines={2}>
-            {track.blurb}
+            {blurb}
           </Text>
           <Text style={styles.meta}>{meta}</Text>
         </View>

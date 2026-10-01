@@ -20,23 +20,27 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
     case 'holding':
       return { label: 'You\u2019re in frame', inFrame: true };
     case 'fidgeting':
-      return { label: 'Settle in\u2026 stay still', inFrame: false };
+      return { label: 'Hold still', inFrame: false };
     case 'hands_near':
-      return { label: 'Let your hands rest', inFrame: false };
+      return { label: 'Rest your hands', inFrame: false };
     case 'arms_moving':
-      return { label: 'Let your hands rest', inFrame: false };
+      return { label: 'Hold still', inFrame: false };
     case 'not_upright':
-      return { label: 'Prop your phone up, facing you', inFrame: false };
+      return { label: 'Hold the phone upright', inFrame: false };
     case 'too_dark':
-      return { label: 'A little more light helps', inFrame: false };
+      return { label: 'Turn a light on', inFrame: false };
+    case 'too_close':
+      return { label: 'Give it a little room', inFrame: false };
+    case 'too_far':
+      return { label: 'Step closer', inFrame: false };
     case 'posture':
-      return { label: 'Soften your shoulders', inFrame: false };
+      return { label: 'Square your shoulders', inFrame: false };
     default:
-      return { label: 'Bring your face into the circle', inFrame: false };
+      return { label: 'Face the camera', inFrame: false };
   }
 }
 
-/** Gates: prop phone → more light (softer) → face in circle → hands resting → posture (body modes) → stillness. */
+/** Gates: phone upright, light, face not filling the frame, facing, then stillness. */
 export function PoseStatusChip({ status, confidence, showConfidence }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);

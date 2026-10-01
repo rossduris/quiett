@@ -119,8 +119,6 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   'sound:rain_on_eaves': RAIN_ON_EAVES,
 
   // ── Alarm tones — picture the name ───────────────────────────────────────
-  /** Quiett harsh — jagged dark peaks before dawn. */
-  'alarm:quiett_harsh': { type: 'mountains', timeOfDay: 'predawn', sunX: 0.72, sunY: 0.62, hueShift: 0, seed: 4101, details: ['stars'] },
   /** Rise and Shine — big sun cresting a flat horizon, bold ray fan. */
   'alarm:rise_and_shine': { type: 'sunburst', timeOfDay: 'sunrise', sunX: 0.5, sunY: 0.66, hueShift: 4, seed: 4203 },
   /** Early Bright — bright high sun over furrowed fields. */
@@ -145,8 +143,6 @@ export const SCENE_COVERS: Record<string, SceneSpec> = {
   'alarm:hazy_day': { type: 'haze', timeOfDay: 'golden', sunX: 0.62, sunY: 0.34, hueShift: 6, seed: 5231 },
   /** New Breath — dandelion seeds carried off on a breath. */
   'alarm:new_breath': { type: 'dandelion', timeOfDay: 'dawn', sunX: 0.72, sunY: 0.42, hueShift: 0, seed: 5333 },
-  /** System default — moonlit sea. */
-  'alarm:system_default': { type: 'ocean', timeOfDay: 'night', sunX: 0.66, sunY: 0.3, hueShift: 0, seed: 5437 },
 };
 
 /** Spec for any track / sound id — hand-tuned when mapped, otherwise hash-derived. */

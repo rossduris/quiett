@@ -16,7 +16,7 @@ import { cardDismiss } from './home-styles';
 /** Night-before checklist (what the stillness gate needs in the morning). */
 export const PREP_TIPS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   { icon: 'battery-charging-outline', text: 'Phone on the charger' },
-  { icon: 'phone-portrait-outline', text: 'Propped up, facing you' },
+  { icon: 'phone-portrait-outline', text: 'Held steady, facing you' },
   { icon: 'sunny-outline', text: 'Enough light to see you' },
 ];
 

@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import {
   loadAlarmPrefs,
   loadEveningReminderPrefs,
+  loadSurpriseMe,
   loadUnlockTrackId,
   type Weekday,
 } from '@/lib/storage';
@@ -96,9 +97,10 @@ export async function scheduleEveningReminder(): Promise<void> {
   if (!reminderPrefs.enabled || !alarmPrefs.enabled || alarmPrefs.weekdays.length === 0) return;
 
   const { hour, minute } = await parseReminderTime(reminderPrefs.time);
-  const unlockTrack = unlockTrackById(unlockTrackId);
+  const surprise = await loadSurpriseMe();
+  const trackName = surprise ? 'a random track' : unlockTrackById(unlockTrackId).title;
   const scheduledDays = new Set(alarmPrefs.weekdays);
-  const body = `Tomorrow’s wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${unlockTrack.title}`;
+  const body = `Tomorrow’s wake-up is set for ${formatAlarmTime(alarmPrefs.time)} · ${trackName}`;
   const now = new Date();
 
   let queued = 0;
@@ -127,8 +129,15 @@ export async function cancelEveningReminder(): Promise<void> {
 
 /** The body the evening reminder will use (for the in-app example). */
 export async function previewEveningReminder(): Promise<{ time: string; track: string }> {
-  const [alarmPrefs, unlockTrackId] = await Promise.all([loadAlarmPrefs(), loadUnlockTrackId()]);
-  return { time: formatAlarmTime(alarmPrefs.time), track: unlockTrackById(unlockTrackId).title };
+  const [alarmPrefs, unlockTrackId, surprise] = await Promise.all([
+    loadAlarmPrefs(),
+    loadUnlockTrackId(),
+    loadSurpriseMe(),
+  ]);
+  return {
+    time: formatAlarmTime(alarmPrefs.time),
+    track: surprise ? 'A random track' : unlockTrackById(unlockTrackId).title,
+  };
 }
 
 export async function syncEveningReminder(): Promise<void> {

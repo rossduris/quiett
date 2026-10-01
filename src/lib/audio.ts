@@ -8,9 +8,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore }
 import { AppState } from 'react-native';
 import {
   alarmSoundById,
+  DEFAULT_ALARM_SOUND_ID,
   isToneSound,
   meditationSoundById,
-  QUIETT_HARSH_SESSION,
 } from '@/constants/sounds';
 import { voiceClipFor } from '@/constants/voices';
 import { loadDevFlags, voiceGuidesEnabled } from '@/lib/dev-flags';
@@ -209,12 +209,9 @@ function rebuildHarsh(alarmId: string) {
   } catch {
     /* ignore */
   }
-  // Use optimized session version for Quiett harsh; standard assets for others.
-  // System default has no in-app file (lock screen uses the iOS sound) → bundled Classic ring.
   const opt = alarmSoundById(alarmId);
-  const asset = alarmId === 'quiett_harsh'
-    ? QUIETT_HARSH_SESSION
-    : opt.inAppUrl ?? opt.url ?? QUIETT_HARSH_SESSION;
+  const asset = opt.url ?? alarmSoundById(DEFAULT_ALARM_SOUND_ID).url;
+  if (asset == null) throw new Error('Alarm sound failed to resolve.');
   harsh = createAudioPlayer(asset, SESSION_PLAYER_OPTIONS);
   harsh.loop = true;
   harsh.volume = 1;

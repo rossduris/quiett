@@ -1,18 +1,22 @@
 /**
  * Quiett session gates:
  * - absent:       no face in frame (looking away / missing)
- * - not_upright:  phone not propped
+ * - not_upright:  phone not roughly vertical (flat or sideways)
  * - too_dark:     insufficient lighting (softer than original gate)
+ * - too_close:    shoulders fill the frame, or a face is in frame with the body cropped out
+ * - too_far:      shoulders are a small sliver of the frame
  * - fidgeting:    face present but moving too much
  * - hands_near:   hand overlapping / near the face
  * - arms_moving:  body modes — wrists / elbows moving too much relative to the shoulders
- * - holding:      propped + bright enough + face looking + both eyes + mouth + no hands near + still
+ * - holding:      bright enough + facing + shoulders in view + upright enough + still
  */
 
 export type PoseStatus =
   | 'absent'
   | 'not_upright'
   | 'too_dark'
+  | 'too_close'
+  | 'too_far'
   | 'fidgeting'
   | 'hands_near'
   /** Body modes: wrists / elbows moving relative to the shoulders (arm-motion tracker). */
