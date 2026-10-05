@@ -801,6 +801,123 @@ function drawBirds(ctx: Ctx, cx: number, cy: number, color: string, scale = 1) {
   );
 }
 
+/**
+ * One graceful flying bird: cubic wing stroke (round caps) + body/head/tail fills.
+ * wingPhase 0 = shallow glide, 1 = arched upstroke. dir 1 = right, -1 = left.
+ */
+function pushFlyingBird(
+  nodes: SvgNode[],
+  x: number,
+  y: number,
+  s: number,
+  wingPhase: number,
+  dir: 1 | -1,
+  color: string,
+  opacity: number,
+) {
+  const X = (v: number) => f(x + v * s * dir);
+  const Y = (v: number) => f(y + v * s);
+  const up = 0.9 + wingPhase * 1.15;
+  const out = 1.85 + wingPhase * 0.22;
+  // Soft cubic wings: high tips, gentle elbows, low saddle over the body (not a hard chevron).
+  const wings =
+    `M${X(-out)} ${Y(-up)}` +
+    `C${X(-out * 0.6)} ${Y(-up * 0.35)} ${X(-0.65)} ${Y(0.05)} ${X(0)} ${Y(0.22)}` +
+    `C${X(0.65)} ${Y(0.05)} ${X(out * 0.6)} ${Y(-up * 0.35)} ${X(out)} ${Y(-up)}`;
+  // Slightly thinner stroke so the curve reads; round caps come from SceneCover.
+  nodes.push({ t: 'path', d: wings, stroke: color, sw: f(Math.max(0.28, s * 0.2)), fill: 'none', opacity });
+  // Body / head / tail — sized to stay visible under the wing saddle.
+  nodes.push({ t: 'ellipse', cx: f(x + 0.08 * s * dir), cy: f(y + 0.12 * s), rx: f(s * 0.55), ry: f(s * 0.26), fill: color, opacity });
+  nodes.push({ t: 'circle', cx: f(x + 0.58 * s * dir), cy: f(y + 0.02 * s), r: f(s * 0.2), fill: color, opacity });
+  // Tiny beak
+  nodes.push({
+    t: 'path',
+    d: `M${X(0.72)} ${Y(-0.02)}L${X(1.05)} ${Y(0.04)}L${X(0.72)} ${Y(0.1)}Z`,
+    fill: color,
+    opacity,
+  });
+  nodes.push({
+    t: 'path',
+    d: `M${X(-0.35)} ${Y(0.08)}L${X(-1.2)} ${Y(-0.08)}L${X(-1.05)} ${Y(0.22)}L${X(-0.45)} ${Y(0.2)}Z`,
+    fill: color,
+    opacity,
+  });
+}
+
+/** Distant flock: small, faint, high — stays behind nearer birds (call before foreground layers). */
+function drawDistantFlock(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  color: string,
+  opts: { scale?: number; opacity?: number; period?: number; spreadX?: number; spreadY?: number } = {},
+) {
+  const { rng } = ctx;
+  const scale = opts.scale ?? 0.45;
+  const opacity = opts.opacity ?? 0.38;
+  const period = opts.period ?? 14000;
+  const spreadX = opts.spreadX ?? 9;
+  const spreadY = opts.spreadY ?? 3.5;
+  const n = ctx.lite ? 2 : 4;
+  const birds: { x: number; y: number; s: number; phase: number; dir: 1 | -1 }[] = [];
+  for (let i = 0; i < n; i++) {
+    birds.push({
+      x: cx + range(rng, -spreadX, spreadX) * scale,
+      // Keep altitude band tight so paths stay above foreground flocks.
+      y: cy + range(rng, -spreadY, spreadY) * scale,
+      s: range(rng, 0.95, 1.35) * scale * (ctx.lite ? 1.35 : 1),
+      phase: range(rng, 0.15, 0.5),
+      dir: rng() > 0.45 ? 1 : -1,
+    });
+  }
+  moving(ctx, { k: 'wave', period, dx: 1.4, dy: -0.35, deg: 0.4, ox: cx, oy: cy, pri: 2 }, () => {
+    for (const b of birds) pushFlyingBird(ctx.nodes, b.x, b.y, b.s, b.phase, b.dir, color, opacity);
+  });
+}
+
+/**
+ * Near flock: larger birds with varied wing poses + gentle glide/flap.
+ * Draw after distant flock so paint order keeps them in front.
+ */
+function drawNearFlock(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  color: string,
+  opts: { scale?: number; opacity?: number; period?: number; n?: number } = {},
+) {
+  const { rng } = ctx;
+  const scale = opts.scale ?? 1;
+  const opacity = opts.opacity ?? 0.92;
+  const period = opts.period ?? 11000;
+  const n = opts.n ?? (ctx.lite ? 2 : 3);
+  const slots: [number, number, number, 1 | -1][] = ctx.lite
+    ? [
+        [-5.5, 0.6, 0.25, 1],
+        [4.2, -1.2, 0.8, -1],
+      ]
+    : [
+        [-7.5, 1.2, 0.2, 1],
+        [-1.2, -1.8, 0.6, 1],
+        [6.5, 0.4, 0.95, -1],
+      ];
+  const birds: { x: number; y: number; s: number; phase: number; dir: 1 | -1 }[] = [];
+  for (let i = 0; i < Math.min(n, slots.length); i++) {
+    const [ox, oy, phase, dir] = slots[i]!;
+    birds.push({
+      x: cx + (ox + range(rng, -0.6, 0.6)) * scale,
+      y: cy + (oy + range(rng, -0.5, 0.5)) * scale,
+      s: range(rng, 1.85, 2.4) * scale * (ctx.lite ? 1.25 : 1),
+      phase,
+      dir,
+    });
+  }
+  // Gentle glide + tiny scale/tilt so wings feel alive without sharp pulses.
+  moving(ctx, { k: 'wave', period, dx: 1.8, dy: -0.7, deg: 1.1, sy: 0.045, ox: cx, oy: cy, pri: 1 }, () => {
+    for (const b of birds) pushFlyingBird(ctx.nodes, b.x, b.y, b.s, b.phase, b.dir, color, opacity);
+  });
+}
+
 function drawMist(ctx: Ctx, y: number, strength = 1, target: SvgNode[] = ctx.nodes) {
   const { rng, pal, W } = ctx;
   const col = mix(pal.haze, '#FFFFFF', ctx.mode === 'dark' ? 0.1 : 0.35);
@@ -1841,21 +1958,21 @@ function buildDrone(ctx: Ctx) {
     const t = k / nRip;
     ripples += ell(sx, hy + (H - hy) * (0.12 + 0.62 * t * t), r * (1.2 + 3.8 * t), (H - hy) * (0.04 + 0.1 * t));
   }
-  moving(ctx, { k: 'ripple', period: 5600, s: 0.07, ox: sx, oy: hy }, () =>
+  moving(ctx, { k: 'ripple', period: 9600, s: 0.04, ox: sx, oy: hy }, () =>
     ctx.nodes.push({ t: 'path', d: ripples, stroke: mix(hot, '#FFFFFF', dark ? 0.05 : 0.2), sw: sw(ctx, 0.45, 0.8), fill: 'none', opacity: dark ? 0.5 : 0.6 }),
   );
   // The drone: a string vibrating between two nodes beyond the frame, drawn as fanned snapshots
   const x0 = W * 0.07;
   const x1 = W * 0.93;
   const y0 = hy - H * 0.33;
-  const amp = H * 0.12;
+  const amp = H * 0.09;
   const snap = (a: number, harmonic = 1) => {
     const pts: Pt[] = [];
     for (let x = x0; x <= x1 + 0.1; x += (x1 - x0) / 40) pts.push([x, y0 + a * Math.sin((harmonic * Math.PI * (x - x0)) / (x1 - x0))]);
     return smoothLine(pts);
   };
   // Soft glow filling the vibration envelope — envelope + snapshots vibrate together (one held note)
-  moving(ctx, { k: 'wave', period: 1100, sy: 0.3, ox: W / 2, oy: y0 }, () => {
+  moving(ctx, { k: 'wave', period: 3000, sy: 0.1, ox: W / 2, oy: y0 }, () => {
   const env: Pt[] = [];
   for (let x = x0; x <= x1 + 0.1; x += (x1 - x0) / 40) env.push([x, y0 - amp * Math.sin((Math.PI * (x - x0)) / (x1 - x0))]);
   for (let x = x1; x >= x0 - 0.1; x -= (x1 - x0) / 40) env.push([x, y0 + amp * Math.sin((Math.PI * (x - x0)) / (x1 - x0))]);
@@ -2708,10 +2825,16 @@ function buildForestBirds(ctx: Ctx) {
   drawMist(ctx, H * 0.75, 0.6);
   const meadow = sample(rollingRidge(rng, W, H * 0.88, H * 0.02), -6, W + 6, 12);
   ridgeLayer(ctx, meadow, layerColor(ctx, 3, 5, mix(pal.land, tok.calm, 0.12)), 0.85);
-  // Flying birds over the treetops, near the sun
+  // Distant flock — high near the sun, small/faint, painted early so it stays behind.
   const [sx, sy] = sunPos(ctx);
-  const flyC = mix(pal.land, pal.haze, 0.15);
-  drawBirds(ctx, clamp(sx - 8, 30, 80), clamp(sy - 12, 12, 34), flyC, 0.85);
+  const farC = mix(pal.land, pal.haze, dark ? 0.45 : 0.55);
+  drawDistantFlock(ctx, clamp(sx - 6, 55, 82), clamp(sy - 16, 10, 22), farC, {
+    scale: 0.42,
+    opacity: dark ? 0.32 : 0.36,
+    period: 15000,
+    spreadX: 8,
+    spreadY: 2.4,
+  });
   // Foreground tree at the forest edge: trunk on the left, a long limb into the frame
   const col = dark ? mix(pal.land, '#000000', 0.15) : mix(pal.land, pal.haze, 0.08);
   const trunk: Pt[] = [[W * 0.06, H + 2], [W * 0.08, H * 0.6], [W * 0.05, H * 0.2], [W * 0.02, -2]];
@@ -2732,7 +2855,11 @@ function buildForestBirds(ctx: Ctx) {
     for (let j = 0; j < (ctx.lite ? 2 : 4); j++) leaves += leafShape(tip[0] + range(rng, -2, 3), tip[1] - range(rng, 0, 3), H * 0.05, range(rng, -2.4, -0.4));
   }
   moving(ctx, { k: 'wave', period: 5000, dy: 0.5, deg: 0.6, ox: W * 0.5, oy: H * 0.5, pri: 2 }, () => ctx.nodes.push({ t: 'path', d: leaves, fill: mix(leafC, pal.glow, 0.2) }));
-  // Songbirds perched along the limb
+  // Near flock — larger graceful silhouettes just above the canopy, left-of-centre so their
+  // altitude/path stays clear of the distant sun flock (paint order: after distant, before perched).
+  const nearC = mix(col, pal.haze, dark ? 0.05 : 0.02);
+  drawNearFlock(ctx, W * 0.36, H * 0.4, nearC, { scale: 1.15, opacity: 0.94, period: 11500 });
+  // Songbirds perched along the limb (in front of flying flocks)
   const at = (x: number) => limb.reduce((a, p) => (Math.abs(p[0] - x) < Math.abs(a[0] - x) ? p : a), limb[0]!);
   const b = H * 0.062;
   const perch: [number, number, 1 | -1][] = ctx.lite ? [[0.34, 1, 1], [0.62, 0.9, -1]] : [[0.28, 1, 1], [0.45, 0.85, 1], [0.64, 0.95, -1]];
@@ -2740,8 +2867,6 @@ function buildForestBirds(ctx: Ctx) {
     const p = at(W * x);
     drawPerchedBird(ctx, p[0], p[1] - H * 0.012, b * s, dir, col);
   }
-  // A second small flock lifting off the canopy
-  drawBirds(ctx, W * 0.52, H * 0.24, col, 0.7);
 }
 
 /** Soft rain — a gentle, dense rain curtain over a treeline and meadow, ripples in a puddle. */
