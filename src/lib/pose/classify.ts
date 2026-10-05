@@ -170,13 +170,14 @@ export function toPoseStatus(
   brightEnough: boolean = true,
   postureOk: boolean = true,
 ): PoseStatus {
-  // Gates: bright enough + face looking + still. Holding the phone is allowed.
+  // Gates: someone visible, facing, still enough. Holding the phone is allowed.
+  // Hands, wrists, and arms are not a gate. Lighting fails only when no one is visible.
   void phonePropped;
-  if (!brightEnough) return 'too_dark';
+  void handsNearFace;
+  if (!brightEnough && !present) return 'too_dark';
   if (!present || !faceLooking) return 'absent'; // no face / not facing camera
-  if (handsNearFace) return 'hands_near'; // chip: "hands away"
   if (!postureOk) return 'posture'; // body modes only
-  if (!still) return 'fidgeting'; // chip: "hold still"
+  if (!still) return 'fidgeting';
   return 'holding';
 }
 

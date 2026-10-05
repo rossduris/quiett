@@ -51,6 +51,8 @@ type Props = {
   alarm: AlarmPrefs;
   alarmSavedAt: number | null;
   unlockedToday: boolean;
+  /** Sticky handoff / alerting — suppress Missed chip while a wake is in flight. */
+  liveWakePending?: boolean;
   /** Home's focus / foreground / day-rollover timestamp. */
   homeNow: Date;
   pickerOpen: boolean;
@@ -64,6 +66,7 @@ export function AlarmCard({
   alarm,
   alarmSavedAt,
   unlockedToday,
+  liveWakePending = false,
   homeNow,
   pickerOpen,
   onPickerOpenChange,
@@ -78,8 +81,8 @@ export function AlarmCard({
 
   const rings = useMemo(() => getRingsCountdown(alarm, unlockedToday, now), [alarm, unlockedToday, now]);
   const chip = useMemo(
-    () => getTodayStatusChip(alarm, unlockedToday, now, alarmSavedAt),
-    [alarm, unlockedToday, now, alarmSavedAt],
+    () => getTodayStatusChip(alarm, unlockedToday, now, alarmSavedAt, liveWakePending),
+    [alarm, unlockedToday, now, alarmSavedAt, liveWakePending],
   );
   const next = alarm.enabled ? nextAlarmDate(alarm.time, alarm.weekdays, now) : null;
   const label = unlockedToday && next ? `Next alarm · ${relativeDayLabel(next, now)}` : 'Morning alarm';
@@ -87,7 +90,11 @@ export function AlarmCard({
   const showChip = !unlockedToday && chip != null && chip.status !== 'unlocked_today';
 
   const chipTone = (status: TodayStatus): string =>
-    status === 'missed_morning' ? colors.warning : status === 'unlocked_today' ? colors.calm : colors.textMuted;
+    status === 'missed_morning'
+      ? colors.warning
+      : status === 'unlocked_today' || status === 'waiting_settle'
+        ? colors.calm
+        : colors.textMuted;
 
   const reduce = useReduceMotion();
   // Alarm off: the time dims smoothly rather than snapping colour.

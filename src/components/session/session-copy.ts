@@ -18,8 +18,9 @@ export type SessionCopy = {
 export type PoseLine = { prompt: string; note?: string };
 
 /**
- * One plain reason, then what to do. Gate order: phone upright, light, a face filling
- * the frame, facing, then stillness. Holding the phone is allowed. Never tell them to put it down.
+ * One plain reason, then what to do. Gate order: phone upright, a frame that can see
+ * someone, distance, facing, shoulders, then a loose body stillness. Hands are not a gate.
+ * Holding the phone is allowed. Never tell them to put it down.
  */
 export function posePrompt(status: PoseStatus): PoseLine {
   switch (status) {
@@ -28,15 +29,15 @@ export function posePrompt(status: PoseStatus): PoseLine {
     case 'fidgeting':
       return { prompt: 'Hold still', note: 'Keep the phone steady.' };
     case 'too_dark':
-      return { prompt: 'It\u2019s too dark', note: 'Turn a light on.' };
+      return { prompt: 'Can\u2019t see you' };
     case 'too_close':
       return { prompt: 'Give it a little room', note: 'Your face is filling the frame.' };
     case 'too_far':
       return { prompt: 'You\u2019re a little far', note: 'Step closer so your head and shoulders fit.' };
     case 'hands_near':
-      return { prompt: 'Rest your hands', note: 'Let them fall away from your face.' };
     case 'arms_moving':
-      return { prompt: 'Hold still', note: 'Keep your hands quiet.' };
+      // Not produced. A hand, a cup, or an arm shift is not a warning.
+      return { prompt: 'Stay just like this' };
     case 'posture':
       return { prompt: 'Square your shoulders', note: 'Face the phone.' };
     case 'holding':

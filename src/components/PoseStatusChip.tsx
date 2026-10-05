@@ -22,13 +22,12 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
     case 'fidgeting':
       return { label: 'Hold still', inFrame: false };
     case 'hands_near':
-      return { label: 'Rest your hands', inFrame: false };
     case 'arms_moving':
-      return { label: 'Hold still', inFrame: false };
+      return { label: 'You\u2019re in frame', inFrame: true };
     case 'not_upright':
       return { label: 'Hold the phone upright', inFrame: false };
     case 'too_dark':
-      return { label: 'Turn a light on', inFrame: false };
+      return { label: 'Can\u2019t see you', inFrame: false };
     case 'too_close':
       return { label: 'Give it a little room', inFrame: false };
     case 'too_far':

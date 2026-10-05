@@ -6,7 +6,7 @@ import { DEFAULT_UNLOCK_TRACK_ID, type UnlockTrack } from '@/constants/unlock-tr
 import { homeStatusMode, isUnlockedForToday } from '@/lib/home-status';
 import { refreshClockPreference } from '@/lib/time-format';
 import { syncEveningReminder } from '@/lib/notifications';
-import { applyAlarmSoundChange, openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
+import { applyAlarmSoundChange, isLiveAlarmWakePending, openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 import { stopPreview } from '@/lib/audio';
 import { usePremium } from '@/lib/premium-provider';
 import {
@@ -40,8 +40,12 @@ import {
   type Weekday,
 } from '@/lib/storage';
 
+/** Bump when schedule semantics change (e.g. Stop → openApp) so Home force-resyncs once. */
+const OS_ALARM_SCHEDULE_REV = 'stop-openApp-1';
+
 /** Stable key for "has the OS alarm already been synced with these settings?" */
-const syncKey = (a: AlarmPrefs, soundId: string) => JSON.stringify([a.time, a.enabled, a.weekdays, soundId]);
+const syncKey = (a: AlarmPrefs, soundId: string) =>
+  JSON.stringify([OS_ALARM_SCHEDULE_REV, a.time, a.enabled, a.weekdays, soundId]);
 
 /**
  * All Home tab state + actions: storage loading on focus / foreground, Surprise me
@@ -55,6 +59,8 @@ export function useHomeState() {
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [wakeResolved, setWakeResolved] = useState(false);
+  /** Stop/Settle-in/handoff/alerting/grace — suppress Missed chip. */
+  const [liveWakePending, setLiveWakePending] = useState(false);
   const [dayOpenDismissed, setDayOpenDismissed] = useState(false);
   const [alarmSoundId, setAlarmSoundId] = useState(DEFAULT_ALARM_SOUND_ID);
   const [unlockTrackId, setUnlockTrackId] = useState(DEFAULT_UNLOCK_TRACK_ID);
@@ -117,6 +123,8 @@ export function useHomeState() {
         setStreak(s);
         setCompletedDays(days);
         setWakeResolved(resolved);
+        setLiveWakePending(await isLiveAlarmWakePending(a));
+        if (!alive) return;
         setDayOpenDismissed(heroDismissed);
         setAlarmSoundId(soundId);
         setSurpriseMe(surprise);
@@ -170,10 +178,16 @@ export function useHomeState() {
       // The 12/24-hour switch may have changed while we were away.
       refreshClockPreference();
       void (async () => {
-        const [s, days, resolved] = await Promise.all([loadStreak(), loadCompletedDays(), isWakeResolvedToday()]);
+        const [s, days, resolved, prefs] = await Promise.all([
+          loadStreak(),
+          loadCompletedDays(),
+          isWakeResolvedToday(),
+          loadAlarmPrefs(),
+        ]);
         setStreak(s);
         setCompletedDays(days);
         setWakeResolved(resolved);
+        setLiveWakePending(await isLiveAlarmWakePending(prefs));
         await loadMorningFacts();
         setNow(new Date());
       })();
@@ -290,6 +304,7 @@ export function useHomeState() {
     completedDays,
     now,
     unlockedToday,
+    liveWakePending,
     showDayOpen: loaded && status.mode === 'unlocked',
     // Nothing until storage has loaded (avoids a flash of "No alarm set" from the defaults).
     statusMode: loaded ? status.mode : null,

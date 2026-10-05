@@ -99,6 +99,7 @@ export default function HomeScreen() {
           alarm={home.alarm}
           alarmSavedAt={home.alarmSavedAt}
           unlockedToday={home.unlockedToday}
+          liveWakePending={home.liveWakePending}
           homeNow={home.now}
           pickerOpen={showTimePicker}
           onPickerOpenChange={setShowTimePicker}

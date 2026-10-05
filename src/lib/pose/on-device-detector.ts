@@ -30,7 +30,6 @@ import {
   SHOULDER_SQUARE_MAX,
 } from './thresholds';
 import { createArmMotionTracker } from './arm-motion';
-import { createHandMotionTracker } from './hand-motion';
 import { createProppedMonitor } from './device-propped';
 import { distanceStatus, shoulderSpan, shoulderSquareOffset } from './distance';
 import type {
@@ -156,6 +155,74 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
  *
  * Gate: light + facing + shoulders in view + upright enough + still. Holding the phone is allowed.
  */
+
+const BODY_STILL_WINDOW_MS = 1000;
+
+type BodyStillSample = { t: number; sw: number; pts: { x: number; y: number }[] };
+
+/** Median joint std-dev in shoulder-widths. Warmup (under 4 samples) is undefined, not a fail. */
+function medianBodyTravel(samples: BodyStillSample[]): number | undefined {
+  if (samples.length < 4) return undefined;
+  const sw = samples[samples.length - 1]!.sw;
+  if (!(sw > 0)) return undefined;
+  const nPts = samples[samples.length - 1]!.pts.length;
+  const rows = samples.filter((s) => s.pts.length === nPts);
+  if (rows.length < 4) return undefined;
+  const stds: number[] = [];
+  for (let i = 0; i < nPts; i++) {
+    const n = rows.length;
+    let mx = 0;
+    let my = 0;
+    for (const s of rows) {
+      mx += s.pts[i]!.x;
+      my += s.pts[i]!.y;
+    }
+    mx /= n;
+    my /= n;
+    let v = 0;
+    for (const s of rows) {
+      const dx = s.pts[i]!.x - mx;
+      const dy = s.pts[i]!.y - my;
+      v += dx * dx + dy * dy;
+    }
+    stds.push(Math.sqrt(v / n) / sw);
+  }
+  stds.sort((a, b) => a - b);
+  const mid = stds[Math.floor(stds.length / 2)];
+  return mid != null && Number.isFinite(mid) ? mid : undefined;
+}
+
+/**
+ * Nose + shoulder midpoint only. A wrist, elbow, or cup is not part of the sample,
+ * so it cannot reset the hold.
+ */
+function pushBodyStill(
+  history: BodyStillSample[],
+  joints: PoseLandmarks['joints'],
+  now: number,
+): { history: BodyStillSample[]; travel: number | undefined } {
+  const kept = history.filter((s) => now - s.t <= BODY_STILL_WINDOW_MS);
+  const ls = joints.leftShoulder;
+  const rs = joints.rightShoulder;
+  if (
+    !ls ||
+    !rs ||
+    ls.confidence < MIN_JOINT_CONFIDENCE ||
+    rs.confidence < MIN_JOINT_CONFIDENCE
+  ) {
+    return { history: kept, travel: medianBodyTravel(kept) };
+  }
+  const sw = Math.hypot(ls.x - rs.x, ls.y - rs.y);
+  if (!Number.isFinite(sw) || sw <= 0.02) {
+    return { history: kept, travel: medianBodyTravel(kept) };
+  }
+  const pts = [{ x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 }];
+  const nose = joints.nose;
+  if (nose && nose.confidence >= MIN_JOINT_CONFIDENCE) pts.push({ x: nose.x, y: nose.y });
+  kept.push({ t: now, sw, pts });
+  return { history: kept, travel: medianBodyTravel(kept) };
+}
+
 export function createOnDevicePoseDetector(
   options: OnDevicePoseDetectorOptions,
 ): OnDevicePoseDetector {
@@ -167,6 +234,7 @@ export function createOnDevicePoseDetector(
   let lastStatus: PoseStatus = 'absent';
   let lastConfidence = 0;
   let motion: MotionSample[] = [];
+  let bodyStill: BodyStillSample[] = [];
   let unsubLive: (() => void) | null = null;
   let unsubUpright: (() => void) | null = null;
   let lastPresent = false;
@@ -174,7 +242,6 @@ export function createOnDevicePoseDetector(
   let lastBrightEnough = true;
   let lastConf = 0;
   const armTracker = createArmMotionTracker();
-  const handTracker = createHandMotionTracker();
   const uprightMonitor = createProppedMonitor();
   const hysteresis = createHoldingHysteresis(
     ENTER_HOLDING_FRAMES,
@@ -239,40 +306,35 @@ export function createOnDevicePoseDetector(
     const checks: PoseCheck[] = order
       .map((k) => det.checks?.[k])
       .filter((c): c is PoseCheck => !!c);
-    // Shoulder-relative arms when the torso is found. Free-hand motion (nose-relative
-    // wrists/elbows) always runs in 2D, including a head view where shoulders are missing.
+    // Arm numbers stay on the dev readout. They do not change status.
     if (!phonePropped) {
       armTracker.reset();
-      handTracker.reset();
     }
     const arm = phonePropped && det.personFound ? armTracker.push(landmarks) : undefined;
-    const hand = phonePropped ? handTracker.push(landmarks) : undefined;
     const armMotion = arm
       ? {
           source: arm.source,
           value: arm.value,
           perJoint: arm.perJoint,
           samples: arm.samples,
-          failing: arm.failing,
+          failing: false,
           limit: arm.limit,
         }
       : undefined;
-    const handsFailing = !!arm?.failing || !!hand?.failing;
+    const handsLow = checks.find((c) => c.name === 'handsLow');
+    if (handsLow) {
+      handsLow.pass = true;
+      handsLow.available = false;
+      handsLow.note = 'not gated';
+    }
     checks.push({
       name: 'armStillness',
-      value: arm?.value ?? hand?.value,
       limit: ARM_MOTION_MAX,
-      pass: !handsFailing,
-      available: !!arm?.available || !!hand?.available,
-      unit: arm?.available ? '×sw' : 'image',
+      pass: true,
+      available: false,
+      unit: '×sw',
       kind: 'max',
-      note: handsFailing
-        ? hand?.nearFace
-          ? 'hand at face'
-          : undefined
-        : arm?.available || hand?.available
-          ? undefined
-          : 'no hands',
+      note: 'not gated',
     });
     const byName = (n: string) => checks.find((c) => c.name === n);
     const fails = (n: string) => {
@@ -284,17 +346,42 @@ export function createOnDevicePoseDetector(
     const faceSeen = (landmarks.faceCount ?? 0) > 0;
     // Missing shoulders is normal on a head view. Only a measured edge-to-edge span is "too close".
     const shouldersInView = det.personFound || (span != null && dist !== 'too_close');
-    // Native stillness (0.07 × shoulder width) was tuned for a phone that does not move.
-    // A steady hand is allowed through; a real shake still fails.
+    // Nose and shoulders only. The native value can still include wrists on an
+    // older binary, so it is not what decides the hold.
+    let bodyTravel: number | undefined;
+    if (!phonePropped) {
+      bodyStill = [];
+    } else {
+      const body = pushBodyStill(bodyStill, landmarks.joints, Date.now());
+      bodyStill = body.history;
+      bodyTravel = body.travel;
+    }
     const stillCheck = byName('stillness');
-    if (
-      stillCheck &&
-      stillCheck.available &&
-      stillCheck.value != null &&
-      stillCheck.value <= HANDHELD_STILLNESS_MAX
-    ) {
-      stillCheck.pass = true;
+    if (stillCheck) {
       stillCheck.limit = HANDHELD_STILLNESS_MAX;
+      if (bodyTravel == null) {
+        stillCheck.pass = true;
+        stillCheck.available = false;
+        stillCheck.note = 'warming up';
+      } else {
+        stillCheck.value = bodyTravel;
+        stillCheck.available = true;
+        stillCheck.pass = bodyTravel <= HANDHELD_STILLNESS_MAX;
+        stillCheck.note = undefined;
+      }
+    }
+    const lighting = byName('lighting');
+    const personSeen = faceSeen || det.personFound;
+    if (lighting) {
+      const luma = lighting.value;
+      const lumaOk =
+        luma == null || !Number.isFinite(luma) ? true : luma >= BRIGHTNESS_MIN;
+      // Ordinary room light passes. A visible person is never a lighting failure.
+      const ok = personSeen || lumaOk;
+      lighting.pass = ok;
+      lighting.limit = BRIGHTNESS_MIN;
+      lighting.available = !ok || (luma != null && Number.isFinite(luma));
+      if (ok && personSeen && !lumaOk) lighting.note = undefined;
     }
     // Facing only checks the face, so a phone held off to the side still looks
     // "at the camera". Square is the nose over the shoulders. Slight angle stays.
@@ -331,7 +418,6 @@ export function createOnDevicePoseDetector(
     else if (shouldersInView && (fails('shoulderLevel') || fails('headCentered') || fails('torsoUpright')))
       raw = 'posture';
     else if (shouldersInView && fails('stillness')) raw = 'fidgeting';
-    else if (fails('armStillness')) raw = 'arms_moving';
     else if (shouldersInView || faceSeen) raw = 'holding';
     else raw = 'absent';
 
@@ -367,10 +453,10 @@ export function createOnDevicePoseDetector(
       return;
     }
     armTracker.reset();
-    handTracker.reset();
 
     if (!phonePropped) {
       motion = [];
+      bodyStill = [];
       const published = hysteresis.push('not_upright');
       emit(published, lastConf);
       return;
@@ -378,6 +464,7 @@ export function createOnDevicePoseDetector(
 
     if (!landmarks.available) {
       motion = [];
+      bodyStill = [];
       hysteresis.reset();
       emit('absent', 0);
       return;
@@ -426,13 +513,17 @@ export function createOnDevicePoseDetector(
       motion = motion.filter((m) => now - m.timestamp <= 2000);
     } else {
       motion = [];
+      bodyStill = [];
     }
 
     const travel = facePresent ? stillnessTravel(motion, now) : undefined;
     const still = facePresent ? isStill(motion, now) : false;
     // Holding the phone is allowed, including hands on the device.
-    const brightEnough =
-      landmarks.brightEnough === undefined ? true : landmarks.brightEnough === true;
+    const luma = landmarks.brightness;
+    const lumaOk =
+      luma == null || !Number.isFinite(luma) ? landmarks.brightEnough !== false : luma >= BRIGHTNESS_MIN;
+    // A visible person is enough light. Only an empty, near-black frame warns.
+    const brightEnough = lumaOk || facePresent;
     let raw = toPoseStatus(
       facePresent,
       classified.upright,
@@ -553,8 +644,8 @@ export function createOnDevicePoseDetector(
       stopped = false;
       hysteresis.reset();
       motion = [];
+      bodyStill = [];
       armTracker.reset();
-      handTracker.reset();
       lastDiagnostics = undefined;
       uprightMonitor.start();
       unsubUpright = uprightMonitor.subscribe(() => {
@@ -594,8 +685,8 @@ export function createOnDevicePoseDetector(
       }
       uprightMonitor.stop();
       motion = [];
+      bodyStill = [];
       armTracker.reset();
-      handTracker.reset();
       hysteresis.reset();
     },
     simulate(status: PoseStatus) {
@@ -605,8 +696,8 @@ export function createOnDevicePoseDetector(
     clearSimulate() {
       simulated = null;
       motion = [];
+      bodyStill = [];
       armTracker.reset();
-      handTracker.reset();
       hysteresis.reset();
     },
     subscribe(listener: PoseDetectorListener) {

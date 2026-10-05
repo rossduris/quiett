@@ -2,12 +2,12 @@
  * Quiett session gates:
  * - absent:       no face in frame (looking away / missing)
  * - not_upright:  phone not roughly vertical (flat or sideways)
- * - too_dark:     insufficient lighting (softer than original gate)
+ * - too_dark:     no one visible, and the frame is near black
  * - too_close:    shoulders fill the frame, or a face is in frame with the body cropped out
  * - too_far:      shoulders are a small sliver of the frame
  * - fidgeting:    face present but moving too much
- * - hands_near:   hand overlapping / near the face
- * - arms_moving:  body modes — wrists / elbows moving too much relative to the shoulders
+ * - hands_near:   unused. Hand position is not a gate.
+ * - arms_moving:  unused. Wrist, elbow, and arm motion are not a gate.
  * - holding:      bright enough + facing + shoulders in view + upright enough + still
  */
 
@@ -19,7 +19,7 @@ export type PoseStatus =
   | 'too_far'
   | 'fidgeting'
   | 'hands_near'
-  /** Body modes: wrists / elbows moving relative to the shoulders (arm-motion tracker). */
+  /** Unused. Arm motion does not change the session. */
   | 'arms_moving'
   /** Body modes: shoulders / head / torso alignment off. */
   | 'posture'
@@ -114,11 +114,11 @@ export type PoseLandmarks = {
   bothEyesVisible?: boolean;
   mouthVisible?: boolean;
   handNearFace?: boolean;
-  /** True when any hand/wrist/elbow is in frame (zero-hands gate). */
+  /** True when a hand or wrist is in frame. Not a session gate. */
   handsVisible?: boolean;
   /** 0–1 mean luma of face (or center crop). */
   brightness?: number;
-  /** False when frame/face is too dark for a real sit. */
+  /** False only when the frame is near black. A visible person is bright enough. */
   brightEnough?: boolean;
   handCount?: number;
   faceYaw?: number;

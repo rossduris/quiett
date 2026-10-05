@@ -1,6 +1,6 @@
 import { dayKey, nextAlarmDate, type AlarmPrefs, type StreakData, type Weekday } from '@/lib/storage';
 
-export type TodayStatus = 'locked_tonight' | 'unlocked_today' | 'missed_morning';
+export type TodayStatus = 'locked_tonight' | 'unlocked_today' | 'missed_morning' | 'waiting_settle';
 
 export type TodayStatusChip = {
   status: TodayStatus;
@@ -76,21 +76,38 @@ export function relativeDayLabel(date: Date, now: Date = new Date()): string {
   return date.toLocaleDateString([], { weekday: 'short' });
 }
 
+/** Post-ring window before Home may show "Missed this morning" (~18 minutes). */
+export const MORNING_MISS_GRACE_MS = 18 * 60 * 1000;
+
+/** True from today's scheduled ring until grace elapses (morning still locked). */
+export function isWithinMorningWakeGrace(alarm: AlarmPrefs, now: Date = new Date()): boolean {
+  if (!alarm.enabled || alarm.weekdays.length === 0) return false;
+  if (!alarm.weekdays.includes(isoWeekday(now))) return false;
+  const todayRing = parseAlarmToday(alarm.time, now);
+  const elapsed = now.getTime() - todayRing.getTime();
+  return elapsed >= 0 && elapsed < MORNING_MISS_GRACE_MS;
+}
+
 /**
  * Derive the single Home status chip (shown only while the day is still locked).
  * - Unlocked for today: wake resolved / morning completed today
- * - Missed this morning: alarm enabled, today is scheduled, today's ring passed, not unlocked,
- *   and that ring was due AFTER the alarm was last saved (so a new install or a fresh edit at
- *   10am never shows "missed" for a 7:00 ring that was never armed). `savedAt` null = legacy
- *   install without the timestamp, treated as saved long ago.
+ * - Waiting for you to settle in: live wake pending, or within grace after today's ring
+ * - Missed this morning: alarm enabled, today is scheduled, today's ring passed (+ grace),
+ *   not unlocked, and that ring was due AFTER the alarm was last saved (so a new install or a
+ *   fresh edit at 10am never shows "missed" for a 7:00 ring that was never armed). `savedAt`
+ *   null = legacy install without the timestamp, treated as saved long ago.
  * - Set for …: alarm enabled, still waiting on the next ring ("Set for tomorrow").
  * Returns null when alarm is off and day is not unlocked (nothing to show).
+ *
+ * Never say "sit" in chip copy. Spell Quiett when naming the app.
  */
 export function getTodayStatusChip(
   alarm: AlarmPrefs,
   unlockedToday: boolean,
   now: Date = new Date(),
   savedAt: number | null = null,
+  /** Sticky handoff / alerting / pending wake — never show Missed while true. */
+  liveWakePending: boolean = false,
 ): TodayStatusChip | null {
   if (unlockedToday) {
     return { status: 'unlocked_today', label: 'Unlocked for today' };
@@ -101,6 +118,9 @@ export function getTodayStatusChip(
   const todayRing = parseAlarmToday(alarm.time, now);
   const ringWasArmed = savedAt == null || savedAt <= todayRing.getTime();
   if (todayScheduled && now.getTime() >= todayRing.getTime() && ringWasArmed) {
+    if (liveWakePending || isWithinMorningWakeGrace(alarm, now)) {
+      return { status: 'waiting_settle', label: 'Waiting for you to settle in' };
+    }
     return { status: 'missed_morning', label: 'Missed this morning' };
   }
   const next = nextAlarmDate(alarm.time, alarm.weekdays, now);

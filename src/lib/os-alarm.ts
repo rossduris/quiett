@@ -26,6 +26,7 @@ import {
   saveScheduledAlarmSound,
   type AlarmPrefs,
 } from '@/lib/storage';
+import { isWithinMorningWakeGrace } from '@/lib/home-status';
 import {
   alarmKitSoundName,
   clearAlarmSoundUriCache,
@@ -123,7 +124,10 @@ const iosGate = {
   alertTitle: ALARM_TITLE,
   ...iosButtons,
   alertActionMode: 'default' as const,
-  stopIntentBehavior: 'rescheduleImmediate' as const,
+  // openApp: Stop records handoff + foregrounds into /session. Do NOT use
+  // rescheduleImmediate here — its ~0.1s native backup races handoff and can
+  // look like silence-and-miss. Safe backup is JS rearmOsAlarmAfterBail on bail.
+  stopIntentBehavior: 'openApp' as const,
   metadata: { source: 'quiett-home' },
 };
 
@@ -143,7 +147,7 @@ const androidGate = {
   secondaryButtonTitle: SECONDARY_TITLE,
   secondaryButtonBehavior: 'openApp' as const,
   alertActionMode: 'default' as const,
-  stopIntentBehavior: 'rescheduleImmediate' as const,
+  stopIntentBehavior: 'openApp' as const,
   launchUri: 'quiett://session',
   maxRingDurationSeconds: 0,
   enforceVolume: true,
@@ -160,6 +164,33 @@ export type SyncOsAlarmResult =
       message: string;
       permissions?: AlarmPermissionResponse;
     };
+
+
+/**
+ * True when a wake is in flight: sticky sit flag, native Stop/Settle-in handoff, AlarmKit
+ * still alerting, or within the post-ring grace (and morning not resolved). Home's cold-start
+ * syncOsAlarm must not cancel in that window — cancelAlarmAsync clears pending handoff
+ * (native clearActions), which drops the route into /session.
+ */
+export async function isLiveAlarmWakePending(prefs?: AlarmPrefs | null): Promise<boolean> {
+  if (await peekPendingSitWake()) return true;
+  try {
+    const handoff = await AlarmScheduler.getPendingNativeAlarmHandoffAsync();
+    if (handoff?.alarmId) return true;
+    const ctx = await AlarmScheduler.getCurrentAlarmContextAsync();
+    if (ctx?.state === 'alerting') return true;
+    const actions = await AlarmScheduler.getPendingAlarmActionsAsync().catch(() => []);
+    if (actions.some((a) => a.action === 'nativeStop' || a.action === 'secondaryOpen' || a.action === 'dismiss')) {
+      return true;
+    }
+  } catch {
+    // fall through to grace
+  }
+  // Grace must not block reschedule after a finished morning (completeOsAlarmAndReschedule).
+  if (await isWakeResolvedToday()) return false;
+  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
+  return Boolean(p && isWithinMorningWakeGrace(p));
+}
 
 /** Cancel any stored native alarm. */
 export async function cancelOsAlarm(): Promise<void> {
@@ -182,6 +213,12 @@ export async function cancelOsAlarm(): Promise<void> {
 export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult> {
   if (Platform.OS === 'web') {
     return { ok: false, reason: 'unsupported', message: 'Native alarms are not available on web.' };
+  }
+
+  // Never cancel/re-schedule over a live wake / post-ring grace: that wipes the native handoff
+  // AlarmHandoffGate needs (cancelAlarmAsync → native clearActions).
+  if (await isLiveAlarmWakePending(prefs)) {
+    return { ok: true, scheduled: true };
   }
 
   // No days picked means the alarm is off (Home shows it that way); scheduling with an empty
@@ -407,11 +444,22 @@ export async function consumeAlarmHandoff(): Promise<AlarmHandoff | null> {
       if (await isWakeResolvedToday()) await clearWakeResolved();
       return { alarmId: (await loadNativeAlarmId()) || 'pending', action: sticky };
     }
+    // Native handoff consume failed — if AlarmKit is still alerting, sticky + force session.
+    try {
+      const ctx = await AlarmScheduler.getCurrentAlarmContextAsync();
+      if (ctx?.state === 'alerting') {
+        if (await isWakeResolvedToday()) await clearWakeResolved();
+        await markPendingSitWake('alerting');
+        return { alarmId: ctx.id || (await loadNativeAlarmId()) || 'pending', action: 'alerting' };
+      }
+    } catch {
+      /* ignore */
+    }
     return null;
   }
 }
 
-/** True when OS wake requires /session (Slide-to-stop, Sit button, sticky flag). */
+/** True when OS wake requires /session (Stop, Settle in, LA body while alerting, sticky flag). */
 export async function shouldForceSitSession(): Promise<boolean> {
   if (await peekPendingSitWake()) {
     if (await isWakeResolvedToday()) await clearWakeResolved();
@@ -424,9 +472,19 @@ export async function shouldForceSitSession(): Promise<boolean> {
     const live =
       Boolean(handoff?.alarmId) ||
       ctx?.state === 'alerting' ||
-      actions.some((a) => a.action === 'nativeStop' || a.action === 'secondaryOpen');
+      actions.some((a) => a.action === 'nativeStop' || a.action === 'secondaryOpen' || a.action === 'dismiss');
     if (live) {
       if (await isWakeResolvedToday()) await clearWakeResolved();
+      // Sticky so Gate still routes to /session if native handoff is cleared (sync race / body tap).
+      if (!(await peekPendingSitWake())) {
+        const reason =
+          handoff?.action ||
+          (ctx?.state === 'alerting' ? 'alerting' : null) ||
+          actions.find((a) => a.action === 'nativeStop' || a.action === 'secondaryOpen' || a.action === 'dismiss')
+            ?.action ||
+          'os';
+        await markPendingSitWake(reason);
+      }
       return true;
     }
   } catch {

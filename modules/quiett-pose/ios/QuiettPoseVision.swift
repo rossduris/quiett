@@ -7,8 +7,9 @@ import simd
 
 /// Shared Vision helpers for stills + live CMSampleBuffer analysis.
 enum QuiettPoseVision {
-  /// Mean luminance (0–1) below this → too dark (chip: more light). Softened from 0.20 to 0.13.
-  static let brightnessMin: Double = 0.13
+  /// Mean luminance (0–1). Ordinary indoor light stays above this.
+  /// Only a covered lens or a near-black frame with no one in it fails. Match JS BRIGHTNESS_MIN.
+  static let brightnessMin: Double = 0.04
 
   static let jointMapping: [(VNHumanBodyPoseObservation.JointName, String)] = [
     (.nose, "nose"),
@@ -425,7 +426,7 @@ enum QuiettPoseVision {
 
 /// Which pose detector the live camera runs. Selected from JS via the `detectorMode` prop.
 enum QuiettDetectorMode: String {
-  /// Original gates: face looking + zero hands in frame + landmark stillness (checks in JS).
+  /// Original gates: face looking + landmark stillness (checks in JS). Hands are not a gate.
   case legacy
   /// 2D body pose (VNDetectHumanBodyPoseRequest) posture checks.
   case body2d
@@ -462,9 +463,10 @@ enum QuiettPoseThresholds {
   static let wristAboveHipMax: Double = 0.6
   /// Wrist closer than this (shoulder widths) to the nose counts as a hand at the face / holding a phone up.
   static let wristNearFaceMax: Double = 0.9
-  /// Median joint positional std-dev over the window, in shoulder widths (~0.07 ≈ 2–3 cm).
-  /// Vision jitter on a still person measures ~0.02–0.04.
-  static let stillnessMax: Double = 0.07
+  /// Median nose/shoulder std-dev over the window, in shoulder widths.
+  /// Vision jitter on a still person is ~0.02–0.04. 0.28 lets a small settle pass.
+  /// Wrists and elbows are not in this metric.
+  static let stillnessMax: Double = 0.28
   static let stillnessWindow: CFTimeInterval = 1.0
 
   // 3D (metres / degrees, gravity-ish up = skeleton model +Y)
@@ -557,7 +559,7 @@ enum QuiettPoseBody {
   typealias T = QuiettPoseThresholds
 
   static let stillnessJoints = [
-    "nose", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist",
+    "nose", "leftShoulder", "rightShoulder",
   ]
 
   static func deg(_ r: Double) -> Double { r * 180 / .pi }
@@ -624,33 +626,10 @@ enum QuiettPoseBody {
                                 note: hip == nil ? "hips out of frame" : "hips above shoulders"))
     }
 
-    // Hands resting low.
-    var handsOk = true
-    var worst: Double? = nil
-    var notes: [String] = []
-    for side in ["left", "right"] {
-      let w = j["\(side)Wrist"]
-      let e = j["\(side)Elbow"]
-      if let w {
-        let below = Double((mid.y - w.y) / sw)
-        worst = min(worst ?? below, below)
-        let raised = e.map { w.y > $0.y + 0.05 * sw } ?? false
-        let nearFace = head.map { Double(hypot(w.x - $0.x, w.y - $0.y) / sw) < T.wristNearFaceMax } ?? false
-        var low = below >= T.wristBelowShoulderMin
-        if let hip, Double((w.y - hip.y) / sw) > T.wristAboveHipMax { low = false }
-        if raised { notes.append("\(side) wrist above elbow") }
-        if nearFace { notes.append("\(side) hand at face") }
-        if !low && !raised && !nearFace { notes.append("\(side) hand high") }
-        if raised || nearFace || !low { handsOk = false }
-      } else if let e, e.y > mid.y {
-        handsOk = false
-        notes.append("\(side) elbow raised")
-      }
-    }
-    checks.append(QuiettCheck(name: "handsLow", value: worst, limit: T.wristBelowShoulderMin, pass: handsOk,
-                              available: true, weight: 1.5, unit: "×sw below",
-                              note: notes.isEmpty ? (worst == nil ? "wrists out of frame" : nil) : notes.joined(separator: ", "),
-                              kind: worst == nil ? "bool" : "min"))
+    // Hands, wrists, and elbows are not a gate. A cup or a shift must not fail.
+    checks.append(QuiettCheck(name: "handsLow", value: nil, limit: T.wristBelowShoulderMin, pass: true,
+                              available: false, weight: 0, unit: "×sw below",
+                              note: "not gated", kind: "bool"))
 
     // Stillness from joint movement across frames.
     var pts: [String: CGPoint] = [:]
@@ -811,30 +790,16 @@ enum QuiettPoseBody {
                                 available: false, weight: 1, unit: "m", note: "no head"))
     }
 
-    var handsOk = true
-    var worst: Double? = nil
-    var notes: [String] = []
-    for side in ["left", "right"] {
-      guard let w = pos["\(side)Wrist"] else { continue }
-      let hRoot = Double(simd_dot(w - root, up))
-      worst = max(worst ?? hRoot, hRoot)
-      let raised = pos["\(side)Elbow"].map { simd_dot(w - $0, up) > 0.02 } ?? false
-      let nearHead = head.map { Double(simd_length(w - $0)) < T.wristNearHeadMin3D } ?? false
-      let low = hRoot <= T.wristAboveRootMax3D
-      if raised { notes.append("\(side) wrist above elbow") }
-      if nearHead { notes.append("\(side) hand at face") }
-      if !low && !raised && !nearHead { notes.append("\(side) hand high") }
-      if raised || nearHead || !low { handsOk = false }
-    }
-    checks.append(QuiettCheck(name: "handsLow", value: worst, limit: T.wristAboveRootMax3D, pass: handsOk,
-                              available: true, weight: 1.5, unit: "m above hips",
-                              note: notes.isEmpty ? nil : notes.joined(separator: ", ")))
+    // Hands, wrists, and elbows are not a gate.
+    checks.append(QuiettCheck(name: "handsLow", value: nil, limit: T.wristAboveRootMax3D, pass: true,
+                              available: false, weight: 0, unit: "m above hips",
+                              note: "not gated", kind: "bool"))
 
     // Stillness: image-space joints (root-relative 3D would hide whole-body sway).
     if let l2 = imgPx["leftShoulder"], let r2 = imgPx["rightShoulder"] {
       let sw = max(1, hypot(l2.x - r2.x, l2.y - r2.y))
       var pts: [String: CGPoint] = [:]
-      for k in ["head", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist"] {
+      for k in ["head", "leftShoulder", "rightShoulder"] {
         if let p = imgPx[k] { pts[k] = p }
       }
       let still = tracker?.push(points: pts, at: now, scale: sw)

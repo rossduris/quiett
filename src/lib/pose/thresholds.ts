@@ -28,9 +28,9 @@ export const MIN_SHOULDER_ABOVE_HIP = 0.05;
 export const STILLNESS_WINDOW_MS = 1200;
 /**
  * Max average per-step travel across tracked points (Vision normalized 0–1).
- * Legacy image travel. A steady handheld tremor stays under this; walking or a shaky phone does not.
+ * Legacy image travel. A steady hold and a small shift stay under this; walking does not.
  */
-export const STILLNESS_MAX_MOTION = 0.045;
+export const STILLNESS_MAX_MOTION = 0.08;
 
 /**
  * Time-based leave grace: once holding is published, a non-holding raw status must
@@ -79,46 +79,35 @@ export const REQUIRE_FACE_LOOKING = true;
 export const FACE_YAW_MAX = 0.38;
 export const FACE_PITCH_MAX = 0.42;
 
-/** Expand face box by this fraction when testing hand proximity (native uses fixed inset). */
-/** @deprecated Native now rejects any clear hand in frame, not only face-overlap. */
+/** @deprecated Hand proximity is not a session gate. Kept so older call sites compile. */
 export const HAND_NEAR_FACE_PAD = 0.22;
 
 /**
- * Min mean face/frame luminance (0–1) from Vision. Below → too_dark / "more light".
- * Softened from original 0.20 (65% of original) to allow dimmer usable rooms
- * while still rejecting near-pitch-black / covered-camera cases.
+ * Min mean face/frame luminance (0–1) from Vision.
+ * Ordinary indoor light, including a dim bedroom, stays above this.
+ * Only a covered lens or a frame so dark the camera cannot see anyone fails.
+ * A person who is actually visible never takes the lighting warning (see the detector).
  * Match native QuiettPoseVision.brightnessMin.
- * 
- * Tuning:
- * - 0.20 (original): Too strict — failed dim-but-usable rooms
- * - 0.13: Middle ground — rejects covered camera, passes typical dim indoor lighting
- * - 0.00: Too loose — no lighting gate
  */
-export const BRIGHTNESS_MIN = 0.13;
+export const BRIGHTNESS_MIN = 0.04;
 
 /**
+ * Arm numbers are dev-only. Hand, wrist, elbow, and arm motion are not a session gate:
+ * a cup, a one-hand hold, or a small shift must not warn or reset the hold.
+ *
  * Arm stillness (body2d / body3d). Wrist + elbow positions are measured relative to the
  * same-side shoulder and divided by shoulder width (×sw), so 2D (image) and 3D (metres) share
  * one unit: 1.0 ×sw ≈ 35–40 cm for most adults. Per joint, travel = second-largest
  * deviation from the window median (one glitchy frame can't trip it) minus a jitter floor;
  * the check value is the worst joint.
  *
- * Tuning:
- * - Resting hands still trip it → RAISE ARM_MOTION_MAX (e.g. 0.45), ARM_JITTER_FLOOR or ARM_MOTION_PERSIST_MS
- * - Waving / reaching slips through → LOWER ARM_MOTION_MAX (e.g. 0.28) or ARM_MOTION_PERSIST_MS
- * - Breaks land too fast on a short reach → RAISE ARM_MOTION_WINDOW_MS / ARM_MOTION_MIN_SAMPLES
- * - Noisy 2D joints at night → RAISE ARM_MIN_JOINT_CONFIDENCE (joints below are ignored)
+ * These limits feed the dev readout only. They do not publish a pose status.
  */
 /** Look-back window for arm travel (ms). */
 export const ARM_MOTION_WINDOW_MS = 1500;
 /** Frames (with that joint) needed in the window before the joint counts. */
 export const ARM_MOTION_MIN_SAMPLES = 4;
-/**
- * Fail above this travel (×sw, after the jitter floor).
- * A steady one-handed hold stays near the jitter floor. A wave or a hand to the face is
- * about 0.3 ×sw or more (~12 cm). 0.42 was letting that pass; 0.24 catches it.
- * 0.22 was twitchy for a hand that is simply resting.
- */
+/** Dev readout only. Not a session failure. */
 export const ARM_MOTION_MAX = 0.24;
 /** Once failing, travel must drop below MAX × this to pass again (no chatter at the edge). */
 export const ARM_MOTION_RECOVER_RATIO = 0.7;
@@ -161,13 +150,12 @@ export const SHOULDER_SPAN_MAX = 0.98;
 export const SHOULDER_SPAN_MIN = 0.05;
 
 /**
- * Body-mode stillness is computed natively in shoulder-widths (native limit 0.07, tuned
- * for a phone that does not move). A steady hand reads a bit higher than that.
- * 0.18 let fidgeting through. 0.11 still clears a steady hold; a real shift of the
- * head or torso fails. Arm waves are a separate check (they barely move the median).
- * No native rebuild: the session applies this on top of the native value.
+ * Body stillness in shoulder-widths, nose and shoulders only (wrists and elbows are
+ * not in this metric). Native used to use 0.07 for a phone that does not move.
+ * 0.11 failed a normal morning shift. 0.28 lets a small settle pass; a large sway
+ * of the head or torso still fails. The detector applies this on top of native.
  */
-export const HANDHELD_STILLNESS_MAX = 0.11;
+export const HANDHELD_STILLNESS_MAX = 0.28;
 
 /**
  * Nose offset from the shoulder midpoint, divided by shoulder width.

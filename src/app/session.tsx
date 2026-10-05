@@ -159,19 +159,34 @@ export default function SessionScreen() {
 
   // OS AlarmKit + in-app harsh alarm must not dual-play: silence system ring, keep ours.
   const missionDone = useRef(false);
+  /** Shared across remounts so a deferred bail re-arm from a raced unmount can be cancelled. */
+  const bailRearmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    let cancelled = false;
+    if (bailRearmTimer.current) {
+      clearTimeout(bailRearmTimer.current);
+      bailRearmTimer.current = null;
+    }
     void (async () => {
       await silenceOsRingForSession();
+      if (cancelled) return;
       // Pre-register custom-sound carriers while foreground (bail backups after lock).
       void prepareBailSoundCarriers();
-      // Slide-to-stop / Sit handoff: resume user's selected alarm tone until prop+unlock.
+      // Stop / Settle-in handoff: resume user's selected alarm tone until pose+unlock.
       await playHarshAlarm();
     })();
     return () => {
-      if (!missionDone.current) {
-        void stopAllAudio();
+      cancelled = true;
+      if (missionDone.current) return;
+      void stopAllAudio();
+      // Defer bail re-arm briefly so a Strict Mode remount / Gate replace race does not
+      // arm a backup and bounce the wake before /session sticks (permission CTA stays put).
+      if (bailRearmTimer.current) clearTimeout(bailRearmTimer.current);
+      bailRearmTimer.current = setTimeout(() => {
+        bailRearmTimer.current = null;
+        if (missionDone.current) return;
         void rearmOsAlarmAfterBail();
-      }
+      }, 500);
     };
   }, []);
 

@@ -7,7 +7,7 @@ import type { PoseDetectorMode, PoseLandmarks } from '@/lib/pose/types';
  * Pose detector selection.
  *  - detector: 'legacy' (original face/hands/stillness gates), 'body2d' (Vision 2D body pose
  *    posture checks), 'body3d' (Vision 3D body pose, iOS 17+, falls back to 2D per frame in native).
- *    Default everywhere is 'body2d' (arm-stillness check runs in release; 3D is dev-only).
+ *    Default everywhere is 'body2d'. Hand and arm motion are not a gate. 3D is dev-only.
  *  - Dev builds keep the Settings switch (stored override). Release builds never read the stored
  *    dev override, so an old saved 'legacy' can't pin a release install to legacy.
  *  - Runtime fallback (this launch only): body2d → legacy (body3d → body2d for a dev pick) when a mode isn't supported
