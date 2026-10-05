@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.rossduris.quiett",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "NSCameraUsageDescription": "Quiett uses the front camera to check that you\u2019re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
         "UIBackgroundModes": [
