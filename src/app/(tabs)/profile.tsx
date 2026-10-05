@@ -117,13 +117,7 @@ export default function ProfileScreen() {
         <EnterStagger index={4} base={240}>
           <ProfileLinks isPremium={isPremium} />
         </EnterStagger>
-        {accountUi ? (
-          <AccountRow
-            account={p.account}
-            onSignIn={() => void p.onSignIn()}
-            onSignOut={() => void p.onSignOut()}
-          />
-        ) : null}
+        {accountUi ? <AccountRow /> : null}
       </ScrollView>
 
       <StreakSheet

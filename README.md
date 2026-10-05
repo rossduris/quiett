@@ -68,6 +68,15 @@ In-app purchases go through RevenueCat (`react-native-purchases`), wrapped in
   `cd ios && pod install`), then `npx expo run:ios --device`.
 - Legal links live in `src/constants/legal.ts` (privacy URL is a TODO placeholder).
 
+## Account (Supabase Auth)
+
+Apple + Google sign-in for saving progress across devices. Camera/motion stay on-device.
+
+- Env: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`).
+- Code: `src/lib/supabase.ts`, `src/lib/auth-provider.tsx`, Profile account row.
+- **Console setup (required before real sign-in works):** [`docs/AUTH-SETUP.md`](./docs/AUTH-SETUP.md) — Supabase redirect URLs, Apple Sign in capability, Google Cloud Web OAuth client (TODOs for Ross; no invented client IDs in the repo).
+- Native rebuild after adding `expo-apple-authentication`: `npx expo run:ios`.
+
 ## Architecture notes
 
 | Piece | Status |

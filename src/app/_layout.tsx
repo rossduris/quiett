@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { ThemeProvider, useTheme } from '@/lib/theme-provider';
 import { PremiumProvider } from '@/lib/premium-provider';
+import { AuthProvider } from '@/lib/auth-provider';
 import { syncEveningReminder } from '@/lib/notifications';
 import { warnIfLegalPlaceholders } from '@/constants/legal';
 
@@ -101,7 +102,9 @@ export default function RootLayout() {
     <ThemeProvider>
       {/* RevenueCat initializes once here; falls back to "unavailable" on builds without it. */}
       <PremiumProvider>
-        <RootStack />
+        <AuthProvider>
+          <RootStack />
+        </AuthProvider>
       </PremiumProvider>
     </ThemeProvider>
   );

@@ -6,13 +6,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  *  - showGuided: Guided shelf in Library / Home / Meditation sheet. Off for launch; the data
  *    and screens stay in the code so it can come back once real voice guides ship.
  *  - voiceGuides: voice-over layer during the meditation + the Voice picker in Library.
- *  - accountUi: Profile account row (Sign in with Apple, "Save streak across devices").
- *    Off for launch until real sign-in and sync exist.
+ *  - accountUi: Profile account row (Apple + Google via Supabase). On for release when
+ *    EXPO_PUBLIC_SUPABASE_* keys exist; hide in Settings → Developer if needed while iterating.
  * Release builds always use the launch values below; the overrides only exist in __DEV__.
  */
 export const SHOW_GUIDED = false;
 export const VOICE_GUIDES = false;
-export const ACCOUNT_UI = false;
+/** Account UI on — live app requires Apple/Google; gate auth itself on isSupabaseConfigured(). */
+export const ACCOUNT_UI = true;
 
 export type DevFlag = 'showGuided' | 'voiceGuides' | 'accountUi';
 
@@ -24,7 +25,7 @@ const KEYS: Record<DevFlag, string> = {
 
 type State = Record<DevFlag, boolean>;
 
-let state: State = { showGuided: false, voiceGuides: false, accountUi: false };
+let state: State = { showGuided: false, voiceGuides: false, accountUi: ACCOUNT_UI };
 let loaded = false;
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
@@ -40,7 +41,12 @@ export function loadDevFlags(): Promise<void> {
   loading = AsyncStorage.multiGet([KEYS.showGuided, KEYS.voiceGuides, KEYS.accountUi]).then(
     ([[, g], [, v], [, a]]) => {
       loaded = true;
-      const next: State = { showGuided: g === '1', voiceGuides: v === '1', accountUi: a === '1' };
+      const next: State = {
+        showGuided: g === '1',
+        voiceGuides: v === '1',
+        // Unset → launch default (ACCOUNT_UI); explicit '0'/'1' honors the Settings switch.
+        accountUi: a == null ? ACCOUNT_UI : a === '1',
+      };
       if (
         next.showGuided !== state.showGuided ||
         next.voiceGuides !== state.voiceGuides ||
@@ -72,7 +78,9 @@ export function voiceGuidesEnabled(): boolean {
 }
 
 export function accountUiEnabled(): boolean {
-  return ACCOUNT_UI || (__DEV__ && state.accountUi);
+  // In __DEV__, the Settings switch overrides the launch flag (including force-off).
+  if (__DEV__) return state.accountUi;
+  return ACCOUNT_UI;
 }
 
 /** Raw dev override (for the Settings switches). */

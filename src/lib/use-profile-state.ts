@@ -8,9 +8,7 @@ import { computeInsights, runEndingAt, visibleMornings } from '@/lib/profile-ins
 import { meditationSoundById } from '@/constants/sounds';
 import {
   DEFAULT_ALARM,
-  SIGNED_OUT_ACCOUNT,
   isWakeResolvedToday,
-  loadAccount,
   loadAlarmPrefs,
   loadCompletedDays,
   loadEarnedBadges,
@@ -21,9 +19,6 @@ import {
   loadWakeIntention,
   loadWakeIntentionsByDay,
   scheduleResolver,
-  signInWithAppleStub,
-  signOut,
-  type AccountData,
   type AlarmPrefs,
   type BadgeId,
   type MorningLog,
@@ -33,7 +28,6 @@ import {
 
 /** All Profile data + derived values. Reloads on focus, and on foreground while focused. */
 export function useProfileState() {
-  const [account, setAccount] = useState<AccountData>({ ...SIGNED_OUT_ACCOUNT });
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
   const [completedDays, setCompletedDays] = useState<string[]>([]);
   const [alarm, setAlarm] = useState<AlarmPrefs>(DEFAULT_ALARM);
@@ -51,8 +45,7 @@ export function useProfileState() {
   const load = useCallback(async (isAlive: () => boolean = () => true) => {
     // Streak first: loadLifetimeStats reads it too, so the reset (if any) happens once.
     const strk = await loadStreak();
-    const [acct, days, alrm, sched, life, stamps, intentions, resolved, badges, intention, log] = await Promise.all([
-      loadAccount(),
+    const [days, alrm, sched, life, stamps, intentions, resolved, badges, intention, log] = await Promise.all([
       loadCompletedDays(),
       loadAlarmPrefs(),
       loadScheduleHistory(),
@@ -65,7 +58,6 @@ export function useProfileState() {
       loadMorningLog(),
     ]);
     if (!isAlive()) return;
-    setAccount(acct);
     setStreak(strk);
     setCompletedDays(days);
     setAlarm(alrm);
@@ -100,9 +92,6 @@ export function useProfileState() {
     });
     return () => sub.remove();
   }, [load]);
-
-  const onSignIn = useCallback(async () => setAccount(await signInWithAppleStub()), []);
-  const onSignOut = useCallback(async () => setAccount(await signOut()), []);
 
   const schedule = useMemo(() => scheduleResolver(history), [history]);
   // Practice / dev-tool / evening-test runs stay out of history, the calendar and stats.
@@ -147,7 +136,6 @@ export function useProfileState() {
   );
 
   return {
-    account,
     /** Streak engine value, with hidden test runs taken out for display. */
     streak: { ...streak, count: displayStreak },
     /** Counted mornings only (practice / dev / evening tests removed). */
@@ -168,8 +156,6 @@ export function useProfileState() {
     hasMornings: totalMornings > 0,
     unlockedToday,
     now,
-    onSignIn,
-    onSignOut,
   };
 }
 

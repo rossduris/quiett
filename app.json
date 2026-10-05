@@ -11,17 +11,18 @@
       "bundleIdentifier": "com.rossduris.quiett",
       "buildNumber": "3",
       "infoPlist": {
-        "NSCameraUsageDescription": "Quiett uses the front camera to check that you’re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
+        "NSCameraUsageDescription": "Quiett uses the front camera to check that you\u2019re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSAlarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment.",
-        "NSMotionUsageDescription": "Quiett uses your iPhone’s motion sensors to tell when the phone is propped up for your morning check. This stays on your iPhone."
+        "NSAlarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you\u2019ve settled in for a quiet moment.",
+        "NSMotionUsageDescription": "Quiett uses your iPhone\u2019s motion sensors to tell when the phone is propped up for your morning check. This stays on your iPhone."
       },
       "appleTeamId": "JZ8YVDHL4P",
       "config": {
         "usesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -58,7 +59,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Quiett uses the front camera to check that you’re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
+          "cameraPermission": "Quiett uses the front camera to check that you\u2019re settled and still before your morning alarm turns off. The video is analyzed on your iPhone and never leaves it.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -75,7 +76,7 @@
       [
         "./plugins/withQuiettAlarmScheduler.js",
         {
-          "alarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you’ve settled in for a quiet moment.",
+          "alarmKitUsageDescription": "Quiett schedules your morning alarm so it can ring even when your phone is locked. It turns off once you\u2019ve settled in for a quiet moment.",
           "iosAlarmSounds": [
             "./assets/audio/alarms/rise-and-shine.caf",
             "./assets/audio/alarms/early-bright.caf",
@@ -108,7 +109,9 @@
         {
           "color": "#BA5838"
         }
-      ]
+      ],
+      "expo-apple-authentication",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
