@@ -55,10 +55,11 @@ import { useGentleBrightness } from '@/lib/gentle-brightness';
 import {
   armMeditationDeadMan,
   clearMeditationDeadMan,
-  completeOsAlarmAndReschedule,
+  finalizeWakeResolution,
   prepareBailSoundCarriers,
   rearmOsAlarmAfterBail,
   silenceOsRingForSession,
+  syncOsAlarm,
 } from '@/lib/os-alarm';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -376,18 +377,21 @@ export default function SessionScreen() {
   }, [phase, durationMs, durationReady, prefsReady, surpriseOn, premiumLoading, isPremium]);
 
   useEffect(() => {
-    // Session end must feel instant: the camera window is veiled the moment the phase flips
-    // (SessionChrome), we navigate as soon as /success has its params, and the slow native work
-    // (AlarmKit scrub + reschedule, audio session release) runs after navigation. The camera
-    // itself already stopped via isActive=false (stopRunning runs on the native session queue),
-    // and the detector unsubscribes on unmount.
+    // Resolve every wake flag BEFORE navigating. AlarmHandoffGate re-runs on pathname
+    // change; if sticky/handoff still look "live" it will bounce straight back into
+    // /session (the hours-later reopen + end-early-noop bug). Reschedule can trail.
     if (phase === 'completed') {
       missionDone.current = true;
       // The backtrack keeps playing into /success (fades out when the user leaves it);
       // only the alarm and voice stop here.
       handoffBacktrackToSuccess();
       void (async () => {
-        // Snapshot streak + badges first so /success can animate exactly what changed (no guesses).
+        try {
+          await finalizeWakeResolution();
+        } catch (e) {
+          console.warn('[quiett] finalize wake', e);
+        }
+        // Snapshot streak + badges so /success can animate exactly what changed (no guesses).
         const [prevStreak, prevBadges] = await Promise.all([
           loadStreak().catch(() => null),
           loadEarnedBadges().catch((): BadgeId[] => []),
@@ -403,12 +407,11 @@ export default function SessionScreen() {
             ...(wakeIntentionRef.current.trim() ? { intention: wakeIntentionRef.current.trim() } : {}),
           },
         });
-        // After navigation: resolve today's alarm + schedule tomorrow, then free the session.
         try {
           const prefs = await loadAlarmPrefs();
-          await completeOsAlarmAndReschedule(prefs);
+          if (prefs.enabled) await syncOsAlarm(prefs);
         } catch (e) {
-          console.warn('[quiett] complete alarm', e);
+          console.warn('[quiett] reschedule alarm', e);
         } finally {
           releaseAudio();
         }
@@ -418,14 +421,19 @@ export default function SessionScreen() {
       missionDone.current = true;
       void stopAllAudio();
       void (async () => {
+        try {
+          // Must finish before replace('/emergency') — Gate watches pathname.
+          await finalizeWakeResolution();
+        } catch (e) {
+          console.warn('[quiett] finalize wake', e);
+        }
         await breakStreak().catch((e) => console.warn('[quiett] break streak', e));
         router.replace('/emergency');
-        // Keep tomorrow's schedule; ring already silenced at session open.
         try {
           const prefs = await loadAlarmPrefs();
-          await completeOsAlarmAndReschedule(prefs);
+          if (prefs.enabled) await syncOsAlarm(prefs);
         } catch (e) {
-          console.warn('[quiett] complete alarm', e);
+          console.warn('[quiett] reschedule alarm', e);
         } finally {
           releaseAudio();
         }

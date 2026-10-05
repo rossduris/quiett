@@ -63,7 +63,7 @@ export type AlarmPrefs = { time: string; enabled: boolean; weekdays: Weekday[] }
 export type StreakData = { count: number; lastCompletedDate: string | null };
 /** Sit length in minutes. `0.5` = 30 seconds (dev / quick test). */
 export type SitMinutes = 0.5 | 2 | 3 | 5 | 10;
-export type AccountProvider = 'apple' | null;
+export type AccountProvider = 'apple' | 'google' | null;
 export type AccountData = {
   signedIn: boolean;
   provider: AccountProvider;
@@ -224,13 +224,45 @@ export async function saveSurpriseTrackDate(day: string = dayKey(0)): Promise<vo
 
 /** Calendar day the morning wake was finished (sit) or emergency-dismissed. */
 
-/** OS Slide-to-stop / Watch stop / Sit open → must land in /session until sit or emergency. */
-export async function markPendingSitWake(reason: string = 'os'): Promise<void> {
-  await AsyncStorage.setItem(KEYS.pendingSitWake, reason);
+/**
+ * Sticky OS wake handoff that must land in /session until sit or emergency.
+ * Stored as JSON `{ reason, at }` so stale wakes can expire after the grace window.
+ * Legacy plain-string values are treated as missing a timestamp (age unknown → caller decides).
+ */
+export type PendingSitWake = { reason: string; at: number };
+
+export async function markPendingSitWake(reason: string = 'os', at: number = Date.now()): Promise<void> {
+  const payload: PendingSitWake = { reason, at };
+  await AsyncStorage.setItem(KEYS.pendingSitWake, JSON.stringify(payload));
 }
 
+/** Raw sticky wake (reason + stamp), or null. Does not expire — callers apply grace / resolved checks. */
+export async function peekPendingSitWakeMeta(): Promise<PendingSitWake | null> {
+  const raw = await AsyncStorage.getItem(KEYS.pendingSitWake);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof (parsed as PendingSitWake).reason === 'string' &&
+      typeof (parsed as PendingSitWake).at === 'number'
+    ) {
+      return { reason: (parsed as PendingSitWake).reason, at: (parsed as PendingSitWake).at };
+    }
+  } catch {
+    // Legacy: plain reason string with no timestamp.
+  }
+  if (raw.length > 0 && raw[0] !== '{') {
+    return { reason: raw, at: 0 };
+  }
+  return null;
+}
+
+/** Reason string only (compat). Prefer peekPendingSitWakeMeta + freshness checks in os-alarm. */
 export async function peekPendingSitWake(): Promise<string | null> {
-  return AsyncStorage.getItem(KEYS.pendingSitWake);
+  const meta = await peekPendingSitWakeMeta();
+  return meta?.reason ?? null;
 }
 
 export async function clearPendingSitWake(): Promise<void> {
@@ -849,43 +881,20 @@ export function nextAlarmDate(time: string, weekdays: Weekday[], from = new Date
   return null;
 }
 
+/** @deprecated Prefer useAuth().account — local stub storage kept for migration cleanup. */
 export async function loadAccount(): Promise<AccountData> {
-  if (!__DEV__) {
-    // No real sign-in ships yet: clear any stub account a dev/test build left behind.
-    await AsyncStorage.removeItem(KEYS.account);
-    return { ...SIGNED_OUT_ACCOUNT };
-  }
-  const raw = await AsyncStorage.getItem(KEYS.account);
-  if (!raw) return { ...SIGNED_OUT_ACCOUNT };
-  try {
-    const parsed = JSON.parse(raw) as Partial<AccountData>;
-    return {
-      signedIn: Boolean(parsed.signedIn),
-      provider: parsed.provider === 'apple' ? 'apple' : null,
-      displayName: typeof parsed.displayName === 'string' ? parsed.displayName : null,
-      email: typeof parsed.email === 'string' ? parsed.email : null,
-    };
-  } catch {
-    return { ...SIGNED_OUT_ACCOUNT };
-  }
+  // Clear legacy stub accounts; real session lives in Supabase Auth (AsyncStorage).
+  await AsyncStorage.removeItem(KEYS.account);
+  return { ...SIGNED_OUT_ACCOUNT };
 }
 
 async function saveAccount(account: AccountData): Promise<void> {
   await AsyncStorage.setItem(KEYS.account, JSON.stringify(account));
 }
 
-/** Local UI stub — no real Apple SDK this pass. */
-/** Dev-only placeholder until Sign in with Apple is wired up. No-op in release. */
+/** @deprecated Use AuthProvider.signInWithApple — stub retained so old imports do not break. */
 export async function signInWithAppleStub(): Promise<AccountData> {
-  if (!__DEV__) return { ...SIGNED_OUT_ACCOUNT };
-  const account: AccountData = {
-    signedIn: true,
-    provider: 'apple',
-    displayName: 'Test user',
-    email: 't••••@privaterelay.appleid.com',
-  };
-  await saveAccount(account);
-  return account;
+  return { ...SIGNED_OUT_ACCOUNT };
 }
 
 // ── Lifetime stats (backfilled in lifetime-stats.ts) ─────────────────────────
@@ -909,6 +918,7 @@ export async function saveLifetimeStats(stats: { mornings: number; bestStreak: n
   ]);
 }
 
+/** @deprecated Use AuthProvider.signOut — clears legacy stub only. */
 export async function signOut(): Promise<AccountData> {
   const account = { ...SIGNED_OUT_ACCOUNT };
   await saveAccount(account);
