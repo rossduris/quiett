@@ -18,8 +18,10 @@ export type SessionCopy = {
 export type PoseLine = { prompt: string; note?: string };
 
 /**
- * One plain reason, then what to do. Gate order: phone upright, a frame that can see
- * someone, distance, facing, shoulders, then a loose body stillness. Hands are not a gate.
+ * One plain reason, then what to do. Gate order (the detector picks one status):
+ * phone upright, "Can't see you" (no one + near-black frame), someone in view,
+ * then low light ("Too dark", even with a person visible), then distance, facing,
+ * shoulders, a loose body stillness, and finally the all-good line. Hands are not a gate.
  * Holding the phone is allowed. Never tell them to put it down.
  */
 export function posePrompt(status: PoseStatus): PoseLine {
@@ -30,6 +32,8 @@ export function posePrompt(status: PoseStatus): PoseLine {
       return { prompt: 'Hold still', note: 'Keep the phone steady.' };
     case 'too_dark':
       return { prompt: 'Can\u2019t see you' };
+    case 'low_light':
+      return { prompt: 'Too dark. Turn on a light.' };
     case 'too_close':
       return { prompt: 'Give it a little room', note: 'Your face is filling the frame.' };
     case 'too_far':
@@ -111,6 +115,7 @@ export function haloWarmth(phase: SessionPhase, pose: PoseStatus, confirmProgres
     case 'fidgeting':
       return 0.48;
     case 'posture':
+    case 'low_light':
     case 'hands_near':
     case 'arms_moving':
       return 0.36;

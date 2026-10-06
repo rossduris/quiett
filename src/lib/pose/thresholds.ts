@@ -2,7 +2,8 @@
  * Tunable Quiett session gates.
  *
  * Holding requires ALL of:
- * 1) bright enough (face-region luma ≥ BRIGHTNESS_MIN — softer than original 0.20)
+ * 1) bright enough: not near black (BRIGHTNESS_MIN) and not low light
+ *    (LOW_LIGHT_ENTER_LUMA / LOW_LIGHT_EXIT_LUMA, with hysteresis)
  * 2) face looking at camera (Vision yaw/pitch + both eyes + mouth/lips)
  * 3) shoulders in view (not a face-only close crop) and upright enough
  * 4) still enough for a steady hand (a shaky phone still fails)
@@ -90,6 +91,27 @@ export const HAND_NEAR_FACE_PAD = 0.22;
  * Match native QuiettPoseVision.brightnessMin.
  */
 export const BRIGHTNESS_MIN = 0.04;
+
+/**
+ * Low light ("Too dark. Turn on a light."), separate from BRIGHTNESS_MIN above.
+ * Same native luma: Rec. 601 mean of a padded face box (or the center 40% when no
+ * face), 0–1, after the front camera's auto-exposure. Applies even when a person
+ * is visible, and pauses the hold until the room is brighter.
+ *
+ * History: 0.20 failed dim-but-usable rooms; 0.13 passed typical dim indoor light.
+ * - Enter dim when luma stays below LOW_LIGHT_ENTER_LUMA for LOW_LIGHT_DEBOUNCE_MS.
+ * - Leave dim when luma stays above LOW_LIGHT_EXIT_LUMA for LOW_LIGHT_DEBOUNCE_MS.
+ * The gap between the two keeps the line from flickering.
+ *
+ * Tuning (watch the `lighting` row on the dev pose debug panel):
+ * - A dim-but-fine room still says too dark → LOWER both (e.g. 0.09 / 0.13)
+ * - A dark room still passes → RAISE both (e.g. 0.15 / 0.19)
+ * - Keep EXIT about 0.04 above ENTER.
+ */
+export const LOW_LIGHT_ENTER_LUMA = 0.12;
+export const LOW_LIGHT_EXIT_LUMA = 0.16;
+/** How long luma must stay past a threshold before the dim state changes (ms). */
+export const LOW_LIGHT_DEBOUNCE_MS = 750;
 
 /**
  * Arm numbers are dev-only. Hand, wrist, elbow, and arm motion are not a session gate:

@@ -28,6 +28,8 @@ export function poseGuidance(status: PoseStatus): { label: string; inFrame: bool
       return { label: 'Hold the phone upright', inFrame: false };
     case 'too_dark':
       return { label: 'Can\u2019t see you', inFrame: false };
+    case 'low_light':
+      return { label: 'Too dark. Turn on a light.', inFrame: false };
     case 'too_close':
       return { label: 'Give it a little room', inFrame: false };
     case 'too_far':

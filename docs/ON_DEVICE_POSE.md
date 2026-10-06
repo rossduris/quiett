@@ -96,7 +96,11 @@ Stub `QuiettPoseCameraView` + `analyzeImage` / `analyzeBase64` return `available
 
 - Side angle / profile: body pose confidence drops.
 - Blankets / heavy hoodies: shoulders occluded → face-only → `not_upright` (alarm stays).
-- Low light: more `absent`.
+- Low light: more `absent`. With someone visible, a dim room (luma below
+  `LOW_LIGHT_ENTER_LUMA` for `LOW_LIGHT_DEBOUNCE_MS`) publishes `low_light`
+  ("Too dark. Turn on a light.") and pauses the hold until luma stays above
+  `LOW_LIGHT_EXIT_LUMA`. Order: not upright > "Can't see you" > nobody in view >
+  low light > distance / facing / shoulders / stillness > holding.
 - Front selfie crop: hips often missing — upright uses shoulders + head; hips preferred when present.
 - Live path needs a real device camera.
 

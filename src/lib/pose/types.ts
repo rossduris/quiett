@@ -2,7 +2,8 @@
  * Quiett session gates:
  * - absent:       no face in frame (looking away / missing)
  * - not_upright:  phone not roughly vertical (flat or sideways)
- * - too_dark:     no one visible, and the frame is near black
+ * - too_dark:     no one visible, and the frame is near black ("Can't see you")
+ * - low_light:    someone visible, but the room is too dim (luma hysteresis + debounce)
  * - too_close:    shoulders fill the frame, or a face is in frame with the body cropped out
  * - too_far:      shoulders are a small sliver of the frame
  * - fidgeting:    face present but moving too much
@@ -15,6 +16,8 @@ export type PoseStatus =
   | 'absent'
   | 'not_upright'
   | 'too_dark'
+  /** Person visible but the room is too dim. Outranks framing/stillness, not absent/upright. */
+  | 'low_light'
   | 'too_close'
   | 'too_far'
   | 'fidgeting'

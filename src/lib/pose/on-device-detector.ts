@@ -28,8 +28,11 @@ import {
   ARM_MOTION_MAX,
   HANDHELD_STILLNESS_MAX,
   SHOULDER_SQUARE_MAX,
+  LOW_LIGHT_ENTER_LUMA,
+  LOW_LIGHT_EXIT_LUMA,
 } from './thresholds';
 import { createArmMotionTracker } from './arm-motion';
+import { createLowLightGate } from './low-light';
 import { createProppedMonitor } from './device-propped';
 import { distanceStatus, shoulderSpan, shoulderSquareOffset } from './distance';
 import type {
@@ -114,6 +117,34 @@ function scoreChecks(checks: PoseCheck[], personFound: boolean): number {
   return personFound ? score : Math.min(score, 20);
 }
 
+/**
+ * Statuses a dim room replaces with `low_light`. Phone not upright, "Can't see you",
+ * and nobody in view stay on top. Everything below (distance, posture, stillness,
+ * and the all-good "holding") gives way to the light. "Absent" with someone visible
+ * means the face check failed, which dim light causes, so light wins there too.
+ */
+const LOW_LIGHT_OUTRANKS: ReadonlySet<PoseStatus> = new Set<PoseStatus>([
+  'too_close',
+  'too_far',
+  'posture',
+  'fidgeting',
+  'hands_near',
+  'arms_moving',
+  'holding',
+]);
+
+function applyLowLight(raw: PoseStatus, dim: boolean, personVisible: boolean): PoseStatus {
+  if (!dim) return raw;
+  if (LOW_LIGHT_OUTRANKS.has(raw)) return 'low_light';
+  if (raw === 'absent' && personVisible) return 'low_light';
+  return raw;
+}
+
+/** Debug readout: show the threshold that would flip the dim state next. */
+function lowLightLimit(dim: boolean): number {
+  return dim ? LOW_LIGHT_EXIT_LUMA : LOW_LIGHT_ENTER_LUMA;
+}
+
 function detectedJointNames(joints: PoseLandmarks['joints']): string[] {
   return Object.keys(joints)
     .filter((k) => (joints[k]?.confidence ?? 0) >= MIN_JOINT_CONFIDENCE)
@@ -154,6 +185,8 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
  * On-device meditation-pose / in-frame detector (iOS Apple Vision via QuiettPose).
  *
  * Gate: light + facing + shoulders in view + upright enough + still. Holding the phone is allowed.
+ * Light has two states: "Can't see you" (no one visible + near-black frame) and low light
+ * (a dim room, even with someone visible; hysteresis + debounce in ./low-light).
  */
 
 const BODY_STILL_WINDOW_MS = 1000;
@@ -242,6 +275,7 @@ export function createOnDevicePoseDetector(
   let lastBrightEnough = true;
   let lastConf = 0;
   const armTracker = createArmMotionTracker();
+  const lowLight = createLowLightGate();
   const uprightMonitor = createProppedMonitor();
   const hysteresis = createHoldingHysteresis(
     ENTER_HOLDING_FRAMES,
@@ -372,16 +406,22 @@ export function createOnDevicePoseDetector(
     }
     const lighting = byName('lighting');
     const personSeen = faceSeen || det.personFound;
+    const frameLuma = landmarks.brightness ?? lighting?.value;
+    const dim = lowLight.push(frameLuma);
+    // "Can't see you": no one visible and a near-black frame. Separate from low light.
+    let cantSee = false;
     if (lighting) {
       const luma = lighting.value;
       const lumaOk =
         luma == null || !Number.isFinite(luma) ? true : luma >= BRIGHTNESS_MIN;
-      // Ordinary room light passes. A visible person is never a lighting failure.
+      // Ordinary room light passes. A visible person is never "Can't see you".
       const ok = personSeen || lumaOk;
-      lighting.pass = ok;
-      lighting.limit = BRIGHTNESS_MIN;
+      cantSee = !ok;
+      // Debug row: ✗ for either dark state; limit is the next low-light threshold.
+      lighting.pass = ok && !dim;
+      lighting.limit = ok ? lowLightLimit(dim) : BRIGHTNESS_MIN;
       lighting.available = !ok || (luma != null && Number.isFinite(luma));
-      if (ok && personSeen && !lumaOk) lighting.note = undefined;
+      lighting.note = undefined;
     }
     // Facing only checks the face, so a phone held off to the side still looks
     // "at the camera". Square is the nose over the shoulders. Slight angle stays.
@@ -409,9 +449,10 @@ export function createOnDevicePoseDetector(
     }
     let raw: PoseStatus;
     // Hands on the phone are expected. They do not block.
-    // Phone orientation first, then light, then an extreme close crop, then facing, then square, then still.
+    // Phone orientation first, then "Can't see you", then an extreme close crop, then facing, then square,
+    // then still. Low light is applied after: below upright / "Can't see you" / nobody in view, above the rest.
     if (!phonePropped) raw = 'not_upright';
-    else if (fails('lighting')) raw = 'too_dark';
+    else if (cantSee) raw = 'too_dark';
     else if (dist === 'too_close') raw = 'too_close';
     else if (dist === 'too_far') raw = 'too_far';
     else if ((!faceSeen && !shouldersInView) || fails('facing')) raw = 'absent';
@@ -420,6 +461,8 @@ export function createOnDevicePoseDetector(
     else if (shouldersInView && fails('stillness')) raw = 'fidgeting';
     else if (shouldersInView || faceSeen) raw = 'holding';
     else raw = 'absent';
+    // A dim room outranks framing, stillness, and the all-good line (see LOW_LIGHT_OUTRANKS).
+    raw = applyLowLight(raw, dim, faceSeen || shouldersInView);
 
     const diagnostics: PoseDiagnostics = {
       ...baseDiagnostics(landmarks, phonePropped),
@@ -435,7 +478,7 @@ export function createOnDevicePoseDetector(
     };
     lastPresent = det.personFound;
     lastFaceLooking = !fails('facing');
-    lastBrightEnough = !fails('lighting');
+    lastBrightEnough = !cantSee && !dim;
     lastConf = det.score / 100;
     const published = hysteresis.push(raw);
     emit(published, det.score / 100, diagnostics);
@@ -453,6 +496,8 @@ export function createOnDevicePoseDetector(
       return;
     }
     armTracker.reset();
+    // Track light on every real frame so the dim state is current once the phone is upright.
+    const dim = landmarks.available ? lowLight.push(landmarks.brightness) : lowLight.isDim();
 
     if (!phonePropped) {
       motion = [];
@@ -537,17 +582,18 @@ export function createOnDevicePoseDetector(
     // Distance wins over facing, never over light. An unreadable span does not block.
     const dist = distanceStatus(shoulderSpan(landmarks.joints));
     if (dist && raw !== 'too_dark') raw = dist;
+    raw = applyLowLight(raw, dim, facePresent);
     lastPresent = facePresent;
     lastFaceLooking = faceLooking;
-    lastBrightEnough = brightEnough;
+    lastBrightEnough = brightEnough && !dim;
     lastConf = classified.confidence;
 
     const legacyChecks: PoseCheck[] = [
       {
         name: 'lighting',
         value: landmarks.brightness,
-        limit: BRIGHTNESS_MIN,
-        pass: brightEnough,
+        limit: brightEnough ? lowLightLimit(dim) : BRIGHTNESS_MIN,
+        pass: brightEnough && !dim,
         available: landmarks.brightness != null,
         unit: 'luma',
         kind: 'min',
@@ -646,6 +692,7 @@ export function createOnDevicePoseDetector(
       motion = [];
       bodyStill = [];
       armTracker.reset();
+      lowLight.reset();
       lastDiagnostics = undefined;
       uprightMonitor.start();
       unsubUpright = uprightMonitor.subscribe(() => {
@@ -687,6 +734,7 @@ export function createOnDevicePoseDetector(
       motion = [];
       bodyStill = [];
       armTracker.reset();
+      lowLight.reset();
       hysteresis.reset();
     },
     simulate(status: PoseStatus) {
@@ -698,6 +746,7 @@ export function createOnDevicePoseDetector(
       motion = [];
       bodyStill = [];
       armTracker.reset();
+      lowLight.reset();
       hysteresis.reset();
     },
     subscribe(listener: PoseDetectorListener) {
