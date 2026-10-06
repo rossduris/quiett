@@ -14,6 +14,17 @@ export const SHOW_GUIDED = false;
 export const VOICE_GUIDES = false;
 /** Account UI on — live app requires Apple/Google; gate auth itself on isSupabaseConfigured(). */
 export const ACCOUNT_UI = true;
+/** Google sign-in hidden for now (Apple only). Flip to true to restore; code paths stay intact. */
+export const GOOGLE_SIGN_IN_ENABLED = false;
+/**
+ * Sign-in is OPTIONAL: no onboarding sign-in step and no sign-in on the access gate. Purchases
+ * and restores work on the anonymous RevenueCat customer; signing in from Profile (AccountRow)
+ * links the subscription to the account via Purchases.logIn.
+ * Nothing reads this while it's false. If required sign-in comes back, the screen is kept in
+ * src/components/account/AccountSignIn.tsx; the onboarding step and gate branch would need
+ * re-adding.
+ */
+export const SIGN_IN_REQUIRED = false;
 
 export type DevFlag = 'showGuided' | 'voiceGuides' | 'accountUi';
 

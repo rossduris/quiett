@@ -95,7 +95,8 @@ async function createSessionFromUrl(url: string): Promise<Session | null> {
 
 /**
  * Auth for Apple (native) + Google (OAuth browser). Mount once in root layout.
- * RevenueCat is untouched this pass.
+ * RevenueCat logs in with the Supabase user id (see premium-provider / logInPurchases).
+ * Google UI is gated by GOOGLE_SIGN_IN_ENABLED in dev-flags.ts.
  */
 export function AuthProvider({ children }: PropsWithChildren) {
   const configured = isSupabaseConfigured();

@@ -3,12 +3,17 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
+import { GOOGLE_SIGN_IN_ENABLED } from '@/lib/dev-flags';
 import { alertAuthFailure, useAuth, type AuthOutcome } from '@/lib/auth-provider';
 import { createProfileStyles } from './profile-styles';
 
 /**
- * Account card: Sign in with Apple (iOS) + Google, or Sign out when session exists.
+ * Account card: Sign in with Apple (iOS) + Google (behind GOOGLE_SIGN_IN_ENABLED), or Sign out when session exists.
  * Shown when ACCOUNT_UI / accountUi flag is on (see dev-flags.ts).
+ * Sign-in is optional. Signing in calls Purchases.logIn (PurchasesUserSync), which links an
+ * anonymous purchase to the account. Signing out goes back to the anonymous state: RevenueCat
+ * logs out and Premium then comes from the anonymous customer (the access gate shows the
+ * paywall if that customer has no entitlement).
  */
 export function AccountRow() {
   const colors = useThemeColors();
@@ -83,7 +88,11 @@ export function AccountRow() {
     <View style={[shared.listCard, styles.column]}>
       <View style={styles.header}>
         <Text style={styles.name}>Account</Text>
-        <Text style={styles.sub}>Save your streak across devices</Text>
+        <Text style={styles.sub}>
+          {Platform.OS !== 'ios' && !GOOGLE_SIGN_IN_ENABLED
+            ? 'Sign in is available on iPhone for now'
+            : 'Sign in to keep your subscription linked to your account.'}
+        </Text>
       </View>
       {Platform.OS === 'ios' ? (
         <Pressable
@@ -100,19 +109,21 @@ export function AccountRow() {
           )}
         </Pressable>
       ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Sign in with Google"
-        onPress={() => void run('google', auth.signInWithGoogle)}
-        disabled={busy !== null}
-        style={({ pressed }) => [styles.providerBtn, styles.googleBtn, pressed && shared.pressed]}
-      >
-        {busy === 'google' ? (
-          <ActivityIndicator size="small" color={colors.text} />
-        ) : (
-          <Text style={styles.googleBtnText}>Sign in with Google</Text>
-        )}
-      </Pressable>
+      {GOOGLE_SIGN_IN_ENABLED ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Sign in with Google"
+          onPress={() => void run('google', auth.signInWithGoogle)}
+          disabled={busy !== null}
+          style={({ pressed }) => [styles.providerBtn, styles.googleBtn, pressed && shared.pressed]}
+        >
+          {busy === 'google' ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            <Text style={styles.googleBtnText}>Sign in with Google</Text>
+          )}
+        </Pressable>
+      ) : null}
     </View>
   );
 }

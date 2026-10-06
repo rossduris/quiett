@@ -2,6 +2,8 @@
 
 Live Quiett requires an account (Apple and Google). Camera and motion stay on-device.
 
+> **Note:** Google sign-in is currently disabled in the UI via `GOOGLE_SIGN_IN_ENABLED = false` in `src/lib/dev-flags.ts` (Apple only); set it to `true` to restore.
+
 App code: `src/lib/supabase.ts`, `src/lib/auth-provider.tsx`, Profile → `AccountRow`.
 Bundle ID: `com.rossduris.quiett` · Team: `JZ8YVDHL4P` · Domain: `quiett.app` · Support: `hello@quiett.app`.
 
