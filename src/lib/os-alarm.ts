@@ -24,6 +24,7 @@ import {
   loadAlarmSoundId,
   loadAlarmPrefs,
   loadScheduledAlarmSound,
+  saveAlarmPrefs,
   saveScheduledAlarmSound,
   type AlarmPrefs,
 } from '@/lib/storage';
@@ -75,6 +76,25 @@ function soundKey(alarmSoundId: string): string {
 
 /** True after session silenced the OS ring; cleared on sit success / emergency. */
 let osRingHandedToSession = false;
+
+/**
+ * Hard paywall: true only while the access gate is CERTAIN this user is blocked (RevenueCat gave
+ * a real "no Premium" answer for the current app user and the TestFlight escape hatch doesn't
+ * apply). Set by <AlarmAccessSync /> (src/lib/access-gate.ts). Defaults to false, so a cold
+ * launch, a slow / offline RevenueCat load or any doubt keeps scheduling working as before.
+ * While true, syncOsAlarm never (re)schedules; it never cancels because of this either.
+ */
+let osAlarmSchedulingBlocked = false;
+
+export function setOsAlarmSchedulingBlocked(blocked: boolean): void {
+  if (osAlarmSchedulingBlocked === blocked) return;
+  osAlarmSchedulingBlocked = blocked;
+  logWakeRoute('scheduling-blocked', { blocked });
+}
+
+export function isOsAlarmSchedulingBlocked(): boolean {
+  return osAlarmSchedulingBlocked;
+}
 
 function randomUuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -361,6 +381,13 @@ export async function syncOsAlarm(prefs: AlarmPrefs): Promise<SyncOsAlarmResult>
   if (!prefs.enabled || prefs.weekdays.length === 0) {
     await cancelOsAlarm();
     osRingHandedToSession = false;
+    return { ok: true, scheduled: false };
+  }
+
+  // Hard paywall, user definitely without Premium: don't (re)arm. Leave whatever is scheduled
+  // alone (no cancel here); "Turn off my alarm" on the gate is the explicit way to stop it.
+  if (osAlarmSchedulingBlocked) {
+    logWakeRoute('sync-skip-scheduling-blocked');
     return { ok: true, scheduled: false };
   }
 
@@ -957,6 +984,77 @@ export async function completeOsAlarmAndReschedule(
   await finalizeWakeResolution();
   if (prefs?.enabled) {
     await syncOsAlarm(prefs);
+  }
+}
+
+/**
+ * True when Quiett has an OS alarm set: AlarmKit lists a non-carrier alarm, or the saved prefs
+ * say the alarm is on with a stored native id (fallback when the list can't be read).
+ */
+export async function hasScheduledOsAlarm(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  const [prefs, storedId] = await Promise.all([
+    loadAlarmPrefs().catch(() => null),
+    loadNativeAlarmId().catch(() => null),
+  ]);
+  if (prefs?.enabled && prefs.weekdays.length > 0 && storedId) return true;
+  try {
+    const [alarms, carriers] = await Promise.all([
+      AlarmScheduler.getScheduledAlarmsAsync(),
+      loadBailCarrierIds(),
+    ]);
+    const carrierIds = new Set(carriers);
+    return alarms.some((a) => !carrierIds.has(a.id));
+  } catch {
+    return false;
+  }
+}
+
+export type TurnOffOsAlarmResult =
+  | { ok: true }
+  | { ok: false; reason: 'ringing' | 'error'; message: string };
+
+/**
+ * User-initiated "Turn off my alarm" (the hard-paywall gate). Persists the alarm as off (same as
+ * the Home switch, so syncOsAlarm cancels rather than re-arms from then on), cancels the daily
+ * AlarmKit alarm through cancelOsAlarm, and clears every wake leftover: JS sticky, native
+ * handoff / pending actions, bail timers, the bail one-shot and the sound carriers.
+ *
+ * Refuses while AlarmKit is ringing right now: that's a live wake and AlarmHandoffGate is about
+ * to open /session; the wake flow must win.
+ */
+export async function turnOffOsAlarm(): Promise<TurnOffOsAlarmResult> {
+  if (Platform.OS === 'web') return { ok: true };
+  try {
+    const ctx = await AlarmScheduler.getCurrentAlarmContextAsync();
+    if (ctx?.state === 'alerting') {
+      return { ok: false, reason: 'ringing', message: 'Your alarm is ringing right now. Finish this morning first.' };
+    }
+  } catch {
+    /* no context → not ringing */
+  }
+  try {
+    // 1. Off first, so nothing in flight (sound refresh, a focus sync) can re-arm it.
+    const prefs = await loadAlarmPrefs();
+    if (prefs.enabled) await saveAlarmPrefs({ ...prefs, enabled: false });
+    // 2. JS sticky before native debris (same order as finalizeWakeResolution), so a concurrent
+    //    AlarmHandoffGate reconcile sees no wake and never routes to /session.
+    await clearPendingSitWake();
+    osRingHandedToSession = false;
+    // 3. The existing cancel path (daily alarm + its backup), then handoff / actions.
+    const storedId = await loadNativeAlarmId();
+    await cancelOsAlarm();
+    await scrubNativeAlarmDebris(storedId);
+    // 4. Bail / dead-man timers, the bail one-shot, and the sound carriers.
+    await cancelBailTimerWaves();
+    await cancelStoredBailOneShot();
+    await disposeBailSoundCarriers();
+    logWakeRoute('turn-off-alarm', { storedId });
+    return { ok: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Could not turn off the alarm.';
+    console.warn('[quiett os-alarm] turn off', e);
+    return { ok: false, reason: 'error', message };
   }
 }
 

@@ -17,11 +17,12 @@ import { Linking, NativeModules, Platform } from 'react-native';
 import type {
   CustomerInfo,
   PurchasesEntitlementInfo,
+  PurchasesIntroPrice,
   PurchasesOffering,
   PurchasesPackage,
 } from 'react-native-purchases';
 
-export type { CustomerInfo, PurchasesOffering, PurchasesPackage };
+export type { CustomerInfo, PurchasesIntroPrice, PurchasesOffering, PurchasesPackage };
 
 /** Entitlement identifier configured in the RevenueCat dashboard. */
 export const PREMIUM_ENTITLEMENT_ID = 'premium';
@@ -200,6 +201,74 @@ export async function restorePurchases(): Promise<RestoreOutcome> {
     const err = e as { message?: string };
     return { status: 'error', message: err?.message ?? 'Could not reach the App Store.' };
   }
+}
+
+/**
+ * Identify the RevenueCat customer as the signed-in Supabase user, so a subscription follows
+ * the account across devices. Returns the merged customer info, or null when purchases are off
+ * or the call failed (never throws).
+ */
+export async function logInPurchases(appUserId: string): Promise<CustomerInfo | null> {
+  const mod = ready();
+  if (!mod || !appUserId) return null;
+  try {
+    const { customerInfo } = await mod.default.logIn(appUserId);
+    return customerInfo;
+  } catch (e) {
+    if (__DEV__) console.warn('[purchases] logIn failed', e);
+    return null;
+  }
+}
+
+/**
+ * Back to an anonymous RevenueCat id after sign-out. No-op when already anonymous (logOut
+ * rejects in that case). Never throws.
+ */
+export async function logOutPurchases(): Promise<CustomerInfo | null> {
+  const mod = ready();
+  if (!mod) return null;
+  try {
+    if (await mod.default.isAnonymous()) return null;
+    return await mod.default.logOut();
+  } catch (e) {
+    if (__DEV__) console.warn('[purchases] logOut failed', e);
+    return null;
+  }
+}
+
+/**
+ * Free-trial / intro-offer eligibility per product id (iOS StoreKit).
+ * - 'eligible' / 'ineligible': StoreKit gave a definite answer.
+ * - 'no-offer': the product has no introductory offer configured.
+ * - 'unknown': couldn't tell (Android, older iOS, or the check failed).
+ */
+export type IntroEligibilityState = 'eligible' | 'ineligible' | 'no-offer' | 'unknown';
+
+export async function fetchIntroEligibility(
+  productIds: string[]
+): Promise<Record<string, IntroEligibilityState>> {
+  const out: Record<string, IntroEligibilityState> = {};
+  for (const id of productIds) out[id] = 'unknown';
+  const mod = ready();
+  if (!mod || Platform.OS !== 'ios' || productIds.length === 0) return out;
+  try {
+    const result = await mod.default.checkTrialOrIntroductoryPriceEligibility(productIds);
+    const S = mod.INTRO_ELIGIBILITY_STATUS;
+    for (const id of productIds) {
+      const status = result[id]?.status;
+      out[id] =
+        status === S.INTRO_ELIGIBILITY_STATUS_ELIGIBLE
+          ? 'eligible'
+          : status === S.INTRO_ELIGIBILITY_STATUS_INELIGIBLE
+            ? 'ineligible'
+            : status === S.INTRO_ELIGIBILITY_STATUS_NO_INTRO_OFFER_EXISTS
+              ? 'no-offer'
+              : 'unknown';
+    }
+  } catch (e) {
+    if (__DEV__) console.warn('[purchases] intro eligibility check failed', e);
+  }
+  return out;
 }
 
 /** Subscribe to customer info changes (renewals, expirations, purchases on other devices). */

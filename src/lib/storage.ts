@@ -200,6 +200,23 @@ export async function saveDevForcePremium(on: boolean): Promise<void> {
   await AsyncStorage.setItem(DEV_FORCE_PREMIUM_KEY, on ? '1' : '0');
 }
 
+const LAST_KNOWN_PREMIUM_KEY = 'quiett.lastKnownPremium';
+
+/**
+ * Last entitlement answer RevenueCat gave definitively (true / false), or null when never known.
+ * Lets the access gate open instantly for subscribers on launch and keeps them in when offline.
+ */
+export async function loadLastKnownPremium(): Promise<boolean | null> {
+  const raw = await AsyncStorage.getItem(LAST_KNOWN_PREMIUM_KEY);
+  if (raw === '1') return true;
+  if (raw === '0') return false;
+  return null;
+}
+
+export async function saveLastKnownPremium(premium: boolean): Promise<void> {
+  await AsyncStorage.setItem(LAST_KNOWN_PREMIUM_KEY, premium ? '1' : '0');
+}
+
 export async function loadSurpriseMe(): Promise<boolean> {
   const raw = await AsyncStorage.getItem(KEYS.surpriseMe);
   return raw === '1';

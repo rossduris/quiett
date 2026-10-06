@@ -31,6 +31,7 @@ import {
 import { ParallaxHills } from '@/components/onboarding/ParallaxHills';
 import { ProgressSegments } from '@/components/onboarding/ProgressSegments';
 import { SnoozeChart } from '@/components/onboarding/SnoozeChart';
+import { TrialPaywall } from '@/components/premium/TrialPaywall';
 import {
   CheckRow,
   GoalChoices,
@@ -85,19 +86,24 @@ import {
   type AlarmPrefs,
   type Weekday,
 } from '@/lib/storage';
+import { usePremium } from '@/lib/premium-provider';
 import { useThemeColors } from '@/lib/theme-provider';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 
 /**
  * First-run flow: hook → problem → how it works → goal → wake time → alarm tone → first
  * sound → camera (rationale + prompt) → alarms + optional evening reminder (rationale +
- * prompts) → commitment, which starts the practice run or goes Home. No paywall here.
+ * prompts) → 3-day free trial paywall → commitment, which starts the practice run or goes Home.
+ * No sign-in step: sign-in is optional (Profile), and purchases work on the anonymous
+ * RevenueCat customer. The paywall step is skipped for people who already have Premium and on
+ * platforms without App Store purchases. Soft vs hard lives in PAYWALL_DISMISSABLE
+ * (constants/paywall.ts).
  */
-const STEPS = ['welcome', 'problem', 'snooze', 'how', 'goal', 'time', 'tone', 'sound', 'camera', 'alarm', 'commit'] as const;
+const STEPS = ['welcome', 'problem', 'snooze', 'how', 'goal', 'time', 'tone', 'sound', 'camera', 'alarm', 'trial', 'commit'] as const;
 type StepId = (typeof STEPS)[number];
 
 /** Steps with a full-bleed scene of their own (the background hills step aside). */
-const SCENE_STEPS: readonly StepId[] = ['welcome', 'commit'];
+const SCENE_STEPS: readonly StepId[] = ['welcome', 'trial', 'commit'];
 
 /** Preferred picks for variety (music + ambient). Only used if they're free in the catalog. */
 const FIRST_SOUND_PREFS = ['music:soft-pad', 'music:warm-drone', 'music:low-cloud', 'ambient:night_crickets', 'ambient:calm_waves'];
@@ -175,6 +181,13 @@ export default function OnboardingScreen() {
   const [busy, setBusy] = useState(false);
   const launchedPractice = useRef(false);
   const { playingId, toggle: togglePreview } = usePreviewPlayer();
+  const { isPremium, unavailableReason } = usePremium();
+  // Already Premium (restored / dev preview), or no App Store on this platform → no paywall step.
+  const skipTrial = isPremium || unavailableReason === 'unsupported-platform';
+  const skipTrialRef = useRef(skipTrial);
+  useEffect(() => {
+    skipTrialRef.current = skipTrial;
+  }, [skipTrial]);
 
   const refreshStatuses = useCallback(async () => {
     const [perm, notif, reminder] = await Promise.all([
@@ -242,10 +255,18 @@ export default function OnboardingScreen() {
     setStepIndex(Math.max(0, Math.min(STEPS.length - 1, index)));
   }, []);
   const next = useCallback(() => {
-    setStepIndex((i) => Math.min(STEPS.length - 1, i + 1));
+    setStepIndex((i) => {
+      let n = i + 1;
+      if (STEPS[n] === 'trial' && skipTrialRef.current) n += 1;
+      return Math.min(STEPS.length - 1, n);
+    });
   }, []);
   const back = useCallback(() => {
-    setStepIndex((i) => Math.max(0, i - 1));
+    setStepIndex((i) => {
+      let n = i - 1;
+      if (STEPS[n] === 'trial' && skipTrialRef.current) n -= 1;
+      return Math.max(0, n);
+    });
   }, []);
 
   // Android hardware back steps backwards instead of leaving onboarding.
@@ -670,6 +691,11 @@ export default function OnboardingScreen() {
       break;
     }
 
+    case 'trial':
+      // Rendered full-height by <TrialPaywall /> below (its own plans, CTA and links).
+      primary = { label: 'Continue', onPress: next };
+      break;
+
     case 'commit':
     default:
       content = (
@@ -734,48 +760,56 @@ export default function OnboardingScreen() {
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        <Animated.View key={step} entering={entering} style={styles.stepWrap}>
-          {content}
+      {step === 'trial' ? (
+        <Animated.View key={step} entering={entering} style={styles.trialWrap}>
+          <TrialPaywall context="onboarding" onContinue={next} />
         </Animated.View>
-      </ScrollView>
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        {note ? (
-          <View style={[styles.note, note.tone === 'ok' && styles.noteOk]} accessibilityLiveRegion="polite">
-            <Ionicons
-              name={note.tone === 'ok' ? 'checkmark-circle' : 'information-circle-outline'}
-              size={18}
-              color={note.tone === 'ok' ? colors.calm : colors.textMuted}
-            />
-            <Text style={styles.noteText}>{note.text}</Text>
-          </View>
-        ) : null}
-        <PrimaryButton
-          label={primary.label}
-          onPress={primary.onPress}
-          disabled={busy || primaryDisabled}
-          style={styles.primaryBtn}
-        />
-        {secondary ? (
-          <Pressable
-            onPress={secondary.onPress}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={secondary.label}
-            style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+      ) : (
+        <>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Text style={styles.secondaryText}>{secondary.label}</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.secondarySpacer} />
-        )}
-      </View>
+            <Animated.View key={step} entering={entering} style={styles.stepWrap}>
+              {content}
+            </Animated.View>
+          </ScrollView>
+
+          <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+            {note ? (
+              <View style={[styles.note, note.tone === 'ok' && styles.noteOk]} accessibilityLiveRegion="polite">
+                <Ionicons
+                  name={note.tone === 'ok' ? 'checkmark-circle' : 'information-circle-outline'}
+                  size={18}
+                  color={note.tone === 'ok' ? colors.calm : colors.textMuted}
+                />
+                <Text style={styles.noteText}>{note.text}</Text>
+              </View>
+            ) : null}
+            <PrimaryButton
+              label={primary.label}
+              onPress={primary.onPress}
+              disabled={busy || primaryDisabled}
+              style={styles.primaryBtn}
+            />
+            {secondary ? (
+              <Pressable
+                onPress={secondary.onPress}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityLabel={secondary.label}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+              >
+                <Text style={styles.secondaryText}>{secondary.label}</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.secondarySpacer} />
+            )}
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -798,6 +832,7 @@ function createStyles(colors: ColorTokens) {
     scroll: { flex: 1 },
     scrollContent: { flexGrow: 1, paddingHorizontal: spacing.lg },
     stepWrap: { flex: 1, justifyContent: 'center', paddingVertical: spacing.md },
+    trialWrap: { flex: 1 },
     block: { gap: spacing.lg },
     chartCaption: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: -spacing.xs },
     chartFootnote: { ...typography.caption, color: colors.textDim, textAlign: 'center', marginTop: -spacing.md },

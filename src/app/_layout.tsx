@@ -4,8 +4,9 @@ import { Stack, ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } fro
 import { StatusBar } from 'expo-status-bar';
 import { AlarmHandoffGate } from '@/components/AlarmHandoffGate';
 import { ThemeProvider, useTheme } from '@/lib/theme-provider';
-import { PremiumProvider } from '@/lib/premium-provider';
+import { PremiumProvider, PurchasesUserSync } from '@/lib/premium-provider';
 import { AuthProvider } from '@/lib/auth-provider';
+import { AlarmAccessSync } from '@/lib/access-gate';
 import { syncEveningReminder } from '@/lib/notifications';
 import { warnIfLegalPlaceholders } from '@/constants/legal';
 
@@ -80,10 +81,8 @@ function RootStack() {
               animation: 'fade',
             }}
           />
-          <Stack.Screen
-            name="paywall"
-            options={{ headerShown: false, presentation: 'modal', animation: 'default' }}
-          />
+          {/* Slides in like Settings (back arrow + centered title, see paywall.tsx). */}
+          <Stack.Screen name="paywall" options={{ headerShown: false }} />
           <Stack.Screen
             name="emergency"
             options={{
@@ -103,6 +102,10 @@ export default function RootLayout() {
       {/* RevenueCat initializes once here; falls back to "unavailable" on builds without it. */}
       <PremiumProvider>
         <AuthProvider>
+          {/* Signed in → RevenueCat logIn with the Supabase user id; otherwise anonymous. */}
+          <PurchasesUserSync />
+          {/* Hard paywall: no alarm (re)scheduling for a user the gate blocks for sure. */}
+          <AlarmAccessSync />
           <RootStack />
         </AuthProvider>
       </PremiumProvider>
