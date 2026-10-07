@@ -43,7 +43,7 @@ import {
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { MORNING_GOALS, SNOOZE_CHART_COPY, morningGoalById, type MorningGoalId } from '@/constants/onboarding';
-import { freeUnlockTracks, type UnlockTrack } from '@/constants/unlock-tracks';
+import { UNLOCK_TRACKS, type UnlockTrack } from '@/constants/unlock-tracks';
 import { DEFAULT_ALARM_SOUND_ID, alarmSoundById, meditationSoundById } from '@/constants/sounds';
 import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import {
@@ -105,16 +105,15 @@ type StepId = (typeof STEPS)[number];
 /** Steps with a full-bleed scene of their own (the background hills step aside). */
 const SCENE_STEPS: readonly StepId[] = ['welcome', 'trial', 'commit'];
 
-/** Preferred picks for variety (music + ambient). Only used if they're free in the catalog. */
+/** Good first picks for variety (music + ambient), shown at the top. Soft Pad is the default. */
 const FIRST_SOUND_PREFS = ['music:soft-pad', 'music:warm-drone', 'music:low-cloud', 'ambient:night_crickets', 'ambient:calm_waves'];
-const FIRST_SOUND_COUNT = 5;
 
-/** Free, non-guided tracks for the first-sound step — never Premium, whatever the catalog says. */
+/** Every non-guided track for the first-sound step: the preferred picks first, then the rest in shelf order. */
 const FIRST_SOUNDS: readonly UnlockTrack[] = (() => {
-  const free = freeUnlockTracks().filter((t) => t.kind !== 'guided');
-  const preferred = FIRST_SOUND_PREFS.map((id) => free.find((t) => t.id === id)).filter((t): t is UnlockTrack => t != null);
-  const rest = free.filter((t) => !preferred.includes(t));
-  return [...preferred, ...rest].slice(0, FIRST_SOUND_COUNT);
+  const all = UNLOCK_TRACKS.filter((t) => t.kind !== 'guided');
+  const preferred = FIRST_SOUND_PREFS.map((id) => all.find((t) => t.id === id)).filter((t): t is UnlockTrack => t != null);
+  const rest = all.filter((t) => !preferred.includes(t));
+  return [...preferred, ...rest];
 })();
 
 function parseTime(hhmm: string): Date {
@@ -617,7 +616,7 @@ export default function OnboardingScreen() {
             body="It plays during your two calm minutes. Tap one to hear it."
           />
           <SoundChoices tracks={FIRST_SOUNDS} selected={trackId} playingId={playingId} onSelect={selectSound} />
-          <Text style={[styles.caption, styles.textCenter]}>More sounds live in Library.</Text>
+          <Text style={[styles.caption, styles.textCenter]}>You can change it anytime in Library.</Text>
         </View>
       );
       primary = { label: 'Continue', onPress: () => void saveSoundAndContinue() };

@@ -44,14 +44,13 @@ export default function LibraryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <EnterStagger index={0}>
-          <LibraryHeader isPremium={lib.isPremium} onOpenPaywall={lib.openPaywall} />
+          <LibraryHeader />
         </EnterStagger>
 
         {lib.ready ? (
         <Animated.View entering={enterFade(reduce, 60)}>
         <FeaturedCard
           track={lib.selectedTrack}
-          locked={lib.isLocked(lib.selectedTrack)}
           previewing={lib.playingId === previewIds.track(lib.selectedTrack.id)}
           scenes={scenes}
           surpriseMe={lib.surpriseMe}
@@ -75,7 +74,6 @@ export default function LibraryScreen() {
           <TrackShelf
             key={kind}
             kind={kind}
-            isPremium={lib.isPremium}
             selectedId={lib.selectedId}
             playingId={lib.playingId}
             scenes={scenes}

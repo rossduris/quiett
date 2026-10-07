@@ -64,7 +64,7 @@ function CoverGalleryScreen() {
   const forced = mode === 'theme' ? undefined : mode;
 
   const trackItems = useMemo(
-    () => UNLOCK_TRACKS.map((t) => ({ key: t.id, label: t.title, spec: sceneSpecFor(t.id), locked: t.locked })),
+    () => UNLOCK_TRACKS.map((t) => ({ key: t.id, label: t.title, spec: sceneSpecFor(t.id) })),
     [],
   );
   const alarmItems = useMemo(
@@ -100,7 +100,6 @@ function CoverGalleryScreen() {
               <SceneCover scene={it.spec} size={cell} radius={radii.md} mode={forced} />
               <Text style={styles.label} numberOfLines={1}>
                 {it.label}
-                {it.locked ? ' · Premium' : ''}
               </Text>
             </View>
           ))}

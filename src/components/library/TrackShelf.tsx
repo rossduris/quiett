@@ -5,7 +5,6 @@ import type { ColorTokens } from '@/constants/themes';
 import {
   kindLabel,
   kindSectionHint,
-  orderTracksForUser,
   unlockTracksByKind,
   type UnlockTrack,
   type UnlockTrackKind,
@@ -17,7 +16,6 @@ import { CARD_GAP, CARD_W } from './library-styles';
 
 type Props = {
   kind: UnlockTrackKind;
-  isPremium: boolean;
   selectedId: string;
   playingId: string | null;
   scenes: boolean;
@@ -31,17 +29,16 @@ const keyExtractor = (t: UnlockTrack) => t.id;
 const getItemLayout = (_: unknown, index: number) => ({ length: CARD_W, offset: spacing.lg + STRIDE * index, index });
 
 /** One horizontal shelf (virtualised: only the cards near the viewport mount their SVG covers). */
-export function TrackShelf({ kind, isPremium, selectedId, playingId, scenes, onSelect, onPreview }: Props) {
+export function TrackShelf({ kind, selectedId, playingId, scenes, onSelect, onPreview }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const cardStyles = useMemo(() => createShelfCardStyles(colors), [colors]);
-  const tracks = useMemo(() => orderTracksForUser(unlockTracksByKind(kind), isPremium), [kind, isPremium]);
+  const tracks = useMemo(() => unlockTracksByKind(kind), [kind]);
 
   const renderItem = useCallback<ListRenderItem<UnlockTrack>>(
     ({ item }) => (
       <ShelfCard
         track={item}
-        locked={item.locked && !isPremium}
         selected={item.id === selectedId}
         previewing={playingId === previewIds.track(item.id)}
         scenes={scenes}
@@ -51,7 +48,7 @@ export function TrackShelf({ kind, isPremium, selectedId, playingId, scenes, onS
         onPreview={onPreview}
       />
     ),
-    [isPremium, selectedId, playingId, scenes, colors, cardStyles, onSelect, onPreview],
+    [selectedId, playingId, scenes, colors, cardStyles, onSelect, onPreview],
   );
 
   return (

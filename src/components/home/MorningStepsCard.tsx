@@ -20,7 +20,6 @@ const ART = 48;
 type Props = {
   alarmSound: SoundOption;
   unlockTrack: UnlockTrack;
-  isPremium: boolean;
   surpriseMe: boolean;
   /** Bumps when a pick turned Surprise me off. */
   surpriseOffTick: number;
@@ -34,7 +33,6 @@ type Props = {
 export function MorningStepsCard({
   alarmSound,
   unlockTrack,
-  isPremium,
   surpriseMe,
   surpriseOffTick,
   coverStyle,
@@ -47,7 +45,7 @@ export function MorningStepsCard({
   const preview = usePreviewPlayer();
 
   const alarmUrl = alarmSound.url;
-  const trackUrl = surpriseMe || (unlockTrack.locked && !isPremium) ? null : meditationSoundById(unlockTrack.playbackSoundId).url;
+  const trackUrl = surpriseMe ? null : meditationSoundById(unlockTrack.playbackSoundId).url;
   const alarmPreviewId = previewIds.alarm(alarmSound.id);
   const trackPreviewId = previewIds.track(unlockTrack.id);
   const kind = kindLabel(unlockTrack.kind);

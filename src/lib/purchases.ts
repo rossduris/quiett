@@ -14,6 +14,7 @@
  *   so the paywall can never show fake prices.
  */
 import { Linking, NativeModules, Platform } from 'react-native';
+import { REVENUECAT_ENABLED } from '@/lib/dev-flags';
 import type {
   CustomerInfo,
   PurchasesEntitlementInfo,
@@ -31,6 +32,7 @@ export const APP_STORE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subsc
 
 export type PurchasesUnavailableReason =
   | 'unsupported-platform'
+  | 'disabled'
   | 'no-native-module'
   | 'no-api-key'
   | 'configure-failed';
@@ -55,6 +57,7 @@ function nativeModulePresent(): boolean {
 function loadSdk(): PurchasesSdk | null {
   if (sdk !== undefined) return sdk;
   sdk = null;
+  if (!REVENUECAT_ENABLED) return null;
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;
   // Current dev builds without the native module stop here: the JS package is never required,
   // so nothing can throw or red-box.
@@ -82,6 +85,10 @@ function readApiKey(): string | null {
 /** Configure RevenueCat once. Safe to call many times; returns the cached status. */
 export function initPurchases(): PurchasesStatus {
   if (status) return status;
+  if (!REVENUECAT_ENABLED) {
+    status = { available: false, reason: 'disabled' };
+    return status;
+  }
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
     status = { available: false, reason: 'unsupported-platform' };
     return status;
@@ -124,6 +131,8 @@ function ready(): PurchasesSdk | null {
 /** Short, dev-facing explanation used in __DEV__ hints only. */
 export function describeUnavailableReason(reason: PurchasesUnavailableReason): string {
   switch (reason) {
+    case 'disabled':
+      return 'RevenueCat is turned off (REVENUECAT_ENABLED = false in dev-flags.ts).';
     case 'unsupported-platform':
       return 'This platform has no App Store purchases.';
     case 'no-native-module':

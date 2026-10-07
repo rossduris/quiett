@@ -53,16 +53,16 @@ In-app purchases go through RevenueCat (`react-native-purchases`), wrapped in
 `src/lib/purchases.ts` and exposed via `usePremium()` (`src/lib/premium-provider.tsx`).
 
 - **Safe on any build:** the SDK is only required when `NativeModules.RNPurchases` exists and an
-  API key is set. Older dev builds, Expo Go and web run in "purchases unavailable" mode (free
-  tier, paywall shows "Subscriptions aren't available yet", no prices).
+  API key is set. Older dev builds, Expo Go and web run in "purchases unavailable" mode (the
+  paywall shows "Subscriptions aren't available yet", no prices).
 - **Keys:** copy `.env.example` → `.env.local` and set `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (public
   `appl_…` key). Restart Metro with `npx expo start -c` after changing it.
 - **Entitlement:** `premium`. The paywall renders the **current Offering** — no product ids in code.
 - **Suggested App Store product ids:** `quiett_premium_monthly`, `quiett_premium_annual`
   (attach both to the `premium` entitlement; add them to the current offering as the
   `$rc_monthly` / `$rc_annual` packages).
-- **What Premium unlocks today:** the premium guided tracks (`locked: true` in
-  `src/constants/guides.ts`) in Library, the morning track picker and Surprise me rotation.
+- **What Premium unlocks:** the whole app (hard paywall, see `src/lib/access-gate.ts`). There is
+  no per-sound split: everyone past the access gate can pick and play every sound.
 - **Dev preview:** Settings → dev-only card → "Force premium (dev)" (ignored in release builds).
 - **Native rebuild required** after installing the package: `npx expo prebuild --clean` (or
   `cd ios && pod install`), then `npx expo run:ios --device`.

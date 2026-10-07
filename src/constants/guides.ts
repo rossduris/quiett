@@ -2,8 +2,6 @@ export type GuideTrack = {
   id: string;
   title: string;
   durationLabel: string;
-  /** Legacy premium flag — guided voices are free now (Premium gates the sound library). */
-  locked: boolean;
   blurb: string;
   /** Short mood tag shown on the card. */
   mood: string;
@@ -18,7 +16,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'first-light',
     title: 'First Light',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Gentle',
     blurb: 'Soft breath to meet the morning without rush.',
     accent: '#3DCFB0',
@@ -29,7 +26,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'open-eyes',
     title: 'Still Lake',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Still',
     blurb: 'Let the mind settle, smooth as still water.',
     accent: '#A8C5D4',
@@ -39,7 +35,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'still-horizon',
     title: 'Still Horizon',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Steady',
     blurb: 'Steady voice guiding a calm start.',
     accent: '#5B8CFF',
@@ -49,7 +44,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'warm-window',
     title: 'Warm Window',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Soft',
     blurb: 'Light tone for mornings that feel heavy.',
     accent: '#F0B429',
@@ -60,7 +54,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'quiet-rise',
     title: 'Drifting Up',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Light',
     blurb: 'Rise slowly and let the heaviness fall away.',
     accent: '#9B8CFF',
@@ -71,7 +64,6 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
     id: 'clear-morning',
     title: 'Mountain Bloom',
     durationLabel: '2 min',
-    locked: false,
     mood: 'Grounded',
     blurb: 'Steady as the peaks, soft as the flowers.',
     accent: '#3DCFB0',
@@ -79,10 +71,7 @@ export const MORNING_GUIDE_TRACKS: readonly GuideTrack[] = [
   },
 ] as const;
 
-/** Featured free morning guide on Library. */
+/** Featured morning guide on Library. */
 export const MORNING_PICK_GUIDE = MORNING_GUIDE_TRACKS[0];
 /** @deprecated use MORNING_PICK_GUIDE */
 export const TONIGHTS_GUIDE_PREVIEW = MORNING_PICK_GUIDE;
-
-export const FREE_GUIDE_TRACKS = MORNING_GUIDE_TRACKS.filter((t) => !t.locked);
-export const VOICE_GUIDE_TRACKS = MORNING_GUIDE_TRACKS.filter((t) => t.locked);

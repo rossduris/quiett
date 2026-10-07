@@ -145,36 +145,15 @@ export async function loadUnlockTrackId(): Promise<string> {
   return (await loadStoredUnlockTrackId()) ?? DEFAULT_UNLOCK_TRACK_ID;
 }
 
-/** Persist next-morning unlock selection and keep session calm audio in sync. */
 /**
- * Saves the track that plays after the camera check. Premium tracks are only accepted when
- * the caller passes `{ premium: true }` (from usePremium()); otherwise the current selection
- * is kept, so a free user can never end up with a premium track.
+ * Saves the track that plays after the camera check and keeps session calm audio in sync.
+ * Every track is open (hard paywall: everyone past the access gate gets the whole library).
  */
-export async function saveUnlockTrackId(
-  id: string,
-  opts?: { premium?: boolean }
-): Promise<string> {
+export async function saveUnlockTrackId(id: string): Promise<string> {
   const track = unlockTrackById(id);
-  if (track.locked && !opts?.premium) return loadUnlockTrackId();
   await AsyncStorage.setItem(KEYS.unlockTrackId, track.id);
   await saveMeditationSoundId(track.playbackSoundId);
   return track.id;
-}
-
-/**
- * If Premium is not active (never bought, lapsed, refunded) and a premium track is still
- * stored, fall back quietly to the default free track. Returns true when it reset something.
- */
-export async function enforceFreeUnlockTrack(): Promise<boolean> {
-  const raw = await AsyncStorage.getItem(KEYS.unlockTrackId);
-  if (raw == null) return false;
-  const track = unlockTrackById(raw);
-  if (!track.locked) return false;
-  const fallback = unlockTrackById(DEFAULT_UNLOCK_TRACK_ID);
-  await AsyncStorage.setItem(KEYS.unlockTrackId, fallback.id);
-  await saveMeditationSoundId(fallback.playbackSoundId);
-  return true;
 }
 
 /** Voice layer over the backtrack: a guide script id, or 'none' (default). */
@@ -215,6 +194,18 @@ export async function loadLastKnownPremium(): Promise<boolean | null> {
 
 export async function saveLastKnownPremium(premium: boolean): Promise<void> {
   await AsyncStorage.setItem(LAST_KNOWN_PREMIUM_KEY, premium ? '1' : '0');
+}
+
+/**
+ * After account deletion: forget local caches tied to the deleted account (legacy stub account,
+ * last known Premium answer). Alarm, streak and settings stay on the phone. Never throws.
+ */
+export async function clearAccountLinkedCache(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([KEYS.account, LAST_KNOWN_PREMIUM_KEY]);
+  } catch {
+    // Best effort: the next RevenueCat answer overwrites lastKnownPremium anyway.
+  }
 }
 
 export async function loadSurpriseMe(): Promise<boolean> {

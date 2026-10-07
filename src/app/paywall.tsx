@@ -6,7 +6,7 @@ import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 
 /**
- * Quiett Premium, opened later from Profile, Settings, Subscription or a locked Library sound.
+ * Quiett Premium, opened later from Profile, Settings or Subscription.
  * Same paywall as the last onboarding step, under the Settings-style header (back + title).
  */
 export default function PaywallScreen() {

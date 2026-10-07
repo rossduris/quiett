@@ -15,7 +15,6 @@ import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
 import { rollSurpriseTrack } from '@/lib/surprise-session';
-import { usePremium } from '@/lib/premium-provider';
 import {
   crossfadeToMeditation,
   handoffBacktrackToSuccess,
@@ -129,7 +128,6 @@ export default function SessionScreen() {
     setPhase((prev) => reduceSession(prev, event));
   };
 
-  const { isPremium, loading: premiumLoading } = usePremium();
   const [surpriseOn, setSurpriseOn] = useState(false);
   const [prefsReady, setPrefsReady] = useState(false);
   const surpriseRolled = useRef(false);
@@ -348,11 +346,11 @@ export default function SessionScreen() {
       confirmStart.current = null;
     }
 
-    if (phase === 'meditating' && durationReady && prefsReady && !(surpriseOn && premiumLoading)) {
+    if (phase === 'meditating' && durationReady && prefsReady) {
       void (async () => {
         if (surpriseOn && !surpriseRolled.current) {
           surpriseRolled.current = true;
-          const id = await rollSurpriseTrack(isPremium);
+          const id = await rollSurpriseTrack();
           setTrackId(id);
         }
         await crossfadeToMeditation();
@@ -374,7 +372,7 @@ export default function SessionScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [phase, durationMs, durationReady, prefsReady, surpriseOn, premiumLoading, isPremium]);
+  }, [phase, durationMs, durationReady, prefsReady, surpriseOn]);
 
   useEffect(() => {
     // Resolve every wake flag BEFORE navigating. AlarmHandoffGate re-runs on pathname

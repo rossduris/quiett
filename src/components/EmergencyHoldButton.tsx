@@ -1,66 +1,149 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { radii, spacing } from '@/constants/theme';
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
+import { spacing } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 
 const HOLD_MS = 2000;
+/** Keep the full ring on screen briefly so it reads as complete. */
+const COMPLETE_PAUSE_MS = 150;
+const DRAIN_MS = 250;
+
+const SIZE = 80;
+const STROKE = 4;
+const RING = SIZE + STROKE * 2 + 6;
+const R = (RING - STROKE) / 2;
+const CIRC = 2 * Math.PI * R;
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type Props = { onConfirm: () => void };
 
 export function EmergencyHoldButton({ onConfirm }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [progress, setProgress] = useState(0);
   const [holding, setHolding] = useState(false);
-  const startRef = useRef<number | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const progress = useSharedValue(0);
   const doneRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmRef = useRef(onConfirm);
+  useEffect(() => {
+    confirmRef.current = onConfirm;
+  }, [onConfirm]);
 
-  const clear = () => {
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    startRef.current = null;
-    doneRef.current = false;
+  useEffect(() => {
+    let alive = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((v) => alive && setReduceMotion(v));
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => {
+      alive = false;
+      sub.remove();
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const complete = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Ring is at a full 360° now; hold it briefly, then run the exact same confirm.
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      confirmRef.current();
+    }, COMPLETE_PAUSE_MS);
+  };
+
+  const confirmNow = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    confirmRef.current();
+  };
+
+  const start = () => {
+    if (doneRef.current) return;
+    setHolding(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cancelAnimation(progress);
+    // Ring and completion share one timer: completion fires only when progress hits 1.
+    const remaining = HOLD_MS * (1 - progress.value);
+    progress.value = withTiming(1, { duration: remaining, easing: Easing.linear }, (finished) => {
+      if (finished) runOnJS(complete)();
+    });
+  };
+
+  const release = () => {
+    if (doneRef.current) return;
     setHolding(false);
-    setProgress(0);
+    cancelAnimation(progress);
+    progress.value = withTiming(0, { duration: DRAIN_MS, easing: Easing.out(Easing.quad) });
   };
 
-  const tick = () => {
-    if (startRef.current == null) return;
-    const p = Math.min(1, (Date.now() - startRef.current) / HOLD_MS);
-    setProgress(p);
-    if (p >= 1 && !doneRef.current) {
-      doneRef.current = true;
-      onConfirm();
-      clear();
-      return;
-    }
-    rafRef.current = requestAnimationFrame(tick);
-  };
+  const ringProps = useAnimatedProps(() => ({
+    strokeDashoffset: CIRC * (1 - progress.value),
+  }));
 
-  useEffect(() => () => clear(), []);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: reduceMotion ? 1 : 1 - 0.04 * Math.min(1, progress.value * 4) }],
+  }));
 
   return (
     <View style={styles.wrap}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Hold to end early"
-        accessibilityHint="Hold for two seconds. For emergencies only — this resets your streak."
-        onPressIn={() => {
-          doneRef.current = false;
-          startRef.current = Date.now();
-          setHolding(true);
-          rafRef.current = requestAnimationFrame(tick);
+        accessibilityLabel="End early"
+        accessibilityHint="Press and hold the button for two seconds. For emergencies only, this resets your streak. Or use the actions menu to end early now."
+        accessibilityActions={[{ name: 'activate', label: 'End early' }, { name: 'longpress', label: 'End early' }]}
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === 'activate' || e.nativeEvent.actionName === 'longpress') {
+            confirmNow();
+          }
         }}
-        onPressOut={clear}
-        style={[styles.btn, holding && styles.btnActive]}
+        onPressIn={start}
+        onPressOut={release}
+        hitSlop={8}
+        style={styles.hit}
       >
-        <View style={[styles.fill, { width: `${progress * 100}%` }]} />
-        <Text style={[styles.label, holding && styles.labelActive]}>
-          {holding ? 'Keep holding\u2026' : 'Hold to end early'}
-        </Text>
+        <Svg width={RING} height={RING} style={StyleSheet.absoluteFill}>
+          <Circle
+            cx={RING / 2}
+            cy={RING / 2}
+            r={R}
+            stroke={colors.sessionHairline}
+            strokeWidth={STROKE}
+            fill="none"
+          />
+          <AnimatedCircle
+            cx={RING / 2}
+            cy={RING / 2}
+            r={R}
+            stroke={colors.sessionGlow}
+            strokeWidth={STROKE}
+            strokeLinecap="round"
+            fill="none"
+            strokeDasharray={`${CIRC} ${CIRC}`}
+            animatedProps={ringProps}
+            transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
+          />
+        </Svg>
+        <Animated.View style={[styles.btn, holding && styles.btnActive, pressStyle]}>
+          <Text style={[styles.inner, holding && styles.innerActive]} numberOfLines={2}>
+            {holding ? 'Keep\nholding' : 'Press\n& hold'}
+          </Text>
+        </Animated.View>
       </Pressable>
+      <Text style={styles.label}>Press and hold to end early</Text>
       <Text style={styles.hint}>For emergencies · resets your streak</Text>
     </View>
   );
@@ -68,35 +151,34 @@ export function EmergencyHoldButton({ onConfirm }: Props) {
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-    wrap: { alignItems: 'center', gap: spacing.sm, width: '100%' },
+    wrap: { alignItems: 'center', gap: spacing.xs, width: '100%' },
+    hit: {
+      width: RING,
+      height: RING,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
+    },
     btn: {
-      overflow: 'hidden',
-      borderRadius: radii.full,
+      width: SIZE,
+      height: SIZE,
+      borderRadius: SIZE / 2,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.sessionHairline,
-      paddingVertical: 14,
-      paddingHorizontal: spacing.lg,
-      minWidth: 220,
-      width: '72%',
-      maxWidth: 320,
-      alignItems: 'center',
       backgroundColor: colors.sessionChipBg,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    btnActive: { borderColor: colors.sessionGlow },
-    fill: {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      bottom: 0,
-      backgroundColor: colors.sessionGlowSoft,
-    },
-    label: {
+    btnActive: { borderColor: colors.sessionGlow, backgroundColor: colors.sessionGlowSoft },
+    inner: {
       color: colors.sessionTextMuted,
-      fontWeight: '500',
-      fontSize: 15,
-      letterSpacing: 0.2,
+      fontWeight: '600',
+      fontSize: 13,
+      lineHeight: 16,
+      textAlign: 'center',
     },
-    labelActive: { color: colors.sessionText },
-    hint: { color: colors.sessionTextMuted, opacity: 0.75, fontSize: 12, letterSpacing: 0.2 },
+    innerActive: { color: colors.sessionText },
+    label: { color: colors.sessionText, fontWeight: '500', fontSize: 14, letterSpacing: 0.2 },
+    hint: { color: colors.sessionTextMuted, fontSize: 12, letterSpacing: 0.2 },
   });
 }

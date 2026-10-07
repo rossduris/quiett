@@ -4,7 +4,7 @@ import { sceneContentFor, sceneOptionsFor } from '@/components/SceneCover';
 import { CARD_W, SCENE_ART_H } from '@/components/library/library-styles';
 import { sceneSpecFor } from '@/constants/scene-covers';
 import type { ColorTokens } from '@/constants/themes';
-import { orderTracksForUser, unlockTracksByKind, visibleKinds } from '@/constants/unlock-tracks';
+import { unlockTracksByKind, visibleKinds } from '@/constants/unlock-tracks';
 import { buildSceneCached } from '@/lib/scene-gen';
 
 /** Wait after Home settles before warming, then build a few scenes per slice. */
@@ -20,19 +20,19 @@ let warmedKey: string | null = null;
  * Background pre-warm of the Library covers: builds the scene models (and their SVG elements)
  * the shelves and track picker will ask for, in shelf order, a few at a time once Home is idle.
  * Nothing is mounted — this only fills the scene / element caches so the first Library open does
- * no generation work. Re-runs when the theme, Premium or the guided shelf changes.
+ * no generation work. Re-runs when the theme or the guided shelf changes.
  */
-export function usePrewarmLibraryCovers(opts: { colors: ColorTokens; isPremium: boolean; guidedOn: boolean; enabled: boolean }) {
-  const { colors, isPremium, guidedOn, enabled } = opts;
+export function usePrewarmLibraryCovers(opts: { colors: ColorTokens; guidedOn: boolean; enabled: boolean }) {
+  const { colors, guidedOn, enabled } = opts;
   useEffect(() => {
     if (!enabled) return;
-    const key = `${colors.bg}|${colors.accent}|${colors.calm}|${isPremium}|${guidedOn}`;
+    const key = `${colors.bg}|${colors.accent}|${colors.calm}|${guidedOn}`;
     if (warmedKey === key) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     // Shelf order, interleaved so the first cards of every shelf warm first.
-    const shelves = visibleKinds(guidedOn).map((k) => orderTracksForUser(unlockTracksByKind(k), isPremium));
+    const shelves = visibleKinds(guidedOn).map((k) => unlockTracksByKind(k));
     const ids: string[] = [];
     for (let i = 0; i < Math.max(0, ...shelves.map((s) => s.length)); i++) {
       for (const s of shelves) if (s[i]) ids.push(s[i]!.id);
@@ -56,5 +56,5 @@ export function usePrewarmLibraryCovers(opts: { colors: ColorTokens; isPremium: 
       task.cancel();
       if (timer) clearTimeout(timer);
     };
-  }, [colors, isPremium, guidedOn, enabled]);
+  }, [colors, guidedOn, enabled]);
 }

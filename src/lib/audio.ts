@@ -744,7 +744,7 @@ export function togglePreview(id: string, url: string | number, kind: PreviewKin
 /**
  * The user selected a different item. If a preview is playing, it follows the selection:
  * crossfade to the new item (its halo / animated cover light up), or stop when the item
- * can't be previewed (locked premium → pass `url` null). Nothing playing → stays silent.
+ * can't be previewed (pass `url` null). Nothing playing → stays silent.
  */
 export function followPreviewSelection(id: string, url: string | number | null | undefined, kind: PreviewKind) {
   if (previewPlayingId === null || previewPlayingId === id) return;

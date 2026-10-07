@@ -10,7 +10,7 @@ type Props = {
    * placeholder of the same size, so the layout doesn't change.
    */
   renderRow: (slot: ReactNode) => ReactNode;
-  /** The preview button (omit to render the row alone, e.g. locked tracks). */
+  /** The preview button (omit to render the row alone). */
   button?: PlayButtonProps | null;
   /** Layout style for the wrapper (only needed if the row relied on its parent, e.g. flex). */
   style?: StyleProp<ViewStyle>;

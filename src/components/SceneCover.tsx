@@ -13,7 +13,6 @@ import Svg, {
   Rect,
   Stop,
 } from 'react-native-svg';
-import { Ionicons } from '@expo/vector-icons';
 import {
   buildSceneCached,
   type GradStop,
@@ -282,36 +281,6 @@ function AnimatedLayers({
 }
 
 export const SceneCover = memo(SceneCoverBase);
-
-/** Small frosted lock badge that stays readable over any scene. */
-export function SceneLockBadge({ size = 22, style }: { size?: number; style?: StyleProp<ViewStyle> }) {
-  const colors = useThemeColors();
-  const badge = useMemo(() => createBadgeStyles(colors, size), [colors, size]);
-  return (
-    <View style={[badge.badge, style]}>
-      <Ionicons name="lock-closed" size={Math.round(size * 0.52)} color={colors.text} />
-    </View>
-  );
-}
-
-function createBadgeStyles(colors: ColorTokens, size: number) {
-  return StyleSheet.create({
-    badge: {
-      width: size,
-      height: size,
-      borderRadius: size / 2,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.frostBg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.frostBorder,
-      shadowColor: '#000',
-      shadowOpacity: 0.12,
-      shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 },
-    },
-  });
-}
 
 const styles = StyleSheet.create({
   frame: { overflow: 'hidden' },

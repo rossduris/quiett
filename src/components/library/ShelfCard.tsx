@@ -2,7 +2,6 @@ import { memo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LibraryTrackMark } from '@/components/LibraryTrackMark';
-import { SceneLockBadge } from '@/components/SceneCover';
 import { PreviewOverlay } from '@/components/PreviewOverlay';
 import { TrackCover } from '@/components/TrackCover';
 import { radii, spacing, typography } from '@/constants/theme';
@@ -14,8 +13,6 @@ import { hapticSelect } from '@/lib/haptics';
 
 type Props = {
   track: UnlockTrack;
-  /** Premium track and the user is not Premium: tapping opens the paywall, no preview. */
-  locked: boolean;
   selected: boolean;
   previewing: boolean;
   /** Generative scene covers (release) vs the dev 'classic' single-mark tiles. */
@@ -26,22 +23,20 @@ type Props = {
   onPreview: (track: UnlockTrack) => void;
 };
 
-function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, styles, onSelect, onPreview }: Props) {
-  const preview = locked ? undefined : () => onPreview(track);
-  const status = locked ? ', Premium. Opens Quiett Premium' : selected ? ', selected for your next morning' : '';
+function ShelfCardBase({ track, selected, previewing, scenes, colors, styles, onSelect, onPreview }: Props) {
+  const preview = () => onPreview(track);
+  const status = selected ? ', selected for your next morning' : '';
 
-  const button = preview
-    ? {
-        playing: previewing,
-        onPress: preview,
-        colors,
-        size: 32,
-        iconSize: 14,
-        style: styles.fab,
-        activeStyle: styles.fabActive,
-        accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${track.title}`,
-      }
-    : null;
+  const button = {
+    playing: previewing,
+    onPress: preview,
+    colors,
+    size: 32,
+    iconSize: 14,
+    style: styles.fab,
+    activeStyle: styles.fabActive,
+    accessibilityLabel: `${previewing ? 'Stop' : 'Play'} preview of ${track.title}`,
+  };
 
   const renderCard = (slot: ReactNode) => {
   const badges = (
@@ -50,11 +45,6 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
         <View style={styles.pill}>
           <Ionicons name="checkmark" size={11} color={colors.calm} />
           <Text style={[styles.pillText, { color: colors.calm }]}>Selected</Text>
-        </View>
-      ) : locked ? (
-        <View style={styles.pill}>
-          <Ionicons name="sparkles" size={11} color={colors.calm} />
-          <Text style={[styles.pillText, { color: colors.text }]}>Premium</Text>
         </View>
       ) : (
         <View />
@@ -89,7 +79,7 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
       {scenes ? (
         <View style={styles.sceneCard}>
           <View style={styles.art}>
-            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} locked={locked} animate={previewing} defer />
+            <TrackCover trackId={track.id} size={CARD_W - 2} height={SCENE_ART_H} animate={previewing} defer />
             <View style={styles.overlay}>{badges}</View>
           </View>
           <View style={styles.sceneBottom}>{text}</View>
@@ -99,7 +89,6 @@ function ShelfCardBase({ track, locked, selected, previewing, scenes, colors, st
           {badges}
           <View style={styles.markWrap}>
             <LibraryTrackMark trackId={track.id} kind={track.kind} color={track.accent} size={72} />
-            {locked ? <SceneLockBadge size={22} style={styles.classicLock} /> : null}
           </View>
           <View style={styles.classicBottom}>{text}</View>
         </View>
@@ -133,7 +122,6 @@ export function createShelfCardStyles(colors: ColorTokens) {
     sceneBottom: { flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs, justifyContent: 'center' },
     classicCard: { flex: 1, justifyContent: 'space-between' },
     markWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm },
-    classicLock: { position: 'absolute', right: spacing.sm, bottom: 0 },
     classicBottom: { padding: spacing.md, gap: spacing.xs },
     top: {
       flexDirection: 'row',

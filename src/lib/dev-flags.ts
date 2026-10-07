@@ -25,6 +25,14 @@ export const GOOGLE_SIGN_IN_ENABLED = false;
  * re-adding.
  */
 export const SIGN_IN_REQUIRED = false;
+/**
+ * TODO(before release): flip back to true once the App Store Connect subscriptions exist and the
+ * RevenueCat store keys are added.
+ * false = RevenueCat is fully OFF: Purchases.configure and every react-native-purchases call are
+ * skipped (src/lib/purchases.ts), and everyone is treated as Premium (premium-provider), so the
+ * paywall/access gate never block, onboarding skips the trial step and alarms always schedule.
+ */
+export const REVENUECAT_ENABLED = false;
 
 export type DevFlag = 'showGuided' | 'voiceGuides' | 'accountUi';
 

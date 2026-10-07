@@ -8,6 +8,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
+import { REVENUECAT_ENABLED } from '@/lib/dev-flags';
 import { AppState } from 'react-native';
 import {
   addCustomerInfoListener,
@@ -31,7 +32,6 @@ import {
 } from '@/lib/purchases';
 import { useAuth } from '@/lib/auth-provider';
 import {
-  enforceFreeUnlockTrack,
   loadDevForcePremium,
   loadLastKnownPremium,
   saveDevForcePremium,
@@ -79,8 +79,6 @@ type PremiumContextValue = {
    * account), or null = signed out → anonymous RevenueCat customer. Sign-in is optional.
    */
   syncUser: (userId: string | null) => Promise<void>;
-  /** Bumps when a lapsed/free user's premium track was reset to the default free track. */
-  trackResetVersion: number;
   /** __DEV__ only: preview the unlocked state without a purchase. */
   devForcePremium: boolean;
   setDevForcePremium: (on: boolean) => Promise<void>;
@@ -106,7 +104,6 @@ export function PremiumProvider({ children }: PropsWithChildren) {
   const [infoSettled, setInfoSettled] = useState(!available);
   /** True only when we have a real answer about the entitlement (not a network error). */
   const [definitive, setDefinitive] = useState(!available);
-  const [trackResetVersion, setTrackResetVersion] = useState(0);
   const [purchasesUserId, setPurchasesUserId] = useState<string | null | undefined>(undefined);
   const [lastKnownPremium, setLastKnownPremium] = useState<boolean | null>(null);
   const alive = useRef(true);
@@ -148,6 +145,7 @@ export function PremiumProvider({ children }: PropsWithChildren) {
   const syncUser = useCallback(
     async (userId: string | null) => {
       if (!available || syncedUser.current === userId) return;
+      const previousUser = syncedUser.current;
       syncedUser.current = userId;
       // Signed out (including at launch): make sure RevenueCat is anonymous, so Premium comes from
       // the anonymous customer. logOutPurchases is a no-op returning null when it already is;
@@ -165,7 +163,10 @@ export function PremiumProvider({ children }: PropsWithChildren) {
       }
       setPurchasesUserId(userId);
       // Already anonymous with nothing to switch: the launch fetch already has this customer.
-      if (info || userId) void refresh();
+      // Leaving a signed-in user always re-fetches: something else (deleteAccount) may have
+      // logged RevenueCat out first, so logOutPurchases returned null but the customer info on
+      // hand still belongs to the old account.
+      if (info || userId || previousUser) void refresh();
     },
     [available, refresh]
   );
@@ -198,7 +199,8 @@ export function PremiumProvider({ children }: PropsWithChildren) {
   }, [refresh]);
 
   const entitled = hasPremiumEntitlement(customerInfo);
-  const isPremium = entitled || (__DEV__ && devForcePremium);
+  // RevenueCat off (dev-flags REVENUECAT_ENABLED): everyone gets full access.
+  const isPremium = !REVENUECAT_ENABLED || entitled || (__DEV__ && devForcePremium);
   const loading = !infoSettled || !devLoaded;
   const plansUnavailable =
     !available || offeringsError || (infoSettled && !(offerings?.availablePackages.length ?? 0));
@@ -210,16 +212,6 @@ export function PremiumProvider({ children }: PropsWithChildren) {
       if (alive.current) setLastKnownPremium(entitled);
     });
   }, [available, loading, definitive, entitled]);
-
-  // Lapse / never-bought fallback: once we KNOW Premium is inactive, make sure no premium track
-  // stays selected. Skipped while loading or after a failed fetch, so being offline never
-  // downgrades a paying user.
-  useEffect(() => {
-    if (loading || isPremium || !definitive) return;
-    void enforceFreeUnlockTrack().then((reset) => {
-      if (reset && alive.current) setTrackResetVersion((v) => v + 1);
-    });
-  }, [loading, isPremium, definitive]);
 
   const purchase = useCallback(async (pkg: PurchasesPackage) => {
     const outcome = await purchasePackage(pkg);
@@ -264,7 +256,6 @@ export function PremiumProvider({ children }: PropsWithChildren) {
       refresh,
       manageSubscriptions: showManageSubscriptions,
       syncUser,
-      trackResetVersion,
       devForcePremium: __DEV__ && devForcePremium,
       setDevForcePremium,
     }),
@@ -285,7 +276,6 @@ export function PremiumProvider({ children }: PropsWithChildren) {
       restore,
       refresh,
       syncUser,
-      trackResetVersion,
       devForcePremium,
       setDevForcePremium,
     ]

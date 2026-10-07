@@ -14,7 +14,6 @@ import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { radii, spacing, typography } from '@/constants/theme';
 import { rollSurpriseTrack } from '@/lib/surprise-session';
-import { usePremium } from '@/lib/premium-provider';
 import {
   crossfadeToMeditation,
   playHarshAlarm,
@@ -54,7 +53,6 @@ export default function TestMorningScreen() {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [bottomH, setBottomH] = useState(56);
   const [topH, setTopH] = useState(40);
-  const { isPremium, loading: premiumLoading } = usePremium();
   const [surpriseOn, setSurpriseOn] = useState(false);
   const [prefsReady, setPrefsReady] = useState(false);
   const surpriseRolled = useRef(false);
@@ -193,11 +191,11 @@ export default function TestMorningScreen() {
       confirmStart.current = null;
     }
 
-    if (phase === 'meditating' && prefsReady && !(surpriseOn && premiumLoading)) {
+    if (phase === 'meditating' && prefsReady) {
       void (async () => {
         if (surpriseOn && !surpriseRolled.current) {
           surpriseRolled.current = true;
-          const id = await rollSurpriseTrack(isPremium);
+          const id = await rollSurpriseTrack();
           setTrackId(id);
         }
         await crossfadeToMeditation();
@@ -219,7 +217,7 @@ export default function TestMorningScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [phase, prefsReady, surpriseOn, premiumLoading, isPremium]);
+  }, [phase, prefsReady, surpriseOn]);
 
   useEffect(() => {
     if (phase === 'completed') {

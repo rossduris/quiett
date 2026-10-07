@@ -37,7 +37,7 @@ export default function HomeScreen() {
   const greeting = identity.name ? greetingFor(home.now, identity.name) : null;
   const guidedOn = useShowGuided();
   // Once Home is idle, quietly build the Library / picker covers so the first Library open is light.
-  usePrewarmLibraryCovers({ colors, isPremium: home.isPremium, guidedOn, enabled: coverStyle !== 'classic' });
+  usePrewarmLibraryCovers({ colors, guidedOn, enabled: coverStyle !== 'classic' });
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showTrackPicker, setShowTrackPicker] = useState(false);
@@ -117,7 +117,6 @@ export default function HomeScreen() {
         <MorningStepsCard
           alarmSound={alarmSound}
           unlockTrack={unlockTrack}
-          isPremium={home.isPremium}
           surpriseMe={home.surpriseMe}
           surpriseOffTick={home.surpriseOffTick}
           coverStyle={coverStyle}

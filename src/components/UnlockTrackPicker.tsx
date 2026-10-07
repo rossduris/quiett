@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,16 +8,14 @@ import { useCoverStyle } from '@/lib/scene-cover-pref';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { meditationSoundById } from '@/constants/sounds';
-import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
+import { followPreviewSelection, previewIds, usePreviewPlayer, useStopPreviewWhenHidden } from '@/lib/audio';
 import { useThemeColors } from '@/lib/theme-provider';
-import { usePremium } from '@/lib/premium-provider';
 import { useShowGuided } from '@/lib/dev-flags';
 import { previewA11yActions } from '@/lib/preview-a11y';
 import { PreviewOverlay } from '@/components/PreviewOverlay';
 import {
   kindLabel,
   kindSectionHint,
-  orderTracksForUser,
   unlockTracksByKind,
   visibleKinds,
   type UnlockTrack,
@@ -56,21 +53,11 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
     if (visible) handoff.current = null;
   }, [visible]);
   useStopPreviewWhenHidden(visible, () => handoff.current);
-  const router = useRouter();
-  const { isPremium } = usePremium();
   const coverStyle = useCoverStyle();
   // Guided shelf is hidden for launch (dev switch brings it back).
   const guidedOn = useShowGuided();
 
-  /** Locked premium row → close this sheet, then open the paywall (RN Modal sits above nav). */
-  const openPaywall = () => {
-    stopPreview();
-    onClose();
-    setTimeout(() => router.push('/paywall'), 450);
-  };
-
   const preview = (track: UnlockTrack) => {
-    if (track.locked && !isPremium) return;
     const url = meditationSoundById(track.playbackSoundId).url;
     if (url == null) return;
     toggle(previewIds.track(track.id), url, 'track');
@@ -104,7 +91,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
           showsVerticalScrollIndicator={false}
         >
           {visibleKinds(guidedOn).map((kind) => {
-            const tracks = orderTracksForUser(unlockTracksByKind(kind), isPremium);
+            const tracks = unlockTracksByKind(kind);
             return (
               <View key={kind} style={styles.section}>
                 <View style={styles.sectionHead}>
@@ -116,39 +103,27 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                 <View style={styles.list}>
                   {tracks.map((track) => {
                     const selected = track.id === selectedId;
-                    // Premium tracks are locked only for free users; tapping one opens the paywall.
-                    const disabled = track.locked && !isPremium;
                     const playing = playingId === previewIds.track(track.id);
                     return (
                       <PreviewOverlay
                         key={track.id}
-                        button={
-                          disabled
-                            ? null
-                            : {
-                                playing,
-                                onPress: () => preview(track),
-                                colors,
-                                size: 34,
-                                iconSize: 14,
-                                style: styles.previewBtn,
-                                activeStyle: styles.previewBtnActive,
-                                accessibilityLabel: `${playing ? 'Stop' : 'Play'} preview of ${track.title}`,
-                              }
-                        }
+                        button={{
+                          playing,
+                          onPress: () => preview(track),
+                          colors,
+                          size: 34,
+                          iconSize: 14,
+                          style: styles.previewBtn,
+                          activeStyle: styles.previewBtnActive,
+                          accessibilityLabel: `${playing ? 'Stop' : 'Play'} preview of ${track.title}`,
+                        }}
                         renderRow={(slot) => (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Meditation: ${track.title}${
-                          disabled ? ', premium, opens Quiett Premium' : ''
-                        }`}
+                        accessibilityLabel={`Meditation: ${track.title}`}
                         accessibilityState={{ selected }}
-                        {...previewA11yActions(playing, disabled ? undefined : () => preview(track))}
+                        {...previewA11yActions(playing, () => preview(track))}
                         onPress={() => {
-                          if (disabled) {
-                            openPaywall();
-                            return;
-                          }
                           const id = previewIds.track(track.id);
                           if (playingId != null) {
                             followPreviewSelection(id, meditationSoundById(track.playbackSoundId).url, 'track');
@@ -159,13 +134,12 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                         style={({ pressed }) => [
                           styles.row,
                           selected && styles.rowSelected,
-                          disabled && styles.rowLocked,
                           pressed && styles.pressed,
                         ]}
                       >
                         {coverStyle !== 'classic' ? (
                           <View style={[styles.art, styles.artScene]}>
-                            <TrackCover trackId={track.id} size={50} radius={13} locked={disabled} animate={playing} defer />
+                            <TrackCover trackId={track.id} size={50} radius={13} animate={playing} defer />
                           </View>
                         ) : (
                           <View
@@ -174,21 +148,12 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                               { backgroundColor: track.accentSoft, borderColor: track.accent },
                             ]}
                           >
-                            {disabled ? (
-                              <Ionicons name="lock-closed" size={16} color={colors.textDim} />
-                            ) : (
-                              <LibraryTrackMark
-                                trackId={track.id}
-                                kind={track.kind}
-                                color={track.accent}
-                                size={28}
-                              />
-                            )}
-                            {disabled ? (
-                              <View style={styles.artLock}>
-                                <Ionicons name="sparkles-outline" size={10} color={colors.text} />
-                              </View>
-                            ) : null}
+                            <LibraryTrackMark
+                              trackId={track.id}
+                              kind={track.kind}
+                              color={track.accent}
+                              size={28}
+                            />
                           </View>
                         )}
                         <View style={styles.rowBody}>
@@ -196,13 +161,7 @@ export function UnlockTrackPicker({ visible, selectedId, onClose, onSelect }: Pr
                             <Text style={styles.rowTitle} numberOfLines={1}>
                               {track.title}
                             </Text>
-                            {disabled ? (
-                              <View style={styles.lockBadge}>
-                                <Text style={styles.lockBadgeText}>Premium</Text>
-                              </View>
-                            ) : selected ? (
-                              <Ionicons name="checkmark-circle" size={18} color={colors.calm} />
-                            ) : null}
+                            {selected ? <Ionicons name="checkmark-circle" size={18} color={colors.calm} /> : null}
                           </View>
                           <Text style={styles.rowBlurb} numberOfLines={2}>
                             {track.blurb}
@@ -277,7 +236,6 @@ function createStyles(colors: ColorTokens) {
     borderColor: colors.calm,
     backgroundColor: colors.calmSoft,
   },
-  rowLocked: { opacity: 0.55 },
   art: {
     width: 52,
     height: 52,
@@ -288,19 +246,6 @@ function createStyles(colors: ColorTokens) {
     justifyContent: 'center',
   },
   artScene: { borderColor: colors.border },
-  artLock: {
-    position: 'absolute',
-    right: 4,
-    bottom: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
   rowBody: { flex: 1, gap: 3 },
   rowTop: {
     flexDirection: 'row',
@@ -311,15 +256,6 @@ function createStyles(colors: ColorTokens) {
   rowTitle: { color: colors.text, fontSize: 16, fontWeight: '600', flexShrink: 1 },
   rowBlurb: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   rowMeta: { color: colors.textDim, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  lockBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radii.full,
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  lockBadgeText: { color: colors.textDim, fontSize: 10, fontWeight: '700' },
   previewBtn: {
     width: 34,
     height: 34,

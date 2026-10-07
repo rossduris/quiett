@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { REVENUECAT_ENABLED } from '@/lib/dev-flags';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,14 +39,16 @@ export default function ManageSubscriptionScreen() {
   const entitlement = premiumEntitlement(customerInfo);
   const renewDate = formatDate(entitlement?.expirationDate ?? null);
 
-  let planName = 'Free';
+  // Hard paywall: everything needs Quiett Premium, so there is no free plan to describe. People
+  // without Premium are normally behind the access gate; if they land here, point them to the paywall.
+  let planName = 'No active subscription';
   let planNote = available
-    ? 'The alarm, camera check, streaks and free sounds are yours to keep. Premium opens the full sound library.'
-    : 'Subscriptions aren\u2019t available in this version yet. Everything free keeps working as usual.';
+    ? 'Quiett needs an active Quiett Premium subscription. If you already subscribed with this Apple ID, tap Restore purchases.'
+    : 'Subscriptions aren\u2019t available in this version of Quiett yet.';
   if (entitlement) {
-    planName = 'Premium';
+    planName = 'Quiett Premium';
     if (!entitlement.expirationDate) {
-      planNote = 'Premium is active with no end date.';
+      planNote = 'Quiett Premium is active with no end date.';
     } else if (entitlement.willRenew) {
       planNote = renewDate ? `Renews on ${renewDate}.` : 'Renews automatically.';
     } else {
@@ -58,6 +61,9 @@ export default function ManageSubscriptionScreen() {
         ? `Free trial — your plan starts on ${renewDate}.`
         : `Free trial ends on ${renewDate}.`;
     }
+  } else if (!REVENUECAT_ENABLED) {
+    planName = 'Quiett Premium';
+    planNote = 'Everything is unlocked in this beta. Subscriptions aren\u2019t live yet.';
   } else if (isPremium && devForcePremium) {
     planName = 'Premium (dev preview)';
     planNote = 'Forced on from Settings → Developer. No purchase is attached.';
@@ -125,13 +131,15 @@ export default function ManageSubscriptionScreen() {
 
         <View style={styles.actionsCard}>
           {!isPremium ? (
-            <PrimaryButton label="Upgrade to Premium" onPress={() => router.push('/paywall')} />
+            <PrimaryButton label="See Quiett Premium" onPress={() => router.push('/paywall')} />
           ) : null}
-          <PrimaryButton
-            label="Manage in App Store"
-            variant="secondary"
-            onPress={() => void manageSubscriptions()}
-          />
+          {entitlement ? (
+            <PrimaryButton
+              label="Manage in iPhone Settings"
+              variant="secondary"
+              onPress={() => void manageSubscriptions()}
+            />
+          ) : null}
           <PrimaryButton
             label={restoring ? 'Restoring\u2026' : 'Restore purchases'}
             variant="secondary"

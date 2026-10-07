@@ -72,10 +72,10 @@ export default function SettingsScreen() {
             <SettingsLinkRow
               icon={isPremium ? 'sunny' : 'sunny-outline'}
               label="Quiett Premium"
-              value={isPremium ? 'Active' : 'Free'}
+              value={isPremium ? 'Active' : 'Not active'}
               valueColor={isPremium ? colors.calm : undefined}
               accessibilityLabel={
-                isPremium ? 'Quiett Premium, active. Manage subscription' : 'Quiett Premium, free plan'
+                isPremium ? 'Quiett Premium, active. Manage subscription' : 'Quiett Premium, not active'
               }
               onPress={() => router.push(isPremium ? '/manage-subscription' : '/paywall')}
             />

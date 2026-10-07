@@ -14,9 +14,11 @@ import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import type { Session, User } from '@supabase/supabase-js';
+import { FunctionsHttpError, type Session, type User } from '@supabase/supabase-js';
+import { logOutPurchases } from '@/lib/purchases';
 import { AUTH_REDIRECT_PATH, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
+  clearAccountLinkedCache,
   SIGNED_OUT_ACCOUNT,
   type AccountData,
   type AccountProvider,
@@ -39,6 +41,11 @@ type AuthContextValue = {
   signInWithApple: () => Promise<AuthOutcome>;
   signInWithGoogle: () => Promise<AuthOutcome>;
   signOut: () => Promise<AuthOutcome>;
+  /**
+   * Permanently deletes the Quiett account (Supabase `delete-account` Edge Function), then signs
+   * out locally and returns RevenueCat to anonymous. On-device alarm, streak and settings stay.
+   */
+  deleteAccount: () => Promise<AuthOutcome>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -68,6 +75,28 @@ function accountFromSession(session: Session | null): AccountData {
     displayName,
     email: user.email ?? null,
   };
+}
+
+const DELETE_FAILED_MESSAGE = 'We couldn\u2019t delete your account. Check your connection and try again.';
+
+/** Friendly message for a failed `delete-account` call (details go to the dev console only). */
+async function deleteAccountErrorMessage(error: unknown): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    const res = error.context as Response | undefined;
+    let body: unknown = null;
+    try {
+      body = await res?.clone().json();
+    } catch {
+      body = null;
+    }
+    if (__DEV__) console.warn('[auth] delete-account failed', res?.status, body);
+    if (res?.status === 401) {
+      return 'Your session has expired. Sign out, sign in again, then try deleting your account.';
+    }
+    return DELETE_FAILED_MESSAGE;
+  }
+  if (__DEV__) console.warn('[auth] delete-account failed', error);
+  return DELETE_FAILED_MESSAGE;
 }
 
 async function createSessionFromUrl(url: string): Promise<Session | null> {
@@ -263,6 +292,42 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [configured]);
 
+  const deleteAccount = useCallback(async (): Promise<AuthOutcome> => {
+    if (!configured) {
+      return { ok: false, message: 'Accounts aren\u2019t set up in this build.' };
+    }
+    const supabase = getSupabase();
+    try {
+      const { data: current } = await supabase.auth.getSession();
+      if (!current.session) {
+        return { ok: false, message: 'You\u2019re signed out. Sign in again to delete your account.' };
+      }
+      // invoke() sends the current access token as the Authorization bearer.
+      const { data, error } = await supabase.functions.invoke<{ ok?: boolean }>('delete-account', {
+        method: 'POST',
+      });
+      if (error) return { ok: false, message: await deleteAccountErrorMessage(error) };
+      if (!data?.ok) return { ok: false, message: DELETE_FAILED_MESSAGE };
+    } catch (e: unknown) {
+      return { ok: false, message: await deleteAccountErrorMessage(e) };
+    }
+
+    // The account is gone on the server. Local cleanup below is best effort and can't undo that,
+    // so it never turns the outcome into a failure.
+    try {
+      // 'local': the server session was deleted with the user, so don't call the logout endpoint.
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      if (__DEV__) console.warn('[auth] local sign-out after delete failed', e);
+    }
+    if (alive.current) setSession(null);
+    // Back to an anonymous RevenueCat customer (guarded: no-op without purchases, never throws).
+    // PurchasesUserSync also sees the signed-out session and re-fetches customer info.
+    await logOutPurchases();
+    await clearAccountLinkedCache();
+    return { ok: true };
+  }, [configured]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -273,8 +338,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signInWithApple,
       signInWithGoogle,
       signOut,
+      deleteAccount,
     }),
-    [session, loading, configured, signInWithApple, signInWithGoogle, signOut],
+    [session, loading, configured, signInWithApple, signInWithGoogle, signOut, deleteAccount],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

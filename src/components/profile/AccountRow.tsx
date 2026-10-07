@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { radii, spacing, typography } from '@/constants/theme';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
@@ -14,13 +14,15 @@ import { createProfileStyles } from './profile-styles';
  * anonymous purchase to the account. Signing out goes back to the anonymous state: RevenueCat
  * logs out and Premium then comes from the anonymous customer (the access gate shows the
  * paywall if that customer has no entitlement).
+ * Delete account (App Review 5.1.1(v)) sits quietly under Sign out and calls
+ * AuthProvider.deleteAccount (Supabase `delete-account` Edge Function).
  */
 export function AccountRow() {
   const colors = useThemeColors();
   const shared = useMemo(() => createProfileStyles(colors), [colors]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const auth = useAuth();
-  const [busy, setBusy] = useState<'apple' | 'google' | 'out' | null>(null);
+  const [busy, setBusy] = useState<'apple' | 'google' | 'out' | 'delete' | null>(null);
 
   const name = auth.account.displayName?.trim() || null;
   const providerLabel =
@@ -41,6 +43,37 @@ export function AccountRow() {
     }
   };
 
+  const runDelete = async () => {
+    if (busy) return;
+    setBusy('delete');
+    let outcome: AuthOutcome;
+    try {
+      outcome = await auth.deleteAccount();
+    } finally {
+      setBusy(null);
+    }
+    if (outcome.ok) {
+      Alert.alert('Account deleted', 'Your account was deleted.');
+      return;
+    }
+    Alert.alert('Couldn\u2019t delete your account', outcome.message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Try again', onPress: () => void runDelete() },
+    ]);
+  };
+
+  const confirmDelete = () => {
+    if (busy) return;
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your Quiett account. Your subscription isn\u2019t cancelled automatically. Manage it in iPhone Settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void runDelete() },
+      ],
+    );
+  };
+
   if (!auth.configured) {
     return (
       <View style={[shared.listCard, styles.column]}>
@@ -54,30 +87,51 @@ export function AccountRow() {
 
   if (auth.account.signedIn) {
     return (
-      <View style={[shared.listCard, styles.row]}>
-        <View style={styles.avatar} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-          <Text style={styles.avatarText}>{name ? name.charAt(0).toUpperCase() : '·'}</Text>
-        </View>
-        <View style={styles.body}>
-          <Text style={styles.name} numberOfLines={1}>
-            {name ?? 'Signed in'}
-          </Text>
-          <Text style={styles.sub} numberOfLines={1}>
-            {auth.account.email ?? providerLabel ?? 'Account'}
-          </Text>
+      <View style={[shared.listCard, styles.signedIn]}>
+        <View style={styles.signedInRow}>
+          <View style={styles.avatar} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+            <Text style={styles.avatarText}>{name ? name.charAt(0).toUpperCase() : '·'}</Text>
+          </View>
+          <View style={styles.body}>
+            <Text style={styles.name} numberOfLines={1}>
+              {name ?? 'Signed in'}
+            </Text>
+            <Text style={styles.sub} numberOfLines={1}>
+              {auth.account.email ?? providerLabel ?? 'Account'}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            onPress={() => void run('out', auth.signOut)}
+            hitSlop={8}
+            disabled={busy !== null}
+            style={({ pressed }) => [styles.btn, pressed && shared.pressed, busy === 'out' && styles.btnBusy]}
+          >
+            {busy === 'out' ? (
+              <ActivityIndicator size="small" color={colors.text} />
+            ) : (
+              <Text style={styles.btnText}>Sign out</Text>
+            )}
+          </Pressable>
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Sign out"
-          onPress={() => void run('out', auth.signOut)}
+          accessibilityLabel="Delete account"
+          accessibilityHint="Permanently deletes your Quiett account"
+          accessibilityState={{ disabled: busy !== null, busy: busy === 'delete' }}
+          onPress={confirmDelete}
           hitSlop={8}
           disabled={busy !== null}
-          style={({ pressed }) => [styles.btn, pressed && shared.pressed, busy === 'out' && styles.btnBusy]}
+          style={({ pressed }) => [styles.deleteBtn, pressed && shared.pressed]}
         >
-          {busy === 'out' ? (
-            <ActivityIndicator size="small" color={colors.text} />
+          {busy === 'delete' ? (
+            <View style={styles.deleteBusy}>
+              <ActivityIndicator size="small" color={colors.alarm} />
+              <Text style={styles.deleteText}>{'Deleting\u2026'}</Text>
+            </View>
           ) : (
-            <Text style={styles.btnText}>Sign out</Text>
+            <Text style={[styles.deleteText, busy !== null && styles.deleteDisabled]}>Delete account</Text>
           )}
         </Pressable>
       </View>
@@ -130,7 +184,8 @@ export function AccountRow() {
 
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+    signedIn: { padding: spacing.md, gap: spacing.sm },
+    signedInRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     column: { gap: spacing.md, padding: spacing.md },
     header: { gap: spacing.xs / 2 },
     avatar: {
@@ -159,6 +214,10 @@ function createStyles(colors: ColorTokens) {
     },
     btnBusy: { opacity: 0.7 },
     btnText: { ...typography.caption, color: colors.text, fontWeight: '600' },
+    deleteBtn: { alignSelf: 'flex-end', paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+    deleteBusy: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    deleteText: { ...typography.caption, color: colors.alarm, fontWeight: '500' },
+    deleteDisabled: { opacity: 0.5 },
     providerBtn: {
       paddingVertical: spacing.md,
       borderRadius: radii.full,

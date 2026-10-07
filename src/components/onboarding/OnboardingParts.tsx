@@ -60,20 +60,17 @@ export const HowSteps = memo(function HowSteps({ reduceMotion }: { reduceMotion:
       {HOW_STEPS.map((s, i) => {
         const on = reduceMotion || i === active;
         return (
-          <Animated.View
-            key={s.kind}
-            entering={reduceMotion ? FadeIn.duration(300) : FadeInDown.delay(150 + i * 180).duration(420)}
-            style={[styles.howRow, on && styles.howRowOn]}
-            accessible
-            accessibilityLabel={`Step ${i + 1}. ${s.title}. ${s.body}`}
-          >
-            <View style={styles.howArt}>
-              <AnimatedScene layout={minis[i]!} reduceMotion={reduceMotion} playing={on} />
-            </View>
-            <View style={styles.howText}>
-              <Text style={styles.howNum}>{`0${i + 1}`}</Text>
-              <Text style={styles.howTitle}>{s.title}</Text>
-              <Text style={styles.howBody}>{s.body}</Text>
+          <Animated.View key={s.kind} entering={reduceMotion ? FadeIn.duration(300) : FadeInDown.delay(150 + i * 180).duration(420)}>
+            {/* Row opacity lives on an inner View so the entering animation (wrapper) doesn't fight it. */}
+            <View style={[styles.howRow, on && styles.howRowOn]} accessible accessibilityLabel={`Step ${i + 1}. ${s.title}. ${s.body}`}>
+              <View style={styles.howArt}>
+                <AnimatedScene layout={minis[i]!} reduceMotion={reduceMotion} playing={on} />
+              </View>
+              <View style={styles.howText}>
+                <Text style={styles.howNum}>{`0${i + 1}`}</Text>
+                <Text style={styles.howTitle}>{s.title}</Text>
+                <Text style={styles.howBody}>{s.body}</Text>
+              </View>
             </View>
           </Animated.View>
         );
@@ -118,7 +115,7 @@ export function GoalChoices({
   );
 }
 
-/** First-sound picker: free tracks with their scene covers; tap selects and previews. */
+/** First-sound picker: every sound with its scene cover; tap selects and previews. */
 export function SoundChoices({
   tracks,
   selected,
@@ -146,7 +143,7 @@ export function SoundChoices({
             accessibilityHint={playing ? 'Playing a preview. Tap again to stop.' : 'Selects this sound and plays a preview'}
             style={({ pressed }) => [styles.choice, on && styles.choiceOn, pressed && styles.pressed]}
           >
-            <SceneCover scene={sceneSpecFor(t.id)} size={48} radius={radii.md} />
+            <SceneCover scene={sceneSpecFor(t.id)} size={48} radius={radii.md} defer />
             <View style={styles.soundText}>
               <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{t.title}</Text>
               <Text style={styles.soundMood} numberOfLines={1}>

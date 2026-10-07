@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,12 +9,15 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type LayoutChangeEvent,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { frostPill, pillText } from '@/components/library/library-styles';
+import { PremiumHero } from '@/components/premium/PremiumHero';
 import { PAYWALL_ALLOW_CONTINUE_WHEN_PLANS_UNAVAILABLE, PAYWALL_DISMISSABLE } from '@/constants/paywall';
 import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
 import { radii, spacing, typography } from '@/constants/theme';
@@ -32,6 +35,7 @@ import {
 import { describeUnavailableReason, hasPremiumEntitlement } from '@/lib/purchases';
 import { usePremium } from '@/lib/premium-provider';
 import { useThemeColors } from '@/lib/theme-provider';
+import { useMotionActive } from '@/lib/use-motion-active';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
@@ -67,32 +71,52 @@ function benefitLines(): { icon: IoniconName; title: string; detail: string }[] 
   return [
     {
       icon: 'alarm-outline',
-      title: 'The Quiett alarm with a camera check-in',
-      detail: 'It rings until the front camera sees you\u2019re up and settled, then your calm minutes begin.',
+      title: 'The camera check-in alarm',
+      detail: 'It rings until the camera sees you\u2019re up.',
     },
     {
       icon: 'musical-notes-outline',
       title: 'Every sound and meditation',
-      detail: 'All the tones, music beds and ambient sounds in Library for your morning minutes.',
+      detail: 'All the tones, music beds and ambient sounds.',
     },
     {
       icon: 'color-palette-outline',
       title: 'Your streak, milestones and themes',
-      detail: `Track your mornings in Profile, and switch between ${listNames(themeNames)} anytime.`,
+      detail: `${listNames(themeNames)}, anytime.`,
     },
   ];
 }
 
 const ANNUAL_TAG = 'Best value';
 
+/** Sound covers fanned out in the hero (left to right; Soft Pad, the default, in the middle). */
+const HERO_TRACK_IDS = ['music:lantern-glow', 'ambient:calm_waves', 'music:soft-pad', 'ambient:campfire', 'music:moonset'] as const;
+/** Hero art height bounds (pt). It takes the room left above the plans, within these. */
+const HERO_MIN_H = 88;
+const HERO_MAX_H = 200;
+/** Room kept for two plan cards while plans load, so the hero doesn't resize when they land. */
+const PLANS_RESERVE_H = 156;
+
+/** The "Quiett Premium" pill (Library's Premium pill look): frosted over the hero art, soft on the page. */
+function PremiumPill({ colors, styles, frost }: { colors: ColorTokens; styles: Styles; frost?: boolean }) {
+  return (
+    <View style={frost ? styles.pillFrost : styles.pillSoft}>
+      <Ionicons name="sparkles" size={11} color={colors.calm} />
+      <Text style={styles.pillLabel}>Quiett Premium</Text>
+    </View>
+  );
+}
+
 export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   /** iPhone SE / mini class: tighter gaps so the plans stay in view. */
   const compact = height < 720;
   const reduceMotion = useReduceMotion();
+  // Hero loops run only while this screen is focused and the app is in the foreground.
+  const motionActive = useMotionActive();
   const enter = (i: number) => (reduceMotion ? FadeIn.duration(200) : FadeInDown.delay(80 + i * 80).duration(380));
 
   const {
@@ -213,6 +237,26 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
     void Linking.openURL(url).catch(() => {});
   };
 
+  // Hero sizing: measure the scroll viewport and everything under the hero, then give the art the
+  // room that's left so the plan cards stay in view without scrolling (capped, floored, and
+  // dropped on SE-class phones when there's no room). The terms may sit below the fold.
+  const [viewportH, setViewportH] = useState(0);
+  const [topH, setTopH] = useState(0);
+  const [plansH, setPlansH] = useState(0);
+  const onViewport = useCallback((e: LayoutChangeEvent) => setViewportH(Math.round(e.nativeEvent.layout.height)), []);
+  const onTop = useCallback((e: LayoutChangeEvent) => setTopH(Math.round(e.nativeEvent.layout.height)), []);
+  const onPlans = useCallback((e: LayoutChangeEvent) => setPlansH(Math.round(e.nativeEvent.layout.height)), []);
+  const heroW = Math.round(width - spacing.lg * 2);
+  const heroH = useMemo(() => {
+    if (!viewportH || !topH) return 0;
+    const below = topH + spacing.md + Math.max(plansH, PLANS_RESERVE_H);
+    // Content top padding, the gap under the hero, and a little breathing room above the fold.
+    const room = viewportH - spacing.sm - spacing.md - below - spacing.sm;
+    const fit = Math.floor(Math.min(room, HERO_MAX_H, Math.round(heroW * 0.5)) / 8) * 8;
+    if (fit >= HERO_MIN_H) return fit;
+    return compact ? 0 : HERO_MIN_H;
+  }, [viewportH, topH, plansH, heroW, compact]);
+
   const headline = showActive
     ? 'You\u2019re all set with Premium'
     : selectedTrial
@@ -242,145 +286,167 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
     <View style={styles.root}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, compact && styles.contentCompact]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onLayout={onViewport}
       >
-        <Animated.View entering={enter(0)} style={styles.hero}>
-          <View style={styles.badgeIcon}>
-            <Ionicons name={showActive ? 'sunny' : 'sunny-outline'} size={28} color={colors.calm} />
-          </View>
-          {/* The page header already says "Quiett Premium". */}
-          {inFlow ? <Text style={styles.kicker}>Quiett Premium</Text> : null}
-          <Text
-            style={[styles.title, compact && styles.titleCompact]}
-            accessibilityRole="header"
-            maxFontSizeMultiplier={1.4}
+        {heroH > 0 ? (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeIn.duration(420)}
+            style={[styles.heroArt, { width: heroW, height: heroH }]}
           >
-            {headline}
-          </Text>
-        </Animated.View>
-
-        <Animated.View entering={enter(1)} style={styles.benefits}>
-          {benefits.map((b) => (
-            <View key={b.title} style={styles.benefitRow}>
-              <View style={styles.benefitIcon}>
-                <Ionicons name={b.icon} size={18} color={colors.calm} />
+            <PremiumHero
+              width={heroW}
+              height={heroH}
+              trackIds={HERO_TRACK_IDS}
+              reduceMotion={reduceMotion}
+              playing={motionActive}
+            />
+            {/* The page header already says "Quiett Premium". */}
+            {inFlow ? (
+              <View style={styles.heroPill} pointerEvents="none">
+                <PremiumPill colors={colors} styles={styles} frost />
               </View>
-              <View style={styles.benefitText}>
-                <Text style={styles.benefitTitle}>{b.title}</Text>
-                <Text style={styles.benefitDetail}>{b.detail}</Text>
-              </View>
-            </View>
-          ))}
-        </Animated.View>
-
-        {showActive ? (
-          <View style={styles.stateCard}>
-            <Ionicons name="checkmark-circle" size={28} color={colors.calm} />
-            <Text style={styles.stateTitle}>
-              {devForcePremium && !entitled && !justUnlocked ? 'Premium preview is on (dev)' : 'Quiett Premium is active'}
-            </Text>
-            {entitled && context === 'page' ? (
-              <PrimaryButton
-                label="Manage subscription"
-                variant="secondary"
-                onPress={() => router.push('/manage-subscription')}
-                style={styles.stateBtn}
-              />
-            ) : null}
-          </View>
-        ) : showLoading ? (
-          <View style={styles.stateCard} accessibilityLabel="Loading plans">
-            <ActivityIndicator color={colors.calm} />
-          </View>
-        ) : plansReady ? (
-          <Animated.View entering={enter(2)} style={styles.plans} accessibilityRole="radiogroup">
-            {packages.map((pkg) => {
-              const info = planInfo(pkg);
-              const isSelected = selected?.identifier === pkg.identifier;
-              const trial = trialFor(pkg);
-              const perMonth = perMonthLabel(pkg);
-              const sub = [trial ? `${trialAdjective(trial)} free trial` : null, perMonth]
-                .filter(Boolean)
-                .join(' \u00b7 ');
-              const tag = isAnnual(pkg) && packages.length > 1 ? ANNUAL_TAG : null;
-              return (
-                <Pressable
-                  key={pkg.identifier}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: isSelected }}
-                  accessibilityLabel={[
-                    info.title,
-                    tag,
-                    `${pkg.product.priceString}${info.per ? ` per ${info.per}` : ''}`,
-                    sub || null,
-                  ]
-                    .filter(Boolean)
-                    .join(', ')}
-                  onPress={() => {
-                    if (!isSelected) hapticSelect();
-                    setSelectedId(pkg.identifier);
-                  }}
-                  style={({ pressed }) => [styles.planCard, isSelected && styles.planCardSelected, pressed && styles.pressed]}
-                >
-                  <View style={[styles.radio, isSelected && styles.radioOn]}>
-                    {isSelected ? (
-                      <Animated.View entering={reduceMotion ? undefined : ZoomIn.duration(180)} style={styles.radioDot} />
-                    ) : null}
-                  </View>
-                  <View style={styles.planText}>
-                    <View style={styles.planTitleRow}>
-                      <Text style={styles.planTitle} numberOfLines={1}>
-                        {info.title}
-                      </Text>
-                      {tag ? (
-                        <View style={styles.tag}>
-                          <Text style={styles.tagText}>{tag}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    {sub ? <Text style={styles.planSub}>{sub}</Text> : null}
-                  </View>
-                  <View style={styles.planPriceCol}>
-                    <Text style={styles.planPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                      {pkg.product.priceString}
-                    </Text>
-                    {info.per ? <Text style={styles.planPer}>per {info.per}</Text> : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </Animated.View>
-        ) : showUnavailable ? (
-          <Animated.View entering={enter(2)} style={styles.stateCard}>
-            <Ionicons name="cloud-offline-outline" size={24} color={colors.textMuted} />
-            <Text style={styles.stateTitle}>Plans unavailable right now</Text>
-            <Text style={styles.stateBody}>
-              {inFlow && (escapeHatch || PAYWALL_DISMISSABLE)
-                ? 'We couldn\u2019t load subscription options. You can try again, or continue for now.'
-                : 'We couldn\u2019t load subscription options. Check your connection and try again.'}
-            </Text>
-            {available ? (
-              <PrimaryButton
-                label={busy === 'retry' ? 'Trying\u2026' : 'Try again'}
-                variant="secondary"
-                disabled={!!busy}
-                onPress={() => void onRetry()}
-                style={styles.stateBtn}
-              />
-            ) : null}
-            {__DEV__ ? (
-              <Text style={styles.devHint}>
-                Dev:{' '}
-                {unavailableReason
-                  ? describeUnavailableReason(unavailableReason)
-                  : offeringsError
-                    ? 'getOfferings() failed. Usually the products aren\u2019t in App Store Connect yet, or RevenueCat has no ASC / IAP key.'
-                    : 'RevenueCat returned no current offering with packages.'}
-              </Text>
             ) : null}
           </Animated.View>
         ) : null}
+
+        <View onLayout={onTop} style={styles.section}>
+          <Animated.View entering={enter(0)} style={styles.hero}>
+            {inFlow && heroH === 0 ? <PremiumPill colors={colors} styles={styles} /> : null}
+            <Text
+              style={[styles.title, compact && styles.titleCompact]}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={1.4}
+            >
+              {headline}
+            </Text>
+          </Animated.View>
+
+          <Animated.View entering={enter(1)} style={styles.benefits}>
+            {benefits.map((b) => (
+              <View key={b.title} style={styles.benefitRow}>
+                <View style={styles.benefitIcon}>
+                  <Ionicons name={b.icon} size={18} color={colors.calm} />
+                </View>
+                <View style={styles.benefitText}>
+                  <Text style={styles.benefitTitle}>{b.title}</Text>
+                  <Text style={styles.benefitDetail}>{b.detail}</Text>
+                </View>
+              </View>
+            ))}
+          </Animated.View>
+        </View>
+
+        <View onLayout={onPlans}>
+          {showActive ? (
+            <View style={styles.stateCard}>
+              <Ionicons name="checkmark-circle" size={28} color={colors.calm} />
+              <Text style={styles.stateTitle}>
+                {devForcePremium && !entitled && !justUnlocked ? 'Premium preview is on (dev)' : 'Quiett Premium is active'}
+              </Text>
+              {entitled && context === 'page' ? (
+                <PrimaryButton
+                  label="Manage subscription"
+                  variant="secondary"
+                  onPress={() => router.push('/manage-subscription')}
+                  style={styles.stateBtn}
+                />
+              ) : null}
+            </View>
+          ) : showLoading ? (
+            <View style={styles.stateCard} accessibilityLabel="Loading plans">
+              <ActivityIndicator color={colors.calm} />
+            </View>
+          ) : plansReady ? (
+            <Animated.View entering={enter(2)} style={styles.plans} accessibilityRole="radiogroup">
+              {packages.map((pkg) => {
+                const info = planInfo(pkg);
+                const isSelected = selected?.identifier === pkg.identifier;
+                const trial = trialFor(pkg);
+                const perMonth = perMonthLabel(pkg);
+                const sub = [trial ? `${trialAdjective(trial)} free trial` : null, perMonth]
+                  .filter(Boolean)
+                  .join(' \u00b7 ');
+                const tag = isAnnual(pkg) && packages.length > 1 ? ANNUAL_TAG : null;
+                return (
+                  <Pressable
+                    key={pkg.identifier}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={[
+                      info.title,
+                      tag,
+                      `${pkg.product.priceString}${info.per ? ` per ${info.per}` : ''}`,
+                      sub || null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
+                    onPress={() => {
+                      if (!isSelected) hapticSelect();
+                      setSelectedId(pkg.identifier);
+                    }}
+                    style={({ pressed }) => [styles.planCard, isSelected && styles.planCardSelected, pressed && styles.pressed]}
+                  >
+                    <View style={[styles.radio, isSelected && styles.radioOn]}>
+                      {isSelected ? (
+                        <Animated.View entering={reduceMotion ? undefined : ZoomIn.duration(180)} style={styles.radioDot} />
+                      ) : null}
+                    </View>
+                    <View style={styles.planText}>
+                      <View style={styles.planTitleRow}>
+                        <Text style={styles.planTitle} numberOfLines={1}>
+                          {info.title}
+                        </Text>
+                        {tag ? (
+                          <View style={styles.tag}>
+                            <Text style={styles.tagText}>{tag}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {sub ? <Text style={styles.planSub}>{sub}</Text> : null}
+                    </View>
+                    <View style={styles.planPriceCol}>
+                      <Text style={styles.planPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {pkg.product.priceString}
+                      </Text>
+                      {info.per ? <Text style={styles.planPer}>per {info.per}</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Animated.View>
+          ) : showUnavailable ? (
+            <Animated.View entering={enter(2)} style={styles.stateCard}>
+              <Ionicons name="cloud-offline-outline" size={24} color={colors.textMuted} />
+              <Text style={styles.stateTitle}>Plans unavailable right now</Text>
+              <Text style={styles.stateBody}>
+                {inFlow && (escapeHatch || PAYWALL_DISMISSABLE)
+                  ? 'We couldn\u2019t load subscription options. You can try again, or continue for now.'
+                  : 'We couldn\u2019t load subscription options. Check your connection and try again.'}
+              </Text>
+              {available ? (
+                <PrimaryButton
+                  label={busy === 'retry' ? 'Trying\u2026' : 'Try again'}
+                  variant="secondary"
+                  disabled={!!busy}
+                  onPress={() => void onRetry()}
+                  style={styles.stateBtn}
+                />
+              ) : null}
+              {__DEV__ ? (
+                <Text style={styles.devHint}>
+                  Dev:{' '}
+                  {unavailableReason
+                    ? describeUnavailableReason(unavailableReason)
+                    : offeringsError
+                      ? 'getOfferings() failed. Usually the products aren\u2019t in App Store Connect yet, or RevenueCat has no ASC / IAP key.'
+                      : 'RevenueCat returned no current offering with packages.'}
+                </Text>
+              ) : null}
+            </Animated.View>
+          ) : null}
+        </View>
 
         {plansReady && !showActive ? (
           <View style={styles.terms}>
@@ -446,24 +512,21 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
   );
 }
 
+type Styles = ReturnType<typeof createStyles>;
+
 function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
     root: { flex: 1 },
     scroll: { flex: 1 },
-    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.lg, gap: spacing.lg },
-    contentCompact: { gap: spacing.md },
+    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.lg, gap: spacing.md },
+    section: { gap: spacing.md },
     pressed: { opacity: 0.7 },
+    heroArt: { alignSelf: 'center' },
+    heroPill: { position: 'absolute', left: 0, right: 0, bottom: spacing.sm, alignItems: 'center' },
+    pillFrost: frostPill(colors),
+    pillSoft: { ...frostPill(colors), backgroundColor: colors.calmSoft, borderColor: 'transparent' },
+    pillLabel: { ...pillText, color: colors.calm },
     hero: { alignItems: 'center', gap: spacing.sm },
-    badgeIcon: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor: colors.calmSoft,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: spacing.xs,
-    },
-    kicker: { ...typography.eyebrow, color: colors.calm },
     title: { ...typography.title, color: colors.text, textAlign: 'center' },
     titleCompact: { fontSize: 24, lineHeight: 30 },
     benefits: {

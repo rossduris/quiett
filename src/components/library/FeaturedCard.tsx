@@ -16,7 +16,6 @@ export const ART_H = 132;
 
 type Props = {
   track: UnlockTrack;
-  locked: boolean;
   previewing: boolean;
   scenes: boolean;
   surpriseMe: boolean;
@@ -28,7 +27,6 @@ type Props = {
 /** "Your next meditation": the selected track. Not tappable itself; only its play button acts. */
 export function FeaturedCard({
   track,
-  locked,
   previewing,
   scenes,
   surpriseMe,
@@ -40,7 +38,7 @@ export function FeaturedCard({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [width, setWidth] = useState(0);
   const onLayout = useCallback((e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width)), []);
-  const preview = surpriseMe || locked ? undefined : () => onPreview(track);
+  const preview = surpriseMe ? undefined : () => onPreview(track);
   const title = surpriseMe ? 'Surprise me' : track.title;
   const blurb = surpriseMe ? 'A random track in the morning.' : track.blurb;
   const meta = surpriseMe ? '2 min' : `${kindLabel(track.kind)} · ${track.durationLabel}`;

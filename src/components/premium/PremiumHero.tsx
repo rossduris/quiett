@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -21,9 +22,11 @@ import { useThemeColors } from '@/lib/theme-provider';
 type Props = {
   width: number;
   height: number;
-  /** Premium track ids to fan out (up to 5; the middle one is the largest). */
+  /** Sound track ids to fan out (up to 5; the middle one is the largest). */
   trackIds: readonly string[];
   reduceMotion: boolean;
+  /** False pauses every loop (screen not focused, app in the background). Defaults to true. */
+  playing?: boolean;
 };
 
 /** Slot geometry for up to five covers, centre first in z-order. */
@@ -37,10 +40,11 @@ const SLOTS = [
 
 /**
  * Premium hero: an animated vector backdrop (glow, rays, breathing rings, drifting motes, hills)
- * with real Premium sound covers fanning out on top and then floating gently. Only transform and
- * opacity animate. Reduce Motion shows the finished fan without movement.
+ * with real sound covers fanning out on top and then floating gently. Only transform and
+ * opacity animate. Reduce Motion shows the finished fan without movement; `playing` false
+ * pauses the loops (the backdrop rests, the covers hold still) until it turns true again.
  */
-export const PremiumHero = memo(function PremiumHero({ width, height, trackIds, reduceMotion }: Props) {
+export const PremiumHero = memo(function PremiumHero({ width, height, trackIds, reduceMotion, playing = true }: Props) {
   const colors = useThemeColors();
   const palette = useMemo(() => artPalette(colors), [colors]);
   const layout = useMemo(() => premiumLayout(width, height, palette), [width, height, palette]);
@@ -56,7 +60,7 @@ export const PremiumHero = memo(function PremiumHero({ width, height, trackIds, 
       importantForAccessibility="no-hide-descendants"
       pointerEvents="none"
     >
-      <AnimatedScene layout={layout} reduceMotion={reduceMotion} radius={radii.xl} />
+      <AnimatedScene layout={layout} reduceMotion={reduceMotion} playing={playing} radius={radii.xl} />
       {order.map(({ id, slot, i }) => (
         <FanCover
           key={id}
@@ -68,6 +72,7 @@ export const PremiumHero = memo(function PremiumHero({ width, height, trackIds, 
           rot={slot.rot}
           ring={colors.bg}
           reduceMotion={reduceMotion}
+          playing={playing}
         />
       ))}
     </View>
@@ -83,6 +88,7 @@ function FanCover({
   rot,
   ring,
   reduceMotion,
+  playing,
 }: {
   id: string;
   index: number;
@@ -92,17 +98,30 @@ function FanCover({
   rot: number;
   ring: string;
   reduceMotion: boolean;
+  playing: boolean;
 }) {
   const enter = useSharedValue(reduceMotion ? 1 : 0);
   const bob = useSharedValue(0.5);
+  // Fan-in once (again if Reduce Motion is switched off).
   useEffect(() => {
     if (reduceMotion) {
       enter.value = 1;
-      bob.value = 0.5;
       return;
     }
     enter.value = 0;
     enter.value = withDelay(150 + index * 90, withSpring(1, { damping: 14, stiffness: 120 }));
+  }, [reduceMotion, index, enter]);
+  // Gentle float, only while playing; paused it holds where it is and resumes from there.
+  useEffect(() => {
+    if (reduceMotion) {
+      cancelAnimation(bob);
+      bob.value = 0.5;
+      return;
+    }
+    if (!playing) {
+      cancelAnimation(bob);
+      return;
+    }
     bob.value = withDelay(
       900 + index * 260,
       withRepeat(
@@ -114,7 +133,8 @@ function FanCover({
         false,
       ),
     );
-  }, [reduceMotion, index, enter, bob]);
+    return () => cancelAnimation(bob);
+  }, [reduceMotion, playing, index, bob]);
   const style = useAnimatedStyle(() => ({
     opacity: Math.min(1, enter.value * 1.4),
     transform: [

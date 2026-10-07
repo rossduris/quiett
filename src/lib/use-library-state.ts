@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { meditationSoundById } from '@/constants/sounds';
 import {
   DEFAULT_UNLOCK_TRACK_ID,
@@ -12,7 +12,6 @@ import { VOICE_OPTIONS } from '@/constants/voices';
 import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
 import { useShowGuided, useVoiceGuidesEnabled } from '@/lib/dev-flags';
 import { syncEveningReminder } from '@/lib/notifications';
-import { usePremium } from '@/lib/premium-provider';
 import {
   loadSurpriseMe,
   loadUnlockTrackId,
@@ -37,8 +36,6 @@ const USAGE_KEY: Record<UnlockTrackKind, 'guided' | 'healing' | 'ambient'> = {
  * a ref) so memoised shelf cards only re-render when their own props change.
  */
 export function useLibraryState() {
-  const router = useRouter();
-  const { isPremium, trackResetVersion } = usePremium();
   // Guided shelf is hidden for launch (dev switch brings it back); voice picker is dev-only.
   const guidedOn = useShowGuided();
   const voiceOn = useVoiceGuidesEnabled();
@@ -72,36 +69,19 @@ export function useLibraryState() {
     }, []),
   );
 
-  // Premium lapsed while this tab was open → show the free fallback the provider saved.
-  useEffect(() => {
-    if (trackResetVersion === 0) return;
-    void loadUnlockTrackId().then(setSelectedId);
-  }, [trackResetVersion]);
-
   const selectedTrack = useMemo(() => unlockTrackById(selectedId), [selectedId]);
-  const isLocked = useCallback((track: UnlockTrack) => track.locked && !isPremium, [isPremium]);
-
-  const openPaywall = useCallback(() => {
-    stopPreview();
-    router.push('/paywall');
-  }, [router]);
-
   // Latest-state ref so the per-track callbacks below can stay referentially stable.
-  const latest = useRef({ isPremium, surpriseMe, selectedId, guidedOn });
+  const latest = useRef({ surpriseMe, selectedId, guidedOn });
   useLayoutEffect(() => {
-    latest.current = { isPremium, surpriseMe, selectedId, guidedOn };
+    latest.current = { surpriseMe, selectedId, guidedOn };
   });
 
   const selectTrack = useCallback(
     async (track: UnlockTrack) => {
-      const { isPremium: premium, surpriseMe: surprise } = latest.current;
-      if (track.locked && !premium) {
-        openPaywall(); // also stops any preview
-        return;
-      }
+      const { surpriseMe: surprise } = latest.current;
       // A playing preview follows the selection (crossfade); nothing playing → silent.
       followPreviewSelection(previewIds.track(track.id), meditationSoundById(track.playbackSoundId).url, 'track');
-      const saved = await saveUnlockTrackId(track.id, { premium });
+      const saved = await saveUnlockTrackId(track.id);
       setSelectedId(saved);
       if (surprise) {
         setSurpriseMe(false);
@@ -111,12 +91,11 @@ export function useLibraryState() {
       void syncEveningReminder();
       await markLibraryCategoryUsed(USAGE_KEY[track.kind]);
     },
-    [openPaywall],
+    [],
   );
 
   const previewTrack = useCallback(
     (track: UnlockTrack) => {
-      if (track.locked && !latest.current.isPremium) return;
       const sound = meditationSoundById(track.playbackSoundId);
       if (sound.url == null) return;
       togglePreview(previewIds.track(track.id), sound.url, 'track');
@@ -151,7 +130,6 @@ export function useLibraryState() {
 
   return {
     ready,
-    isPremium,
     guidedOn,
     voiceOn,
     kinds,
@@ -166,9 +144,7 @@ export function useLibraryState() {
     voiceId,
     selectVoice,
     playingId,
-    isLocked,
     selectTrack,
     previewTrack,
-    openPaywall,
   };
 }

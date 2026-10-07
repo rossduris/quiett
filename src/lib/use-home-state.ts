@@ -8,7 +8,6 @@ import { refreshClockPreference } from '@/lib/time-format';
 import { syncEveningReminder } from '@/lib/notifications';
 import { applyAlarmSoundChange, isLiveAlarmWakePending, openOsAlarmSettings, syncOsAlarm } from '@/lib/os-alarm';
 import { stopPreview } from '@/lib/audio';
-import { usePremium } from '@/lib/premium-provider';
 import {
   clearWakeResolved,
   dayKey,
@@ -52,8 +51,6 @@ const syncKey = (a: AlarmPrefs, soundId: string) =>
  * (mode only), alarm persistence + OS sync. The screen and its cards stay presentational.
  */
 export function useHomeState() {
-  const { isPremium, trackResetVersion } = usePremium();
-
   const [alarm, setAlarm] = useState<AlarmPrefs>(() => ({ ...DEFAULT_ALARM, weekdays: [...DEFAULT_ALARM.weekdays] }));
   const [alarmSavedAt, setAlarmSavedAt] = useState<number | null>(null);
   const [streak, setStreak] = useState<StreakData>({ count: 0, lastCompletedDate: null });
@@ -154,12 +151,6 @@ export function useHomeState() {
     }, [loadMorningFacts]),
   );
 
-  // Premium lapsed → the provider saved the default free track; reflect it here.
-  useEffect(() => {
-    if (trackResetVersion === 0) return;
-    void loadUnlockTrackId().then(setUnlockTrackId);
-  }, [trackResetVersion]);
-
   // Local-day / hour rollover while Home stays open (the minute countdown lives in AlarmCard).
   // Hourly granularity lets the evening prep card appear at 6 PM without a tab switch.
   useEffect(() => {
@@ -225,7 +216,7 @@ export function useHomeState() {
   };
 
   const selectUnlockTrack = async (track: UnlockTrack) => {
-    const id = await saveUnlockTrackId(track.id, { premium: isPremium });
+    const id = await saveUnlockTrackId(track.id);
     setUnlockTrackId(id);
     if (surpriseMe) {
       setSurpriseMe(false);
@@ -297,7 +288,6 @@ export function useHomeState() {
   };
 
   return {
-    isPremium,
     alarm,
     alarmSavedAt,
     streak,
