@@ -1,26 +1,23 @@
-import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import { AppState, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { AppState, Linking, StyleSheet, Text, View, type AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Animated, {
-  Easing,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
 import {
   isLivePoseCameraAvailable,
   QuiettPoseCameraView,
 } from 'quiett-pose';
 import { EmergencyHoldButton } from '@/components/EmergencyHoldButton';
-import { PoseStatusChip } from '@/components/PoseStatusChip';
+import { PoseDebugOverlay, PoseDebugReadout } from '@/components/PoseDebugOverlay';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { SessionBackdrop } from '@/components/SessionBackdrop';
 import { SessionChrome } from '@/components/SessionChrome';
 import { spacing, typography } from '@/constants/theme';
+import { rollSurpriseTrack } from '@/lib/surprise-session';
 import {
   crossfadeToMeditation,
+  handoffBacktrackToSuccess,
   playHarshAlarm,
   releaseAudio,
   stopAllAudio,
@@ -29,12 +26,12 @@ import {
   captureFromCameraRef,
   createOnDevicePoseDetector,
 } from '@/lib/pose';
-import type { PoseStatus } from '@/lib/pose/types';
+import type { PoseDiagnostics, PoseStatus } from '@/lib/pose/types';
+import { usePoseDebugOverlay, usePoseDetectorMode } from '@/lib/pose-dev-pref';
 import {
   CONFIRM_HOLD_MS,
   formatMmSs,
   reduceSession,
-  sitDurationLabel,
   sitDurationMs,
   type SessionEvent,
   type SessionPhase,
@@ -42,42 +39,34 @@ import {
 import {
   breakStreak,
   DEFAULT_SIT_MINUTES,
-  isWakeResolvedToday,
   loadAlarmPrefs,
   loadSitMinutes,
   recordSuccessfulSit,
+  loadStreak,
+  loadEarnedBadges,
   type SitMinutes,
+  type BadgeId,
+  loadWakeIntention,
+  loadUnlockTrackId,
+  loadSurpriseMe,
 } from '@/lib/storage';
+import { useGentleBrightness } from '@/lib/gentle-brightness';
 import {
   armMeditationDeadMan,
   clearMeditationDeadMan,
-  completeOsAlarmAndReschedule,
+  finalizeWakeResolution,
   prepareBailSoundCarriers,
   rearmOsAlarmAfterBail,
   silenceOsRingForSession,
+  syncOsAlarm,
 } from '@/lib/os-alarm';
 import type { ColorTokens } from '@/constants/themes';
 import { useThemeColors } from '@/lib/theme-provider';
 
-const PHASE_TONE: Record<SessionPhase, number> = {
-  alarming: 0,
-  detecting: 0.45,
-  meditating: 1,
-  completed: 1,
-  emergency: 0,
-};
-
-function ringColorFor(phase: SessionPhase, colors: ColorTokens): string {
-  switch (phase) {
-    case 'alarming':
-      return colors.alarm;
-    case 'detecting':
-      return colors.sunrise;
-    case 'meditating':
-      return colors.calm;
-    default:
-      return colors.mist;
-  }
+/** Friendly duration for the pre-lock copy ("Then 2 minutes of quiet"). */
+function friendlyDuration(minutes: SitMinutes): string {
+  if (minutes === 0.5) return '30 seconds';
+  return `${minutes} minutes`;
 }
 
 export default function SessionScreen() {
@@ -85,16 +74,28 @@ export default function SessionScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<SessionPhase>('alarming');
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [durationReady, setDurationReady] = useState(false);
   const [pose, setPose] = useState<PoseStatus>('absent');
+  /** Bumped on each return to foreground so the pose → phase sync re-runs. */
+  const [appActiveTick, setAppActiveTick] = useState(0);
   const [confirmLeft, setConfirmLeft] = useState(CONFIRM_HOLD_MS);
   const [sitLeft, setSitLeft] = useState(() => sitDurationMs(DEFAULT_SIT_MINUTES));
   const durationMs = sitDurationMs(sitMinutes);
-  const durationLabel = sitDurationLabel(sitMinutes);
   const [cameraReady, setCameraReady] = useState(false);
+  const [wakeIntention, setWakeIntention] = useState('');
+  // Read by the completion effect (keyed on phase only) without re-running it.
+  const wakeIntentionRef = useRef('');
+  useLayoutEffect(() => {
+    wakeIntentionRef.current = wakeIntention;
+  });
+  const [trackId, setTrackId] = useState<string | null>(null);
+  const [bottomH, setBottomH] = useState(96);
+  const [topH, setTopH] = useState(40);
+  // Night-friendly: at dawn the screen eases up gently from the user's own brightness (restored on exit).
+  useGentleBrightness(true);
 
   const preferLive = isLivePoseCameraAvailable();
   const cameraRef = useRef<ElementRef<typeof CameraView>>(null);
@@ -103,31 +104,54 @@ export default function SessionScreen() {
   const sitAccrued = useRef(0);
   const finishing = useRef(false);
 
-  const phaseTone = useSharedValue<number>(PHASE_TONE.alarming);
+  // Pose detector: body2d by default (auto-falls back to legacy); dev Settings can pick one (incl. 3D). Overlay: dev only.
+  const poseDetectorMode = usePoseDetectorMode();
+  const poseDebugOverlay = usePoseDebugOverlay() && __DEV__;
+  const poseDebugOverlayRef = useRef(poseDebugOverlay);
+  useLayoutEffect(() => {
+    poseDebugOverlayRef.current = poseDebugOverlay;
+  });
+  const [poseDiag, setPoseDiag] = useState<PoseDiagnostics | undefined>(undefined);
+  const [poseFps, setPoseFps] = useState<number | undefined>(undefined);
+  const lastDiagAt = useRef<number | null>(null);
 
   const detector = useMemo(
     () =>
       preferLive
-        ? createOnDevicePoseDetector({ mode: 'live' })
+        ? createOnDevicePoseDetector({ mode: 'live', detector: poseDetectorMode })
         : createOnDevicePoseDetector({
             mode: 'capture',
             captureFrame: captureFromCameraRef(cameraRef),
           }),
-    [preferLive],
+    [preferLive, poseDetectorMode],
   );
 
   const dispatch = (event: SessionEvent) => {
     setPhase((prev) => reduceSession(prev, event));
   };
 
+  const [surpriseOn, setSurpriseOn] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const surpriseRolled = useRef(false);
+
   useEffect(() => {
     let alive = true;
     (async () => {
-      const minutes = await loadSitMinutes();
+      const [minutes, intention, track, surprise] = await Promise.all([
+        loadSitMinutes(),
+        loadWakeIntention(),
+        loadUnlockTrackId().catch(() => null),
+        loadSurpriseMe(),
+      ]);
       if (!alive) return;
+      setSurpriseOn(surprise);
+      // Surprise me does not reveal a track until the meditation starts.
+      if (!surprise) setTrackId(track);
       setSitMinutes(minutes);
       setSitLeft(sitDurationMs(minutes));
       setDurationReady(true);
+      setWakeIntention(intention);
+      setPrefsReady(true);
     })();
     return () => {
       alive = false;
@@ -136,19 +160,34 @@ export default function SessionScreen() {
 
   // OS AlarmKit + in-app harsh alarm must not dual-play: silence system ring, keep ours.
   const missionDone = useRef(false);
+  /** Shared across remounts so a deferred bail re-arm from a raced unmount can be cancelled. */
+  const bailRearmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    let cancelled = false;
+    if (bailRearmTimer.current) {
+      clearTimeout(bailRearmTimer.current);
+      bailRearmTimer.current = null;
+    }
     void (async () => {
       await silenceOsRingForSession();
+      if (cancelled) return;
       // Pre-register custom-sound carriers while foreground (bail backups after lock).
       void prepareBailSoundCarriers();
-      // Slide-to-stop / Sit handoff: resume user's selected alarm tone until prop+unlock.
+      // Stop / Settle-in handoff: resume user's selected alarm tone until pose+unlock.
       await playHarshAlarm();
     })();
     return () => {
-      if (!missionDone.current) {
-        void stopAllAudio();
+      cancelled = true;
+      if (missionDone.current) return;
+      void stopAllAudio();
+      // Defer bail re-arm briefly so a Strict Mode remount / Gate replace race does not
+      // arm a backup and bounce the wake before /session sticks (permission CTA stays put).
+      if (bailRearmTimer.current) clearTimeout(bailRearmTimer.current);
+      bailRearmTimer.current = setTimeout(() => {
+        bailRearmTimer.current = null;
+        if (missionDone.current) return;
         void rearmOsAlarmAfterBail();
-      }
+      }, 500);
     };
   }, []);
 
@@ -156,7 +195,9 @@ export default function SessionScreen() {
   // before bail re-arm runs (POSE_BROKEN would bounce meditating → alarming).
   const appActive = useRef(AppState.currentState === 'active');
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+  useLayoutEffect(() => {
+    phaseRef.current = phase;
+  });
 
   useEffect(() => {
     let inactiveArm: ReturnType<typeof setTimeout> | null = null;
@@ -172,6 +213,7 @@ export default function SessionScreen() {
       if (state === 'active') {
         clearInactiveArm();
         appActive.current = true;
+        setAppActiveTick((n) => n + 1);
         // Back in /session — kill OS nag; resume the right in-app bed by phase.
         void silenceOsRingForSession().then(() => {
           if (phaseRef.current === 'meditating') {
@@ -233,23 +275,38 @@ export default function SessionScreen() {
   }, [phase]);
 
   useEffect(() => {
-    phaseTone.value = withTiming(PHASE_TONE[phase], {
-      duration: 480,
-      easing: Easing.inOut(Easing.cubic),
-    });
-  }, [phase, phaseTone]);
-
-  useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
       void requestPermission();
     }
   }, [permission, requestPermission]);
+
+  // Returning from iOS Settings: re-read camera permission so the session continues.
+  const permissionGranted = permission?.granted ?? false;
+  useEffect(() => {
+    if (permissionGranted) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void getPermission();
+    });
+    return () => sub.remove();
+  }, [permissionGranted, getPermission]);
 
   useEffect(() => {
     if (!permission?.granted || !cameraReady) return;
     detector.start();
     const unsub = detector.subscribe((sample) => {
       setPose(sample.status);
+      if (poseDebugOverlayRef.current && sample.diagnostics) {
+        const d = sample.diagnostics;
+        const prev = lastDiagAt.current;
+        if (prev !== d.timestamp) {
+          if (prev != null && d.timestamp > prev) {
+            const inst = 1000 / (d.timestamp - prev);
+            setPoseFps((f) => (f == null ? inst : f * 0.8 + inst * 0.2));
+          }
+          lastDiagAt.current = d.timestamp;
+          setPoseDiag(d);
+        }
+      }
     });
     return () => {
       unsub();
@@ -257,13 +314,20 @@ export default function SessionScreen() {
     };
   }, [detector, permission?.granted, cameraReady]);
 
+  // Level-triggered pose → phase sync. This used to run only when `pose` CHANGED, so a
+  // "holding" that arrived while the app was still inactive (alarm handoff) was dropped
+  // and never re-sent: a perfectly still user stayed on "alarming" until they moved
+  // (pose flipped away and back). Now it re-syncs whenever pose, phase, or app activity changes.
   useEffect(() => {
     // Ignore pose loss while backgrounded/inactive — camera freeze is not a real break,
     // and it was aborting meditating before swipe-away could re-arm.
     if (!appActive.current) return;
-    if (pose === 'holding') dispatch({ type: 'POSE_HOLDING' });
-    else dispatch({ type: 'POSE_BROKEN' });
-  }, [pose]);
+    if (pose === 'holding') {
+      if (phase === 'alarming') dispatch({ type: 'POSE_HOLDING' });
+    } else if (phase === 'detecting' || phase === 'meditating') {
+      dispatch({ type: 'POSE_BROKEN' });
+    }
+  }, [pose, phase, appActiveTick]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -292,8 +356,15 @@ export default function SessionScreen() {
       confirmStart.current = null;
     }
 
-    if (phase === 'meditating' && durationReady) {
-      void crossfadeToMeditation();
+    if (phase === 'meditating' && durationReady && prefsReady) {
+      void (async () => {
+        if (surpriseOn && !surpriseRolled.current) {
+          surpriseRolled.current = true;
+          const id = await rollSurpriseTrack();
+          setTrackId(id);
+        }
+        await crossfadeToMeditation();
+      })();
       if (sitStart.current == null) sitStart.current = Date.now();
       interval = setInterval(() => {
         const start = sitStart.current;
@@ -311,33 +382,69 @@ export default function SessionScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [phase, durationMs, durationReady]);
+  }, [phase, durationMs, durationReady, prefsReady, surpriseOn]);
 
   useEffect(() => {
+    // Resolve every wake flag BEFORE navigating. AlarmHandoffGate re-runs on pathname
+    // change; if sticky/handoff still look "live" it will bounce straight back into
+    // /session (the hours-later reopen + end-early-noop bug). Reschedule can trail.
     if (phase === 'completed') {
+      missionDone.current = true;
+      // The backtrack keeps playing into /success (fades out when the user leaves it);
+      // only the alarm and voice stop here.
+      handoffBacktrackToSuccess();
       void (async () => {
-        missionDone.current = true;
-        await stopAllAudio();
+        try {
+          await finalizeWakeResolution();
+        } catch (e) {
+          console.warn('[quiett] finalize wake', e);
+        }
+        // Snapshot streak + badges so /success can animate exactly what changed (no guesses).
+        const [prevStreak, prevBadges] = await Promise.all([
+          loadStreak().catch(() => null),
+          loadEarnedBadges().catch((): BadgeId[] => []),
+        ]);
         const streak = await recordSuccessfulSit();
-        const prefs = await loadAlarmPrefs();
-        await completeOsAlarmAndReschedule(prefs);
-        releaseAudio();
+        const newBadges = (await loadEarnedBadges().catch(() => prevBadges)).filter((b) => !prevBadges.includes(b));
         router.replace({
           pathname: '/success',
-          params: { streak: String(streak.count) },
+          params: {
+            streak: String(streak.count),
+            ...(prevStreak ? { prev: String(prevStreak.count) } : {}),
+            ...(newBadges.length ? { badges: newBadges.join(',') } : {}),
+            ...(wakeIntentionRef.current.trim() ? { intention: wakeIntentionRef.current.trim() } : {}),
+          },
         });
+        try {
+          const prefs = await loadAlarmPrefs();
+          if (prefs.enabled) await syncOsAlarm(prefs);
+        } catch (e) {
+          console.warn('[quiett] reschedule alarm', e);
+        } finally {
+          releaseAudio();
+        }
       })();
     }
     if (phase === 'emergency') {
+      missionDone.current = true;
+      void stopAllAudio();
       void (async () => {
-        missionDone.current = true;
-        await stopAllAudio();
-        await breakStreak();
-        // Keep tomorrow's schedule; ring already silenced at session open.
-        const prefs = await loadAlarmPrefs();
-        await completeOsAlarmAndReschedule(prefs);
-        releaseAudio();
+        try {
+          // Must finish before replace('/emergency') — Gate watches pathname.
+          await finalizeWakeResolution();
+        } catch (e) {
+          console.warn('[quiett] finalize wake', e);
+        }
+        await breakStreak().catch((e) => console.warn('[quiett] break streak', e));
         router.replace('/emergency');
+        try {
+          const prefs = await loadAlarmPrefs();
+          if (prefs.enabled) await syncOsAlarm(prefs);
+        } catch (e) {
+          console.warn('[quiett] reschedule alarm', e);
+        } finally {
+          releaseAudio();
+        }
       })();
     }
   }, [phase, router]);
@@ -350,30 +457,8 @@ export default function SessionScreen() {
     [],
   );
 
-  const timerLabel =
-    phase === 'meditating'
-      ? formatMmSs(sitLeft)
-      : durationLabel.replace(' (dev)', '');
-
   const confirmProgress = 1 - confirmLeft / CONFIRM_HOLD_MS;
   const sitProgress = durationMs > 0 ? 1 - sitLeft / durationMs : 0;
-  const scrimStyle = useAnimatedStyle(() => {
-    const overlay = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.28)', 'rgba(10,18,32,0.45)', 'rgba(10,18,32,0.55)'],
-    );
-    return { backgroundColor: overlay };
-  });
-
-  const glowStyle = useAnimatedStyle(() => {
-    const glow = interpolateColor(
-      phaseTone.value,
-      [0, 0.45, 1],
-      ['rgba(255,92,92,0.35)', 'rgba(232,160,106,0.20)', 'rgba(224,122,85,0.18)'],
-    );
-    return { backgroundColor: glow };
-  });
 
   if (!permission) {
     return <View style={styles.screen} />;
@@ -381,53 +466,97 @@ export default function SessionScreen() {
 
   if (!permission.granted) {
     return (
-      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={styles.permTitle}>Camera access needed</Text>
-        <Text style={styles.permBody}>
-          Quiett uses the front camera to confirm you are in frame. Pose runs on-device with Apple
-          Vision — frames never leave your phone.
-        </Text>
-        <PrimaryButton label="Grant camera" onPress={() => void requestPermission()} />
-        <PrimaryButton label="Cancel" variant="ghost" onPress={() => router.back()} />
+      <View style={styles.screen}>
+        <StatusBar style="light" />
+        <SessionBackdrop />
+        <View
+          style={[
+            styles.permContent,
+            { paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.md },
+          ]}
+        >
+          <View style={styles.permCopy}>
+            <Text style={styles.permTitle}>Let Quiett see you</Text>
+            <Text style={styles.permBody}>
+              {permission.canAskAgain
+                ? 'Your front camera gently checks that you\u2019re settled and still. It all happens on your phone \u2014 nothing is sent anywhere.'
+                : 'Camera access is off for Quiett. Turn it on in Settings, then come back to settle in. It all happens on your phone \u2014 nothing is sent anywhere.'}
+            </Text>
+            <PrimaryButton
+              label={permission.canAskAgain ? 'Allow camera' : 'Open Settings'}
+              onPress={() => {
+                if (permission.canAskAgain) void requestPermission();
+                else void Linking.openSettings();
+              }}
+              style={styles.permCta}
+            />
+          </View>
+          {/* No casual "Not now" during a real alarm: the only way out is the same
+              emergency hold as the session (resets streak, reschedules, stops audio). */}
+          <EmergencyHoldButton onConfirm={() => dispatch({ type: 'EMERGENCY_DISMISS' })} />
+        </View>
       </View>
     );
   }
 
+  const cameraView = preferLive ? (
+    <QuiettPoseCameraView
+      style={StyleSheet.absoluteFill}
+      isActive={phase !== 'completed' && phase !== 'emergency'}
+      detectorMode={poseDetectorMode}
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(message) => {
+        console.warn('[quiett] live camera', message);
+        setCameraReady(false);
+      }}
+    />
+  ) : (
+    <CameraView
+      ref={cameraRef}
+      style={StyleSheet.absoluteFill}
+      facing="front"
+      mute
+      onCameraReady={() => {
+        setCameraReady(true);
+      }}
+      onMountError={(e) => {
+        console.warn('[quiett] camera', e);
+        setCameraReady(false);
+      }}
+    />
+  );
+
   return (
     <View style={styles.screen}>
-      <View style={styles.cameraLayer}>
-        {preferLive ? (
-          <QuiettPoseCameraView
-            style={StyleSheet.absoluteFill}
-            isActive={phase !== 'completed' && phase !== 'emergency'}
-            onCameraReady={() => {
-              setCameraReady(true);
-                          }}
-            onMountError={(message) => {
-              console.warn('[quiett] live camera', message);
-              setCameraReady(false);
-                          }}
-          />
-        ) : (
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            mute
-            onCameraReady={() => {
-              setCameraReady(true);
-                          }}
-            onMountError={(e) => {
-              console.warn('[quiett] camera', e);
-              setCameraReady(false);
-                          }}
-          />
-        )}
-        <Animated.View pointerEvents="none" style={[styles.scrim, scrimStyle]} />
-        <Animated.View pointerEvents="none" style={[styles.glowTop, glowStyle]} />
-      </View>
+      <StatusBar style="light" />
+      <SessionBackdrop />
+
+      <SessionChrome
+        phase={phase}
+        pose={pose}
+        confirmProgress={confirmProgress}
+        sitProgress={sitProgress}
+        timerLabel={formatMmSs(sitLeft)}
+        durationLabel={friendlyDuration(sitMinutes)}
+        secondsLeft={phase === 'meditating' ? Math.ceil(sitLeft / 1000) : undefined}
+        trackId={trackId}
+        wakeIntention={wakeIntention}
+        debugOverlay={poseDebugOverlay}
+        topInset={insets.top + spacing.sm + topH}
+        bottomInset={insets.bottom + spacing.md + bottomH}
+        camera={
+          poseDebugOverlay && preferLive ? (
+            <PoseDebugOverlay diagnostics={poseDiag}>{cameraView}</PoseDebugOverlay>
+          ) : (
+            cameraView
+          )
+        }
+      />
 
       <View
+        pointerEvents="box-none"
         style={[
           styles.ui,
           {
@@ -436,21 +565,11 @@ export default function SessionScreen() {
           },
         ]}
       >
-        <View style={styles.top}>
-          <PoseStatusChip status={pose} />
+        <View style={styles.top} pointerEvents="box-none" onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
+          {poseDebugOverlay ? <PoseDebugReadout diagnostics={poseDiag} fps={poseFps} /> : null}
         </View>
 
-        <View style={styles.center}>
-          <SessionChrome
-            phase={phase}
-            confirmProgress={confirmProgress}
-            sitProgress={sitProgress}
-            timerLabel={timerLabel}
-            ringColor={ringColorFor(phase, colors)}
-          />
-        </View>
-
-        <View style={styles.bottom}>
+        <View style={styles.bottom} onLayout={(e) => setBottomH(e.nativeEvent.layout.height)}>
           <EmergencyHoldButton onConfirm={() => dispatch({ type: 'EMERGENCY_DISMISS' })} />
         </View>
       </View>
@@ -462,23 +581,20 @@ function createStyles(colors: ColorTokens) {
   return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.sessionBgTop,
   },
-  cameraLayer: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: colors.bg,
+  permContent: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'space-between',
   },
-  scrim: {
-    ...StyleSheet.absoluteFill,
+  permCopy: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  glowTop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: '38%',
-    opacity: 0.55,
-  },
+  permCta: { alignSelf: 'stretch', marginTop: spacing.sm },
   ui: {
     flex: 1,
     paddingHorizontal: spacing.lg,
@@ -489,6 +605,14 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.sm,
     minHeight: 40,
   },
+  intention: {
+    ...typography.body,
+    fontStyle: 'italic',
+    color: colors.sessionTextMuted,
+    textAlign: 'center',
+    paddingTop: spacing.xs,
+    paddingHorizontal: spacing.lg,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -498,16 +622,10 @@ function createStyles(colors: ColorTokens) {
     gap: spacing.md,
     alignItems: 'center',
   },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  permTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
+  permTitle: { ...typography.title, fontWeight: '500', color: colors.sessionText, textAlign: 'center' },
   permBody: {
     ...typography.body,
-    color: colors.textMuted,
+    color: colors.sessionTextMuted,
     textAlign: 'center',
     lineHeight: 22,
   },

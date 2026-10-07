@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { notifyLivePoseFrame } from './liveBridge';
-import type { NativePoseResult } from './types';
+import type { NativePoseResult, PoseDetectorMode } from './types';
 
 type NativeEvent<T> = { nativeEvent: T };
 
@@ -16,6 +16,7 @@ type NativeProps = {
   style?: StyleProp<ViewStyle>;
   isActive?: boolean;
   mirror?: boolean;
+  detectorMode?: PoseDetectorMode;
   onPoseFrame?: (event: NativeEvent<NativePoseResult>) => void;
   onCameraReady?: (event: NativeEvent<Record<string, never>>) => void;
   onMountError?: (event: NativeEvent<{ message?: string }>) => void;
@@ -27,6 +28,8 @@ type Props = {
   isActive?: boolean;
   /** Mirror preview like a selfie (default true). */
   mirror?: boolean;
+  /** Which Vision detector runs (default 'legacy'). */
+  detectorMode?: PoseDetectorMode;
   onPoseFrame?: (frame: NativePoseResult) => void;
   onCameraReady?: () => void;
   onMountError?: (message: string) => void;
@@ -50,13 +53,14 @@ try {
 }
 
 /**
- * Live front-camera preview + on-device Vision (~8–10 fps).
+ * Live front-camera preview + on-device Vision (legacy ~9 fps, body2d ~12 fps, body3d ~5 fps).
  * Prefer this over expo-camera stills when native is available.
  */
 export function QuiettPoseCameraView({
   style,
   isActive = true,
   mirror = true,
+  detectorMode = 'legacy',
   onPoseFrame,
   onCameraReady,
   onMountError,
@@ -81,6 +85,21 @@ export function QuiettPoseCameraView({
         brightEnough:
           frame?.brightEnough === undefined ? true : !!frame?.brightEnough,
         timestamp: frame?.timestamp ?? Date.now(),
+        detectorMode: frame?.detectorMode,
+        detector: frame?.detector,
+        processingMs: frame?.processingMs,
+        imageWidth: frame?.imageWidth,
+        imageHeight: frame?.imageHeight,
+        orientation: frame?.orientation,
+        bufferWidth: frame?.bufferWidth,
+        bufferHeight: frame?.bufferHeight,
+        targetFps: frame?.targetFps,
+        // Auto-exposure metadata (newer native builds); was being dropped here.
+        ...({
+          iso: (frame as { iso?: number })?.iso,
+          maxIso: (frame as { maxIso?: number })?.maxIso,
+          exposureDurationMs: (frame as { exposureDurationMs?: number })?.exposureDurationMs,
+        } as Record<string, unknown>),
       };
       notifyLivePoseFrame(normalized);
       onPoseFrame?.(normalized);
@@ -101,6 +120,7 @@ export function QuiettPoseCameraView({
       style={style}
       isActive={isActive}
       mirror={mirror}
+      detectorMode={detectorMode}
       onPoseFrame={handleFrame}
       onCameraReady={() => onCameraReady?.()}
       onMountError={(e) =>

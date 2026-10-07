@@ -15,6 +15,13 @@ public class QuiettPoseModule: Module {
       return false
     }
 
+    Function("isBody3DAvailable") { () -> Bool in
+      if #available(iOS 17.0, *) {
+        return true
+      }
+      return false
+    }
+
     Function("isLiveCameraAvailable") { () -> Bool in
       #if targetEnvironment(simulator)
       return false
@@ -49,6 +56,11 @@ public class QuiettPoseModule: Module {
 
       Prop("mirror") { (view: QuiettPoseCameraView, value: Bool) in
         view.setMirrored(value)
+      }
+
+      /// 'legacy' | 'body2d' | 'body3d' (body3d falls back to body2d below iOS 17).
+      Prop("detectorMode") { (view: QuiettPoseCameraView, value: String) in
+        view.setDetectorMode(value)
       }
     }
   }

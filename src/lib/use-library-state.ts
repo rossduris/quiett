@@ -1,0 +1,150 @@
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { meditationSoundById } from '@/constants/sounds';
+import {
+  DEFAULT_UNLOCK_TRACK_ID,
+  unlockTrackById,
+  visibleKinds,
+  type UnlockTrack,
+  type UnlockTrackKind,
+} from '@/constants/unlock-tracks';
+import { VOICE_OPTIONS } from '@/constants/voices';
+import { followPreviewSelection, previewIds, stopPreview, usePreviewPlayer } from '@/lib/audio';
+import { useShowGuided, useVoiceGuidesEnabled } from '@/lib/dev-flags';
+import { syncEveningReminder } from '@/lib/notifications';
+import {
+  loadSurpriseMe,
+  loadUnlockTrackId,
+  loadVoiceGuideId,
+  markLibraryCategoryUsed,
+  saveSurpriseMe,
+  saveUnlockTrackId,
+  saveVoiceGuideId,
+} from '@/lib/storage';
+
+export type LibraryFilter = 'all' | UnlockTrackKind;
+
+/** Library usage keys for milestones ('healing' is the legacy key for the Tones & music shelf). */
+const USAGE_KEY: Record<UnlockTrackKind, 'guided' | 'healing' | 'ambient'> = {
+  guided: 'guided',
+  music: 'healing',
+  ambient: 'ambient',
+};
+
+/**
+ * Library tab state + actions. Track callbacks are stable (they read the latest state through
+ * a ref) so memoised shelf cards only re-render when their own props change.
+ */
+export function useLibraryState() {
+  // Guided shelf is hidden for launch (dev switch brings it back); voice picker is dev-only.
+  const guidedOn = useShowGuided();
+  const voiceOn = useVoiceGuidesEnabled();
+  const [filter, setFilterState] = useState<LibraryFilter>('all');
+  const [selectedId, setSelectedId] = useState(DEFAULT_UNLOCK_TRACK_ID);
+  const [surpriseMe, setSurpriseMe] = useState(false);
+  const [surpriseOffTick, setSurpriseOffTick] = useState(0);
+  const [voiceId, setVoiceId] = useState<string>(VOICE_OPTIONS[0]!.id);
+  /** First saved-selection load finished (Library shows a placeholder until then). */
+  const [ready, setReady] = useState(false);
+  const { playingId, toggle: togglePreview } = usePreviewPlayer();
+
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      (async () => {
+        const [id, surprise, voice] = await Promise.all([loadUnlockTrackId(), loadSurpriseMe(), loadVoiceGuideId()]);
+        if (!alive) return;
+        setSelectedId(id);
+        setSurpriseMe(surprise);
+        setVoiceId(voice);
+        setReady(true);
+      })().catch(() => {
+        if (alive) setReady(true);
+      });
+      return () => {
+        alive = false;
+        // Leaving the tab (or unmounting) ends any preview.
+        stopPreview();
+      };
+    }, []),
+  );
+
+  const selectedTrack = useMemo(() => unlockTrackById(selectedId), [selectedId]);
+  // Latest-state ref so the per-track callbacks below can stay referentially stable.
+  const latest = useRef({ surpriseMe, selectedId, guidedOn });
+  useLayoutEffect(() => {
+    latest.current = { surpriseMe, selectedId, guidedOn };
+  });
+
+  const selectTrack = useCallback(
+    async (track: UnlockTrack) => {
+      const { surpriseMe: surprise } = latest.current;
+      // A playing preview follows the selection (crossfade); nothing playing → silent.
+      followPreviewSelection(previewIds.track(track.id), meditationSoundById(track.playbackSoundId).url, 'track');
+      const saved = await saveUnlockTrackId(track.id);
+      setSelectedId(saved);
+      if (surprise) {
+        setSurpriseMe(false);
+        setSurpriseOffTick((t) => t + 1);
+        await saveSurpriseMe(false);
+      }
+      void syncEveningReminder();
+      await markLibraryCategoryUsed(USAGE_KEY[track.kind]);
+    },
+    [],
+  );
+
+  const previewTrack = useCallback(
+    (track: UnlockTrack) => {
+      const sound = meditationSoundById(track.playbackSoundId);
+      if (sound.url == null) return;
+      togglePreview(previewIds.track(track.id), sound.url, 'track');
+    },
+    [togglePreview],
+  );
+
+  const toggleSurprise = async () => {
+    const next = !surpriseMe;
+    // Mode only. The track is rolled when the morning meditation starts.
+    setSurpriseMe(next);
+    await saveSurpriseMe(next);
+    if (next) stopPreview();
+    void syncEveningReminder();
+  };
+
+  const selectVoice = async (id: string) => {
+    setVoiceId(id);
+    await saveVoiceGuideId(id);
+  };
+
+  const kinds = useMemo(() => visibleKinds(guidedOn), [guidedOn]);
+  /** A filter for a hidden shelf (guided switched off) falls back to All. */
+  const activeFilter: LibraryFilter = filter !== 'all' && kinds.includes(filter) ? filter : 'all';
+  const sections = activeFilter === 'all' ? kinds : [activeFilter];
+
+  // Changing the filter can unmount the card that's previewing, so end the preview.
+  const setFilter = (next: LibraryFilter) => {
+    if (next !== activeFilter) stopPreview();
+    setFilterState(next);
+  };
+
+  return {
+    ready,
+    guidedOn,
+    voiceOn,
+    kinds,
+    sections,
+    filter: activeFilter,
+    setFilter,
+    selectedId,
+    selectedTrack,
+    surpriseMe,
+    surpriseOffTick,
+    toggleSurprise,
+    voiceId,
+    selectVoice,
+    playingId,
+    selectTrack,
+    previewTrack,
+  };
+}

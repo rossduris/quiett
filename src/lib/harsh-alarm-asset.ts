@@ -1,5 +1,5 @@
 import { Asset } from 'expo-asset';
-import { alarmSoundById, QUIETT_HARSH_ALARM } from '@/constants/sounds';
+import { alarmSoundById, DEFAULT_ALARM_SOUND_ID } from '@/constants/sounds';
 
 const uriCache = new Map<string, string>();
 
@@ -12,19 +12,8 @@ export function clearAlarmSoundUriCache(): void {
   uriCache.clear();
 }
 
-/** Exact filename for AlarmKit bundled soundName (iosAlarmSounds plugin). */
-export const HARSH_ALARM_SOUND_NAME = 'quiett-harsh.caf';
-
-/** Local file URI for AlarmKit / Android import (copied into durable storage on schedule). */
-export async function resolveHarshAlarmSoundUri(): Promise<string> {
-  const uri = await resolveAlarmSoundUri('quiett_harsh');
-  if (!uri) throw new Error('Quiett harsh alarm asset failed to resolve.');
-  return uri;
-}
-
 /**
  * Resolve a bundled alarm asset to a local file URI for AlarmKit `soundUri`.
- * Returns null for system default (no custom file).
  */
 export async function resolveAlarmSoundUri(soundId: string): Promise<string | null> {
   const opt = alarmSoundById(soundId);
@@ -38,11 +27,8 @@ export async function resolveAlarmSoundUri(soundId: string): Promise<string | nu
   asset.localUri = null;
   await asset.downloadAsync();
   if (!asset.localUri) {
-    // Fallback to harsh if a tone fails to resolve
-    if (soundId !== 'quiett_harsh') {
-      return resolveAlarmSoundUri('quiett_harsh');
-    }
-    throw new Error('Quiett harsh alarm asset failed to resolve.');
+    if (soundId !== DEFAULT_ALARM_SOUND_ID) return resolveAlarmSoundUri(DEFAULT_ALARM_SOUND_ID);
+    throw new Error('Alarm sound failed to resolve.');
   }
   uriCache.set(soundId, asset.localUri);
   return asset.localUri;
@@ -51,6 +37,3 @@ export async function resolveAlarmSoundUri(soundId: string): Promise<string | nu
 export function alarmKitSoundName(soundId: string): string | undefined {
   return alarmSoundById(soundId).soundName;
 }
-
-/** @deprecated keep export for older imports */
-export { QUIETT_HARSH_ALARM };

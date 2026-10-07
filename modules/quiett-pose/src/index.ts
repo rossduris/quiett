@@ -3,7 +3,15 @@ import { Platform } from 'react-native';
 import type { NativePoseResult } from './types';
 import { isQuiettPoseCameraViewAvailable } from './QuiettPoseCameraView';
 
-export type { NativePoseJoint, NativePoseResult, PoseFrameEvent, PoseFrameListener } from './types';
+export type {
+  NativePoseCheck,
+  NativePoseDetectorResult,
+  NativePoseJoint,
+  NativePoseResult,
+  PoseDetectorMode,
+  PoseFrameEvent,
+  PoseFrameListener,
+} from './types';
 export {
   subscribeToLivePoseFrames,
   notifyLivePoseFrame,
@@ -17,6 +25,7 @@ export {
 type QuiettPoseNativeModule = {
   isAvailable(): boolean;
   isLiveCameraAvailable?(): boolean;
+  isBody3DAvailable?(): boolean;
   analyzeImage(uri: string): Promise<NativePoseResult>;
   analyzeBase64?(base64: string): Promise<NativePoseResult>;
 };
@@ -51,6 +60,16 @@ export function isLivePoseCameraAvailable(): boolean {
     }
     // New module should always expose isLiveCameraAvailable; without it, don't claim live.
     return false;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the native build supports VNDetectHumanBodyPose3DRequest (iOS 17+). */
+export function isBody3DPoseAvailable(): boolean {
+  if (Platform.OS !== 'ios') return false;
+  try {
+    return typeof native?.isBody3DAvailable === 'function' ? !!native.isBody3DAvailable() : false;
   } catch {
     return false;
   }

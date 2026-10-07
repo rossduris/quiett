@@ -1,6 +1,6 @@
 import { dayKey, nextAlarmDate, type AlarmPrefs, type StreakData, type Weekday } from '@/lib/storage';
 
-export type TodayStatus = 'locked_tonight' | 'unlocked_today' | 'missed_morning';
+export type TodayStatus = 'locked_tonight' | 'unlocked_today' | 'missed_morning' | 'waiting_settle';
 
 export type TodayStatusChip = {
   status: TodayStatus;
@@ -68,17 +68,70 @@ export function isUnlockedForToday(
   return false;
 }
 
+/** "Today", "Tomorrow", or a short weekday ("Mon") for a date relative to `now`. */
+export function relativeDayLabel(date: Date, now: Date = new Date()): string {
+  const key = dayKey(0, date);
+  if (key === dayKey(0, now)) return 'Today';
+  if (key === dayKey(1, now)) return 'Tomorrow';
+  return date.toLocaleDateString([], { weekday: 'short' });
+}
+
+/** Settle-in window right after the ring (~18 minutes). Kept for callers that want "just rang". */
+export const MORNING_MISS_GRACE_MS = 18 * 60 * 1000;
+
 /**
- * Derive the single Home status chip.
+ * Late-start window: an unresolved scheduled morning still opens /session (instead of showing
+ * "Missed this morning") when the app is opened this long after the ring, however it was
+ * opened (alarm Stop, notification, or app icon). Judgment call — tune here.
+ */
+export const MORNING_LATE_START_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * True when today's scheduled ring passed less than MORNING_LATE_START_MS ago and that ring
+ * was armed (alarm saved before it was due). Does not check resolved/completed — callers do.
+ */
+export function isWithinMorningLateStart(
+  alarm: AlarmPrefs,
+  now: Date = new Date(),
+  savedAt: number | null = null,
+): boolean {
+  if (!alarm.enabled || alarm.weekdays.length === 0) return false;
+  if (!alarm.weekdays.includes(isoWeekday(now))) return false;
+  const todayRing = parseAlarmToday(alarm.time, now);
+  if (savedAt != null && savedAt > todayRing.getTime()) return false;
+  const elapsed = now.getTime() - todayRing.getTime();
+  return elapsed >= 0 && elapsed < MORNING_LATE_START_MS;
+}
+
+/** True from today's scheduled ring until grace elapses (morning still locked). */
+export function isWithinMorningWakeGrace(alarm: AlarmPrefs, now: Date = new Date()): boolean {
+  if (!alarm.enabled || alarm.weekdays.length === 0) return false;
+  if (!alarm.weekdays.includes(isoWeekday(now))) return false;
+  const todayRing = parseAlarmToday(alarm.time, now);
+  const elapsed = now.getTime() - todayRing.getTime();
+  return elapsed >= 0 && elapsed < MORNING_MISS_GRACE_MS;
+}
+
+/**
+ * Derive the single Home status chip (shown only while the day is still locked).
  * - Unlocked for today: wake resolved / morning completed today
- * - Missed this morning: alarm enabled, today is scheduled, today's ring passed, not unlocked
- * - Locked tonight: alarm enabled, still waiting on the next ring
+ * - Waiting for you to settle in: live wake pending, or within grace after today's ring
+ * - Missed this morning: alarm enabled, today is scheduled, today's ring passed (+ grace),
+ *   not unlocked, and that ring was due AFTER the alarm was last saved (so a new install or a
+ *   fresh edit at 10am never shows "missed" for a 7:00 ring that was never armed). `savedAt`
+ *   null = legacy install without the timestamp, treated as saved long ago.
+ * - Set for …: alarm enabled, still waiting on the next ring ("Set for tomorrow").
  * Returns null when alarm is off and day is not unlocked (nothing to show).
+ *
+ * Never say "sit" in chip copy. Spell Quiett when naming the app.
  */
 export function getTodayStatusChip(
   alarm: AlarmPrefs,
   unlockedToday: boolean,
   now: Date = new Date(),
+  savedAt: number | null = null,
+  /** Sticky handoff / alerting / pending wake — never show Missed while true. */
+  liveWakePending: boolean = false,
 ): TodayStatusChip | null {
   if (unlockedToday) {
     return { status: 'unlocked_today', label: 'Unlocked for today' };
@@ -87,8 +140,56 @@ export function getTodayStatusChip(
 
   const todayScheduled = alarm.weekdays.includes(isoWeekday(now));
   const todayRing = parseAlarmToday(alarm.time, now);
-  if (todayScheduled && now.getTime() >= todayRing.getTime()) {
+  const ringWasArmed = savedAt == null || savedAt <= todayRing.getTime();
+  if (todayScheduled && now.getTime() >= todayRing.getTime() && ringWasArmed) {
+    // Never "missed" while a wake is unresolved or a late start is still allowed.
+    if (liveWakePending || isWithinMorningLateStart(alarm, now, savedAt)) {
+      return { status: 'waiting_settle', label: 'Waiting for you to settle in' };
+    }
     return { status: 'missed_morning', label: 'Missed this morning' };
   }
-  return { status: 'locked_tonight', label: 'Locked tonight' };
+  const next = nextAlarmDate(alarm.time, alarm.weekdays, now);
+  const day = next ? relativeDayLabel(next, now) : null;
+  return {
+    status: 'locked_tonight',
+    label: day ? `Set for ${day === 'Today' || day === 'Tomorrow' ? day.toLowerCase() : day}` : 'Alarm set',
+  };
+}
+
+/** Local hour after which Home switches to the night-before prep card. */
+export const EVENING_HOUR = 18;
+
+export type HomeStatusMode = 'unlocked' | 'off' | 'firstDay' | 'evening';
+
+/**
+ * Which status card leads Home (null = none):
+ * - off: alarm disabled or no days picked;
+ * - unlocked: today is unlocked and the card isn't dismissed (yields to evening prep after 6 PM);
+ * - firstDay: no morning recorded yet → "Your first morning is tomorrow at …";
+ * - evening: after 6 PM with the next ring tomorrow → "Tomorrow, 7:00 AM" + prep tips.
+ */
+export function homeStatusMode(input: {
+  alarm: AlarmPrefs;
+  unlockedToday: boolean;
+  dayOpenDismissed: boolean;
+  hasAnyMorning: boolean;
+  now: Date;
+}): { mode: HomeStatusMode | null; nextRing: Date | null; evening: boolean } {
+  const { alarm, unlockedToday, dayOpenDismissed, hasAnyMorning, now } = input;
+  const armed = alarm.enabled && alarm.weekdays.length > 0;
+  const nextRing = armed ? nextAlarmDate(alarm.time, alarm.weekdays, now) : null;
+  const evening = !!nextRing && now.getHours() >= EVENING_HOUR && dayKey(0, nextRing) === dayKey(1, now);
+  if (unlockedToday && !dayOpenDismissed && !evening) return { mode: 'unlocked', nextRing, evening };
+  if (!armed || !nextRing) return { mode: 'off', nextRing: null, evening: false };
+  if (!hasAnyMorning) return { mode: 'firstDay', nextRing, evening };
+  if (evening) return { mode: 'evening', nextRing, evening };
+  return { mode: null, nextRing, evening };
+}
+
+/** "tomorrow at 7:00 AM" / "today at 6:30 AM" / "on Monday at 7:00 AM" (lower-case day words). */
+export function ringPhrase(next: Date, now: Date, clock: string): string {
+  const key = dayKey(0, next);
+  if (key === dayKey(0, now)) return `today at ${clock}`;
+  if (key === dayKey(1, now)) return `tomorrow at ${clock}`;
+  return `on ${next.toLocaleDateString([], { weekday: 'long' })} at ${clock}`;
 }

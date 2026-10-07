@@ -1,54 +1,87 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/theme-provider';
-import { THEMES, type ThemeId } from '@/constants/themes';
-import { spacing } from '@/constants/theme';
+import { THEMES, type ColorTokens, type ThemeId } from '@/constants/themes';
+import { radii, spacing, typography } from '@/constants/theme';
+import { hapticSelect } from '@/lib/haptics';
+import { PressableScale } from '@/components/PressableScale';
 
 type Props = {
   label?: string;
+  /** 'rows': edge-to-edge radio rows for a Settings card (the card supplies the label). */
+  variant?: 'tiles' | 'rows';
 };
 
-export function ThemePicker({ label = 'Appearance' }: Props) {
+export function ThemePicker({ label = 'Appearance', variant = 'tiles' }: Props) {
   const { themeId, setTheme, colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const handlePress = async (id: ThemeId) => {
-    await setTheme(id);
-  };
+  if (variant === 'rows') {
+    return (
+      <View accessibilityRole="radiogroup" accessibilityLabel={label}>
+        {Object.values(THEMES).map((theme) => {
+          const isActive = theme.id === themeId;
+          const t = theme.colors;
+          return (
+            <PressableScale
+              key={theme.id}
+              scaleTo={0.98}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: isActive }}
+              accessibilityLabel={theme.name}
+              onPress={() => {
+                hapticSelect();
+                void setTheme(theme.id as ThemeId);
+              }}
+              style={styles.row}
+            >
+              {/* Tiny swatch of the theme itself (its own background + calm accent). */}
+              <View style={[styles.swatch, { backgroundColor: t.bg, borderColor: t.border }]}>
+                <View style={[styles.swatchDot, { backgroundColor: t.calm }]} />
+              </View>
+              <Text style={[styles.rowLabel, isActive && styles.optionLabelActive]}>{theme.name}</Text>
+              {isActive ? (
+                <View style={styles.check}>
+                  <Ionicons name="checkmark" size={14} color={colors.onAccent} />
+                </View>
+              ) : (
+                <View style={styles.checkEmpty} />
+              )}
+            </PressableScale>
+          );
+        })}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-      <View style={styles.options}>
+      <Text style={styles.label} accessibilityRole="header">
+        {label}
+      </Text>
+      <View style={styles.options} accessibilityRole="radiogroup">
         {Object.values(THEMES).map((theme) => {
           const isActive = theme.id === themeId;
           return (
-            <TouchableOpacity
+            <Pressable
               key={theme.id}
-              style={[
-                styles.option,
-                {
-                  backgroundColor: isActive ? colors.calmSoft : colors.bgCard,
-                  borderColor: isActive ? colors.calm : colors.border,
-                },
-              ]}
-              onPress={() => handlePress(theme.id)}
-              activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: isActive }}
+              accessibilityLabel={theme.name}
+              onPress={() => {
+                hapticSelect();
+                void setTheme(theme.id as ThemeId);
+              }}
+              style={({ pressed }) => [styles.option, isActive && styles.optionActive, pressed && styles.pressed]}
             >
-              <View style={styles.optionContent}>
-                <Text
-                  style={[
-                    styles.optionLabel,
-                    { color: isActive ? colors.text : colors.textMuted },
-                  ]}
-                >
-                  {theme.name}
-                </Text>
-                {isActive && (
-                  <View style={[styles.check, { backgroundColor: colors.calm }]}>
-                    <Text style={styles.checkmark}>✓</Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
+              <Text style={[styles.optionLabel, isActive && styles.optionLabelActive]}>{theme.name}</Text>
+              {isActive ? (
+                <View style={styles.check}>
+                  <Ionicons name="checkmark" size={14} color={colors.onAccent} />
+                </View>
+              ) : null}
+            </Pressable>
           );
         })}
       </View>
@@ -56,43 +89,53 @@ export function ThemePicker({ label = 'Appearance' }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing.sm,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  options: {
-    gap: spacing.xs,
-  },
-  option: {
-    borderRadius: 12,
-    borderWidth: 1.5,
-    padding: spacing.md,
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  optionLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  check: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
+function createStyles(colors: ColorTokens) {
+  return StyleSheet.create({
+    container: { gap: spacing.sm },
+    label: { ...typography.eyebrow, color: colors.textDim },
+    options: { gap: spacing.xs },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: radii.md,
+      borderWidth: 1.5,
+      padding: spacing.md,
+      backgroundColor: colors.bgElevated,
+      borderColor: colors.border,
+    },
+    optionActive: { backgroundColor: colors.calmSoft, borderColor: colors.calm },
+    optionLabel: { ...typography.body, fontWeight: '500', color: colors.textMuted },
+    optionLabelActive: { color: colors.text },
+    check: {
+      width: 22,
+      height: 22,
+      borderRadius: radii.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accentStrong,
+    },
+    pressed: { opacity: 0.75 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      minHeight: 52,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    rowLabel: { ...typography.body, fontWeight: '500', color: colors.textMuted, flex: 1 },
+    swatch: {
+      width: 28,
+      height: 28,
+      borderRadius: radii.full,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    swatchDot: { width: 10, height: 10, borderRadius: radii.full },
+    checkEmpty: { width: 22, height: 22, borderRadius: radii.full, borderWidth: 1.5, borderColor: colors.border },
+  });
+}

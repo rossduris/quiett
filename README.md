@@ -47,6 +47,36 @@ If `ios/` / `android/` already exist (they do), prefer `npx expo run:ios` so nat
 5. Hold again → finish timer → success + streak
 6. Or **Hold to emergency dismiss** (~2s) → streak resets
 
+## Quiett Premium (RevenueCat)
+
+In-app purchases go through RevenueCat (`react-native-purchases`), wrapped in
+`src/lib/purchases.ts` and exposed via `usePremium()` (`src/lib/premium-provider.tsx`).
+
+- **Safe on any build:** the SDK is only required when `NativeModules.RNPurchases` exists and an
+  API key is set. Older dev builds, Expo Go and web run in "purchases unavailable" mode (the
+  paywall shows "Subscriptions aren't available yet", no prices).
+- **Keys:** copy `.env.example` → `.env.local` and set `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (public
+  `appl_…` key). Restart Metro with `npx expo start -c` after changing it.
+- **Entitlement:** `premium`. The paywall renders the **current Offering** — no product ids in code.
+- **Suggested App Store product ids:** `quiett_premium_monthly`, `quiett_premium_annual`
+  (attach both to the `premium` entitlement; add them to the current offering as the
+  `$rc_monthly` / `$rc_annual` packages).
+- **What Premium unlocks:** the whole app (hard paywall, see `src/lib/access-gate.ts`). There is
+  no per-sound split: everyone past the access gate can pick and play every sound.
+- **Dev preview:** Settings → dev-only card → "Force premium (dev)" (ignored in release builds).
+- **Native rebuild required** after installing the package: `npx expo prebuild --clean` (or
+  `cd ios && pod install`), then `npx expo run:ios --device`.
+- Legal links live in `src/constants/legal.ts` (privacy URL is a TODO placeholder).
+
+## Account (Supabase Auth)
+
+Apple + Google sign-in for saving progress across devices. Camera/motion stay on-device.
+
+- Env: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`).
+- Code: `src/lib/supabase.ts`, `src/lib/auth-provider.tsx`, Profile account row.
+- **Console setup (required before real sign-in works):** [`docs/AUTH-SETUP.md`](./docs/AUTH-SETUP.md) — Supabase redirect URLs, Apple Sign in capability, Google Cloud Web OAuth client (TODOs for Ross; no invented client IDs in the repo).
+- Native rebuild after adding `expo-apple-authentication`: `npx expo run:ios`.
+
 ## Architecture notes
 
 | Piece | Status |

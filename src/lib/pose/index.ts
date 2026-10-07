@@ -3,10 +3,12 @@ export type {
   PoseDetectorListener,
   PoseJoint,
   PoseLandmarks,
+  PoseCheck,
+  PoseDetectorMode,
+  PoseDiagnostics,
   PoseSample,
   PoseStatus,
 } from './types';
-export { createMockPoseDetector } from './mock-detector';
 export {
   captureFromCameraRef,
   createOnDevicePoseDetector,
@@ -20,6 +22,7 @@ export {
   classifyPresenceAndUpright,
   createHoldingHysteresis,
   isStill,
+  stillnessTravel,
   toPoseStatus,
 } from './classify';
 export * from './thresholds';
