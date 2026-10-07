@@ -151,10 +151,27 @@ function detectedJointNames(joints: PoseLandmarks['joints']): string[] {
     .sort();
 }
 
+let lastLightLogAt = 0;
+/** Dev-only, ~1/sec: luma + auto-exposure so the low-light thresholds can be tuned on device. */
+function logLight(l: PoseLandmarks, dim: boolean) {
+  if (!__DEV__) return;
+  const now = Date.now();
+  if (now - lastLightLogAt < 1000) return;
+  lastLightLogAt = now;
+  const f = (n: number | undefined, d = 3) => (n == null || !Number.isFinite(n) ? '-' : n.toFixed(d));
+  console.log(
+    `[quiett light] luma=${f(l.brightness)} dim=${dim} enter=${LOW_LIGHT_ENTER_LUMA} exit=${LOW_LIGHT_EXIT_LUMA}` +
+      ` iso=${f(l.iso, 0)}/${f(l.maxIso, 0)} shutterMs=${f(l.exposureDurationMs, 1)}`,
+  );
+}
+
 function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
   const r = raw as NativePoseResult & {
     brightness?: number;
     brightEnough?: boolean;
+    iso?: number;
+    maxIso?: number;
+    exposureDurationMs?: number;
   };
   return {
     available: !!r.available,
@@ -176,6 +193,9 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
     orientation: r.orientation,
     targetFps: r.targetFps,
     brightness: r.brightness,
+    iso: r.iso,
+    maxIso: r.maxIso,
+    exposureDurationMs: r.exposureDurationMs,
     // Missing flag (old native binary) → fail open until rebuild.
     brightEnough: r.brightEnough === undefined ? true : r.brightEnough === true,
   };
@@ -408,6 +428,7 @@ export function createOnDevicePoseDetector(
     const personSeen = faceSeen || det.personFound;
     const frameLuma = landmarks.brightness ?? lighting?.value;
     const dim = lowLight.push(frameLuma);
+    logLight(landmarks, dim);
     // "Can't see you": no one visible and a near-black frame. Separate from low light.
     let cantSee = false;
     if (lighting) {
@@ -498,6 +519,7 @@ export function createOnDevicePoseDetector(
     armTracker.reset();
     // Track light on every real frame so the dim state is current once the phone is upright.
     const dim = landmarks.available ? lowLight.push(landmarks.brightness) : lowLight.isDim();
+    if (landmarks.available) logLight(landmarks, dim);
 
     if (!phonePropped) {
       motion = [];

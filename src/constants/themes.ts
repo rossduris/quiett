@@ -88,14 +88,14 @@ export type Theme = {
 };
 
 /**
- * Peach Cream (Default)
+ * Light (Default, id peachCream)
  * 
  * Soft morning palette matching the sunrise-clock icon.
  * Cream/white backgrounds with peachy highlights — calm, light, quiet.
  */
 export const PEACH_CREAM: Theme = {
   id: 'peachCream',
-  name: 'Peach Cream',
+  name: 'Light',
   colors: {
     bg: '#FFF8F4',
     bgElevated: '#FFFFFF',
@@ -133,14 +133,14 @@ export const PEACH_CREAM: Theme = {
 };
 
 /**
- * Night Teal (Dark)
+ * Dark (id nightTeal)
  * 
- * Original dark navy + teal palette.
- * Deep backgrounds with teal calm accent.
+ * Dark navy palette with a soft lavender calm accent
+ * (id stays 'nightTeal' so saved prefs keep working).
  */
 export const NIGHT_TEAL: Theme = {
   id: 'nightTeal',
-  name: 'Night Teal',
+  name: 'Dark',
   colors: {
     bg: '#0A1220',
     bgElevated: '#121C2A',
@@ -151,10 +151,10 @@ export const NIGHT_TEAL: Theme = {
     textDim: '#7A8AA3', // 4.6:1 on bgCard (was #5C6B7E, 3.0:1)
     mist: '#A8C5D4',
     accent: '#5B8CFF',
-    accentStrong: '#17806C', // deep teal (was off-brand blue); white on this = 4.8:1
+    accentStrong: '#6E56B8', // deep lavender; white on this = 5.7:1
     onAccent: '#FFFFFF',
-    calm: '#3DCFB0',
-    calmSoft: 'rgba(61,207,176,0.14)',
+    calm: '#B8A4E8', // soft lavender; 7.4:1 on bgCard
+    calmSoft: 'rgba(184,164,232,0.14)',
     alarm: '#FF5C5C',
     alarmSoft: '#3D1A1A',
     warning: '#F0B429',

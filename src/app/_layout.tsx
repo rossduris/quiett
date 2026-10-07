@@ -15,7 +15,7 @@ function RootStack() {
 
   // Light / dark nav base, recoloured with the theme tokens so transitions, modal backdrops
   // and any native chrome use our backgrounds (DarkTheme's near-black + iOS blue looked off
-  // against Night Teal).
+  // against the Dark theme).
   const navTheme = useMemo(() => {
     const base = theme.colors.statusBarStyle === 'dark' ? DefaultTheme : DarkTheme;
     return {

@@ -18,6 +18,8 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
   private var sessionConfigured = false
   private var lastVisionTime: CFTimeInterval = 0
   private var visionBusy = false
+  /// Front camera, kept so each frame can report auto-exposure (ISO / shutter) for low-light tuning.
+  private var captureDevice: AVCaptureDevice?
   /// Detector mode (legacy / body2d / body3d). Read + written on the Vision queue.
   private var detectorMode: QuiettDetectorMode = .legacy
   /// Joint history for body-mode stillness (Vision queue only).
@@ -121,6 +123,7 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
 
     do {
       let input = try AVCaptureDeviceInput(device: device)
+      captureDevice = device
       if session.canAddInput(input) {
         session.addInput(input)
       } else {
@@ -230,6 +233,14 @@ public class QuiettPoseCameraView: ExpoView, AVCaptureVideoDataOutputSampleBuffe
       result["bufferWidth"] = Double(bw)
       result["bufferHeight"] = Double(bh)
       result["targetFps"] = Int((1.0 / mode.minInterval).rounded())
+      // Auto-exposure metadata (read-only, no locking). Dim rooms push ISO / shutter up
+      // while mean luma looks "fine", so these are better darkness signals than luma alone.
+      if let dev = captureDevice {
+        result["iso"] = Double(dev.iso)
+        let dur = CMTimeGetSeconds(dev.exposureDuration)
+        if dur.isFinite { result["exposureDurationMs"] = dur * 1000 }
+        result["maxIso"] = Double(dev.activeFormat.maxISO)
+      }
 
       DispatchQueue.main.async { [weak self] in
         self?.onPoseFrame(result)

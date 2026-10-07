@@ -16,7 +16,6 @@ import { SetupTips } from '@/components/SetupTips';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsLinkRow } from '@/components/settings/SettingsLinkRow';
 import { StreakDeadlineCard } from '@/components/settings/StreakDeadlineCard';
-import { DevSettingsCard } from '@/components/settings/DevSettingsCard';
 import { LegalCard } from '@/components/settings/LegalCard';
 import { AppVersionFooter } from '@/components/settings/AppVersionFooter';
 
@@ -105,13 +104,7 @@ export default function SettingsScreen() {
           <LegalCard />
         </EnterStagger>
 
-        {__DEV__ ? (
-          <EnterStagger index={6}>
-            <DevSettingsCard />
-          </EnterStagger>
-        ) : null}
-
-        <EnterStagger index={7}>
+        <EnterStagger index={6}>
           <AppVersionFooter />
         </EnterStagger>
       </ScrollView>

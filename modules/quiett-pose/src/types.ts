@@ -59,6 +59,11 @@ export type NativePoseResult = {
   facePitch?: number;
   /** 0–1 mean luma (face region preferred). */
   brightness?: number;
+  /** Front camera auto-exposure ISO (new native builds only). */
+  iso?: number;
+  maxIso?: number;
+  /** Front camera auto-exposure shutter time (ms). */
+  exposureDurationMs?: number;
   /** False when too dark for sit. */
   brightEnough?: boolean;
   timestamp?: number;

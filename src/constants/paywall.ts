@@ -23,3 +23,16 @@ export const PAYWALL_DISMISSABLE = false;
  * in a release build means anyone who can't load plans (e.g. offline) gets in for free.
  */
 export const PAYWALL_ALLOW_CONTINUE_WHEN_PLANS_UNAVAILABLE = true;
+
+/**
+ * Beta demo plans, shown on the paywall only while RevenueCat is off (REVENUECAT_ENABLED = false
+ * in src/lib/dev-flags.ts). Display only: nothing is sold, the CTA is "Enter beta".
+ *
+ * TODO: placeholder, replace with App Store prices. Once RevenueCat is on, the real prices come
+ * from App Store Connect and these are never shown.
+ */
+export const BETA_DEMO_PRICES = [
+  { id: 'annual', title: 'Annual', price: '$29.99', per: 'year', perMonth: '$2.50/mo', best: true },
+  { id: 'monthly', title: 'Monthly', price: '$4.99', per: 'month', perMonth: null, best: false },
+] as const;
+export const BETA_DEMO_TRIAL = '3 days';

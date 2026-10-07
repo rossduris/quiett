@@ -98,7 +98,8 @@ export const BRIGHTNESS_MIN = 0.04;
  * face), 0–1, after the front camera's auto-exposure. Applies even when a person
  * is visible, and pauses the hold until the room is brighter.
  *
- * History: 0.20 failed dim-but-usable rooms; 0.13 passed typical dim indoor light.
+ * History: 0.20 failed dim-but-usable rooms; 0.12/0.16 still passed a dim lamp-off room
+ * (Oct 2026), so raised to 0.20/0.25 to require a light on.
  * - Enter dim when luma stays below LOW_LIGHT_ENTER_LUMA for LOW_LIGHT_DEBOUNCE_MS.
  * - Leave dim when luma stays above LOW_LIGHT_EXIT_LUMA for LOW_LIGHT_DEBOUNCE_MS.
  * The gap between the two keeps the line from flickering.
@@ -106,10 +107,11 @@ export const BRIGHTNESS_MIN = 0.04;
  * Tuning (watch the `lighting` row on the dev pose debug panel):
  * - A dim-but-fine room still says too dark → LOWER both (e.g. 0.09 / 0.13)
  * - A dark room still passes → RAISE both (e.g. 0.15 / 0.19)
- * - Keep EXIT about 0.04 above ENTER.
+ * - Keep EXIT about 0.05 above ENTER.
+ * Dev builds log `[quiett light]` once a second with luma, ISO, and shutter for calibration.
  */
-export const LOW_LIGHT_ENTER_LUMA = 0.12;
-export const LOW_LIGHT_EXIT_LUMA = 0.16;
+export const LOW_LIGHT_ENTER_LUMA = 0.2;
+export const LOW_LIGHT_EXIT_LUMA = 0.25;
 /** How long luma must stay past a threshold before the dim state changes (ms). */
 export const LOW_LIGHT_DEBOUNCE_MS = 750;
 

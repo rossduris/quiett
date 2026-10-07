@@ -121,6 +121,10 @@ export type PoseLandmarks = {
   handsVisible?: boolean;
   /** 0–1 mean luma of face (or center crop). */
   brightness?: number;
+  /** Camera auto-exposure (dev calibration; missing on old native builds). */
+  iso?: number;
+  maxIso?: number;
+  exposureDurationMs?: number;
   /** False only when the frame is near black. A visible person is bright enough. */
   brightEnough?: boolean;
   handCount?: number;

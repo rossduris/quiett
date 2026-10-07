@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCameraPermissions } from 'expo-camera';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -32,6 +32,7 @@ import { ParallaxHills } from '@/components/onboarding/ParallaxHills';
 import { ProgressSegments } from '@/components/onboarding/ProgressSegments';
 import { SnoozeChart } from '@/components/onboarding/SnoozeChart';
 import { TrialPaywall } from '@/components/premium/TrialPaywall';
+import { REVENUECAT_ENABLED } from '@/lib/dev-flags';
 import {
   CheckRow,
   GoalChoices,
@@ -93,7 +94,7 @@ import { useReduceMotion } from '@/lib/use-reduce-motion';
 /**
  * First-run flow: hook → problem → how it works → goal → wake time → alarm tone → first
  * sound → camera (rationale + prompt) → alarms + optional evening reminder (rationale +
- * prompts) → 3-day free trial paywall → commitment, which starts the practice run or goes Home.
+ * prompts) → 3-day free trial paywall → commitment, which goes Home.
  * No sign-in step: sign-in is optional (Profile), and purchases work on the anonymous
  * RevenueCat customer. The paywall step is skipped for people who already have Premium and on
  * platforms without App Store purchases. Soft vs hard lives in PAYWALL_DISMISSABLE
@@ -178,11 +179,11 @@ export default function OnboardingScreen() {
   const [trackId, setTrackId] = useState<string>(FIRST_SOUNDS[0]?.id ?? '');
   const [toneId, setToneId] = useState(DEFAULT_ALARM_SOUND_ID);
   const [busy, setBusy] = useState(false);
-  const launchedPractice = useRef(false);
   const { playingId, toggle: togglePreview } = usePreviewPlayer();
   const { isPremium, unavailableReason } = usePremium();
   // Already Premium (restored / dev preview), or no App Store on this platform → no paywall step.
-  const skipTrial = isPremium || unavailableReason === 'unsupported-platform';
+  // RevenueCat off: never skip; the paywall shows its beta demo ("Enter beta").
+  const skipTrial = REVENUECAT_ENABLED && (isPremium || unavailableReason === 'unsupported-platform');
   const skipTrialRef = useRef(skipTrial);
   useEffect(() => {
     skipTrialRef.current = skipTrial;
@@ -241,15 +242,6 @@ export default function OnboardingScreen() {
   }, [step]);
   useEffect(() => () => stopPreview(), []);
 
-  // After the practice run (finished or ended early) we land back here → go Home.
-  useFocusEffect(
-    useCallback(() => {
-      if (!launchedPractice.current) return;
-      launchedPractice.current = false;
-      router.replace('/(tabs)');
-    }, [router]),
-  );
-
   const goTo = useCallback((index: number) => {
     setStepIndex(Math.max(0, Math.min(STEPS.length - 1, index)));
   }, []);
@@ -278,7 +270,7 @@ export default function OnboardingScreen() {
     return () => sub.remove();
   }, [stepIndex, back]);
 
-  const finish = async (practice: boolean) => {
+  const finish = async () => {
     if (busy) return;
     setBusy(true);
     try {
@@ -288,14 +280,7 @@ export default function OnboardingScreen() {
         void syncOsAlarm(await loadAlarmPrefs());
       }
       void syncEveningReminder();
-      if (practice) {
-        // Prime the camera here (quiet screen) rather than inside the practice alarm.
-        if (camera && !camera.granted && camera.canAskAgain) await requestCamera();
-        launchedPractice.current = true;
-        router.push('/test-morning');
-      } else {
-        router.replace('/(tabs)');
-      }
+      router.replace('/(tabs)');
     } finally {
       setBusy(false);
     }
@@ -680,7 +665,7 @@ export default function OnboardingScreen() {
         secondary = { label: 'Continue for now', onPress: () => void continueFromAlarm() };
       } else if (alarmPerm === 'unavailable') {
         note = {
-          text: 'This device can’t schedule Quiett’s alarm right now — it needs a recent iOS version with alarm support. You can still finish setup and practice.',
+          text: 'This device can’t schedule Quiett’s alarm right now — it needs a recent iOS version with alarm support. You can still finish setup.',
           tone: 'info',
         };
         primary = { label: 'Continue', onPress: () => void continueFromAlarm() };
@@ -706,14 +691,9 @@ export default function OnboardingScreen() {
             body={chosenGoal?.promise ?? 'Up, still, then two calm minutes. The day can wait that long.'}
             center
           />
-          <Text style={[styles.caption, styles.textCenter]}>
-            Try it once now: a 30-second practice with the alarm sound, so set a comfortable
-            volume. It won’t count toward your streak.
-          </Text>
         </View>
       );
-      primary = { label: 'Try a 30-second practice', onPress: () => void finish(true) };
-      secondary = { label: 'Maybe later', onPress: () => void finish(false) };
+      primary = { label: 'Go to Home', onPress: () => void finish() };
       break;
   }
 

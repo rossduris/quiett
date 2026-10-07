@@ -30,7 +30,8 @@ export const SIGN_IN_REQUIRED = false;
  * RevenueCat store keys are added.
  * false = RevenueCat is fully OFF: Purchases.configure and every react-native-purchases call are
  * skipped (src/lib/purchases.ts), and everyone is treated as Premium (premium-provider), so the
- * paywall/access gate never block, onboarding skips the trial step and alarms always schedule.
+ * access gate never blocks and alarms always schedule. The paywall (onboarding + /paywall) still
+ * shows its design with BETA_DEMO_PRICES (src/constants/paywall.ts) and an "Enter beta" button.
  */
 export const REVENUECAT_ENABLED = false;
 

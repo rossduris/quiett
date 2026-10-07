@@ -18,7 +18,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { frostPill, pillText } from '@/components/library/library-styles';
 import { PremiumHero } from '@/components/premium/PremiumHero';
-import { PAYWALL_ALLOW_CONTINUE_WHEN_PLANS_UNAVAILABLE, PAYWALL_DISMISSABLE } from '@/constants/paywall';
+import {
+  BETA_DEMO_PRICES,
+  BETA_DEMO_TRIAL,
+  PAYWALL_ALLOW_CONTINUE_WHEN_PLANS_UNAVAILABLE,
+  PAYWALL_DISMISSABLE,
+} from '@/constants/paywall';
+import { REVENUECAT_ENABLED } from '@/lib/dev-flags';
 import { PRIVACY_POLICY_URL, SUBSCRIPTION_TERMS, TERMS_OF_USE_URL } from '@/constants/legal';
 import { radii, spacing, typography } from '@/constants/theme';
 import { THEMES, type ColorTokens } from '@/constants/themes';
@@ -88,6 +94,9 @@ function benefitLines(): { icon: IoniconName; title: string; detail: string }[] 
 }
 
 const ANNUAL_TAG = 'Best value';
+/** RevenueCat off: show the design with demo prices and an "Enter beta" CTA (no purchases). */
+const BETA_MODE = !REVENUECAT_ENABLED;
+const BETA_CAPTION = 'Free during beta. You won\u2019t be charged.';
 
 /** Sound covers fanned out in the hero (left to right; Soft Pad, the default, in the middle). */
 const HERO_TRACK_IDS = ['music:lantern-glow', 'ambient:calm_waves', 'music:soft-pad', 'ambient:campfire', 'music:moonset'] as const;
@@ -147,12 +156,13 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
   const [busy, setBusy] = useState<'purchase' | 'restore' | 'retry' | null>(null);
   const [justUnlocked, setJustUnlocked] = useState(false);
   const benefits = useMemo(() => benefitLines(), []);
+  const [betaPlanId, setBetaPlanId] = useState<string>(BETA_DEMO_PRICES[0].id);
 
   const entitled = hasPremiumEntitlement(customerInfo);
-  const showActive = justUnlocked || entitled || (isPremium && devForcePremium);
+  const showActive = !BETA_MODE && (justUnlocked || entitled || (isPremium && devForcePremium));
   const plansReady = available && packages.length > 0;
   const showLoading = !plansReady && loading && !offeringsError;
-  const showUnavailable = !showActive && !plansReady && !showLoading;
+  const showUnavailable = !BETA_MODE && !showActive && !plansReady && !showLoading;
 
   const trialFor = (pkg: (typeof packages)[number]) =>
     freeTrialLength(pkg, introEligibility[pkg.product.identifier]);
@@ -257,14 +267,18 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
     return compact ? 0 : HERO_MIN_H;
   }, [viewportH, topH, plansH, heroW, compact]);
 
-  const headline = showActive
+  const headline = BETA_MODE
+    ? `Try Quiett free for ${BETA_DEMO_TRIAL}`
+    : showActive
     ? 'You\u2019re all set with Premium'
     : selectedTrial
       ? `Try Quiett free for ${selectedTrial}`
       : 'Unlock all of Quiett';
 
   let cta: { label: string; onPress: () => void; disabled?: boolean } | null;
-  if (showActive) {
+  if (BETA_MODE) {
+    cta = { label: 'Enter beta', onPress: () => { hapticSuccess(); onContinue(); } };
+  } else if (showActive) {
     cta = { label: inFlow ? 'Continue' : 'Done', onPress: onContinue };
   } else if (plansReady) {
     cta = {
@@ -339,7 +353,53 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
         </View>
 
         <View onLayout={onPlans}>
-          {showActive ? (
+          {BETA_MODE ? (
+            <Animated.View entering={enter(2)} style={styles.plans} accessibilityRole="radiogroup">
+              {BETA_DEMO_PRICES.map((plan) => {
+                const isSelected = betaPlanId === plan.id;
+                const sub = [`${trialAdjective(BETA_DEMO_TRIAL)} free trial`, plan.perMonth].filter(Boolean).join(' \u00b7 ');
+                const tag = plan.best ? ANNUAL_TAG : null;
+                return (
+                  <Pressable
+                    key={plan.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={[plan.title, tag, `${plan.price} per ${plan.per}`, sub].filter(Boolean).join(', ')}
+                    onPress={() => {
+                      if (!isSelected) hapticSelect();
+                      setBetaPlanId(plan.id);
+                    }}
+                    style={({ pressed }) => [styles.planCard, isSelected && styles.planCardSelected, pressed && styles.pressed]}
+                  >
+                    <View style={[styles.radio, isSelected && styles.radioOn]}>
+                      {isSelected ? (
+                        <Animated.View entering={reduceMotion ? undefined : ZoomIn.duration(180)} style={styles.radioDot} />
+                      ) : null}
+                    </View>
+                    <View style={styles.planText}>
+                      <View style={styles.planTitleRow}>
+                        <Text style={styles.planTitle} numberOfLines={1}>
+                          {plan.title}
+                        </Text>
+                        {tag ? (
+                          <View style={styles.tag}>
+                            <Text style={styles.tagText}>{tag}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.planSub}>{sub}</Text>
+                    </View>
+                    <View style={styles.planPriceCol}>
+                      <Text style={styles.planPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {plan.price}
+                      </Text>
+                      <Text style={styles.planPer}>per {plan.per}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Animated.View>
+          ) : showActive ? (
             <View style={styles.stateCard}>
               <Ionicons name="checkmark-circle" size={28} color={colors.calm} />
               <Text style={styles.stateTitle}>
@@ -467,24 +527,31 @@ export function TrialPaywall({ context, onContinue, footerExtra }: Props) {
         ]}
       >
         {cta ? <PrimaryButton label={cta.label} onPress={cta.onPress} disabled={cta.disabled} /> : null}
+        {BETA_MODE ? (
+          <Text style={styles.disclosure}>{BETA_CAPTION}</Text>
+        ) : null}
         {plansReady && selected && !showActive ? (
           <Text style={styles.disclosure} accessibilityLiveRegion="polite">
             {trialDisclosure(selected, selectedTrial)}
           </Text>
         ) : null}
         <View style={styles.linksRow}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => void onRestore()}
-            disabled={!available || !!busy}
-            hitSlop={10}
-            style={styles.linkHit}
-          >
-            <Text style={[styles.link, (!available || !!busy) && styles.linkDisabled]}>
-              {busy === 'restore' ? 'Restoring\u2026' : 'Restore purchases'}
-            </Text>
-          </Pressable>
-          <Text style={styles.linkDot}>{'\u00b7'}</Text>
+          {BETA_MODE ? null : (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void onRestore()}
+                disabled={!available || !!busy}
+                hitSlop={10}
+                style={styles.linkHit}
+              >
+                <Text style={[styles.link, (!available || !!busy) && styles.linkDisabled]}>
+                  {busy === 'restore' ? 'Restoring\u2026' : 'Restore purchases'}
+                </Text>
+              </Pressable>
+              <Text style={styles.linkDot}>{'\u00b7'}</Text>
+            </>
+          )}
           <Pressable accessibilityRole="link" onPress={() => openUrl(TERMS_OF_USE_URL)} hitSlop={10} style={styles.linkHit}>
             <Text style={styles.link}>Terms</Text>
           </Pressable>
