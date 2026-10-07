@@ -23,12 +23,15 @@ import {
   saveNativeAlarmId,
   loadAlarmSoundId,
   loadAlarmPrefs,
+  loadAlarmPrefsSavedAt,
+  loadCompletedDays,
+  dayKey,
   loadScheduledAlarmSound,
   saveAlarmPrefs,
   saveScheduledAlarmSound,
   type AlarmPrefs,
 } from '@/lib/storage';
-import { isWithinMorningWakeGrace, MORNING_MISS_GRACE_MS } from '@/lib/home-status';
+import { isWithinMorningLateStart, MORNING_LATE_START_MS } from '@/lib/home-status';
 import {
   alarmKitSoundName,
   clearAlarmSoundUriCache,
@@ -194,10 +197,37 @@ function logWakeRoute(decision: string, detail?: Record<string, unknown>): void 
   else console.log(`[quiett wake] ${decision}`);
 }
 
-function isTimestampFresh(ts: number | undefined | null, maxAgeMs = MORNING_MISS_GRACE_MS): boolean {
+/**
+ * Fresh = within the late-start window. Tolerant: a stamp in seconds is upscaled to ms, and
+ * up to 5 min of future skew (clock change / native vs JS clock) still counts as fresh.
+ * Resolved mornings are guarded separately (isWakeResolvedToday), so a wider window can't
+ * reopen a morning that was ended early or finished.
+ */
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+function isTimestampFresh(ts: number | undefined | null, maxAgeMs = MORNING_LATE_START_MS): boolean {
   if (ts == null || !Number.isFinite(ts) || ts <= 0) return false;
-  const age = Date.now() - ts;
-  return age >= 0 && age < maxAgeMs;
+  const ms = ts < 1e12 ? ts * 1000 : ts;
+  const age = Date.now() - ms;
+  return age >= -CLOCK_SKEW_MS && age < maxAgeMs;
+}
+
+/** Today's ring passed within the late-start window, was armed, and isn't resolved/completed. */
+async function isUnresolvedScheduledMorning(prefs?: AlarmPrefs | null): Promise<boolean> {
+  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
+  if (!p) return false;
+  const savedAt = await loadAlarmPrefsSavedAt().catch(() => null);
+  if (!isWithinMorningLateStart(p, new Date(), savedAt)) return false;
+  if (await isWakeResolvedToday()) return false;
+  const days = await loadCompletedDays().catch((): string[] => []);
+  return !days.includes(dayKey(0));
+}
+
+/** Inside the late-start window (armed ring); used for legacy stamp-less signals. */
+async function inLateStartWindow(prefs?: AlarmPrefs | null): Promise<boolean> {
+  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
+  if (!p) return false;
+  const savedAt = await loadAlarmPrefsSavedAt().catch(() => null);
+  return isWithinMorningLateStart(p, new Date(), savedAt);
 }
 
 /**
@@ -214,8 +244,7 @@ async function freshStickyReason(prefs?: AlarmPrefs | null): Promise<string | nu
     return null;
   }
   // Legacy sticky without a stamp: honor only inside today's post-ring grace.
-  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
-  if (p && isWithinMorningWakeGrace(p)) return meta.reason;
+  if (await inLateStartWindow(prefs)) return meta.reason;
   await clearPendingSitWake();
   logWakeRoute('clear-legacy-sticky', { reason: meta.reason });
   return null;
@@ -258,8 +287,7 @@ async function evaluateFreshOsWake(
 ): Promise<{ live: boolean; reason: string | null; alarmId: string | null; signals: NativeWakeSignals }> {
   const signals = await readNativeWakeSignals();
   const { handoff, context, actions } = signals;
-  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
-  const inMorningGrace = Boolean(p && isWithinMorningWakeGrace(p));
+  const inMorningGrace = await inLateStartWindow(prefs);
 
   if (context?.state === 'alerting') {
     return {
@@ -343,8 +371,7 @@ export async function isLiveAlarmWakePending(prefs?: AlarmPrefs | null): Promise
   if (await freshStickyReason(prefs)) return true;
   const os = await evaluateFreshOsWake(prefs);
   if (os.live) return true;
-  const p = prefs ?? (await loadAlarmPrefs().catch(() => null));
-  return Boolean(p && isWithinMorningWakeGrace(p));
+  return isUnresolvedScheduledMorning(prefs);
 }
 
 /** Cancel any stored native alarm. */
@@ -635,6 +662,14 @@ export async function shouldForceSitSession(): Promise<boolean> {
       await markPendingSitWake(os.reason || 'os');
     }
     logWakeRoute('force-session', { reason: os.reason || 'os' });
+    return true;
+  }
+
+  // Opened from the icon (or any way) after the ring with no handoff recorded: the morning is
+  // still unresolved and inside the late-start window, so start the session, never "missed".
+  if (await isUnresolvedScheduledMorning(prefs)) {
+    await markPendingSitWake('late-open');
+    logWakeRoute('force-session', { reason: 'late-open' });
     return true;
   }
 

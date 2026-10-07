@@ -94,6 +94,12 @@ export function QuiettPoseCameraView({
         bufferWidth: frame?.bufferWidth,
         bufferHeight: frame?.bufferHeight,
         targetFps: frame?.targetFps,
+        // Auto-exposure metadata (newer native builds); was being dropped here.
+        ...({
+          iso: (frame as { iso?: number })?.iso,
+          maxIso: (frame as { maxIso?: number })?.maxIso,
+          exposureDurationMs: (frame as { exposureDurationMs?: number })?.exposureDurationMs,
+        } as Record<string, unknown>),
       };
       notifyLivePoseFrame(normalized);
       onPoseFrame?.(normalized);

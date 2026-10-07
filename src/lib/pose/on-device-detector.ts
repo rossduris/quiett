@@ -211,6 +211,15 @@ function landmarksFromNative(raw: NativePoseResult): PoseLandmarks {
 
 const BODY_STILL_WINDOW_MS = 1000;
 
+/**
+ * Auto-exposure ramps for ~0.5–1s after the camera starts, so the first frames read dark
+ * even in a lit room. Luma in this window is not fed to the low-light gate, otherwise the
+ * gate latches "dim" and needs another debounce above the exit threshold to clear.
+ */
+const LOW_LIGHT_STARTUP_GRACE_MS = 1000;
+/** Frames arriving but the published status stuck (not holding) this long → re-evaluate from scratch. */
+const STALL_RESET_MS = 1500;
+
 type BodyStillSample = { t: number; sw: number; pts: { x: number; y: number }[] };
 
 /** Median joint std-dev in shoulder-widths. Warmup (under 4 samples) is undefined, not a fail. */
@@ -294,6 +303,17 @@ export function createOnDevicePoseDetector(
   let lastFaceLooking = false;
   let lastBrightEnough = true;
   let lastConf = 0;
+  // Startup + stall bookkeeping (live frames).
+  let startedAt = 0;
+  let frameCount = 0;
+  let firstHoldingAt: number | null = null;
+  let lastPublished: PoseStatus | null = null;
+  let lastPublishedChangeAt = 0;
+  let lastFrameLogAt = 0;
+  let stallResets = 0;
+  const inStartupGrace = () => Date.now() - startedAt < LOW_LIGHT_STARTUP_GRACE_MS;
+  const pushLuma = (luma: number | undefined | null) =>
+    inStartupGrace() ? lowLight.isDim() : lowLight.push(luma);
   const armTracker = createArmMotionTracker();
   const lowLight = createLowLightGate();
   const uprightMonitor = createProppedMonitor();
@@ -312,6 +332,23 @@ export function createOnDevicePoseDetector(
   let lastDiagnostics: PoseDiagnostics | undefined;
 
   const emit = (status: PoseStatus, confidence: number, diagnostics?: PoseDiagnostics) => {
+    const now = Date.now();
+    if (status !== lastPublished) {
+      if (__DEV__) {
+        console.log(
+          `[quiett pose] status ${lastPublished ?? '-'} -> ${status} raw=${diagnostics?.rawStatus ?? '-'}` +
+            ` frames=${frameCount} t=+${startedAt ? now - startedAt : 0}ms`,
+        );
+      }
+      lastPublished = status;
+      lastPublishedChangeAt = now;
+    }
+    if (status === 'holding' && firstHoldingAt == null && startedAt) {
+      firstHoldingAt = now;
+      if (__DEV__) {
+        console.log(`[quiett pose] first holding after ${now - startedAt}ms (${frameCount} frames)`);
+      }
+    }
     lastStatus = status;
     lastConfidence = confidence;
     if (diagnostics) lastDiagnostics = diagnostics;
@@ -427,7 +464,7 @@ export function createOnDevicePoseDetector(
     const lighting = byName('lighting');
     const personSeen = faceSeen || det.personFound;
     const frameLuma = landmarks.brightness ?? lighting?.value;
-    const dim = lowLight.push(frameLuma);
+    const dim = pushLuma(frameLuma);
     logLight(landmarks, dim);
     // "Can't see you": no one visible and a near-black frame. Separate from low light.
     let cantSee = false;
@@ -518,7 +555,7 @@ export function createOnDevicePoseDetector(
     }
     armTracker.reset();
     // Track light on every real frame so the dim state is current once the phone is upright.
-    const dim = landmarks.available ? lowLight.push(landmarks.brightness) : lowLight.isDim();
+    const dim = landmarks.available ? pushLuma(landmarks.brightness) : lowLight.isDim();
     if (landmarks.available) logLight(landmarks, dim);
 
     if (!phonePropped) {
@@ -690,6 +727,40 @@ export function createOnDevicePoseDetector(
     }
   };
 
+  /**
+   * Safety net: frames keep arriving but the published status has not moved for
+   * STALL_RESET_MS while not holding. Drop every buffer (stillness history, arm
+   * tracker, hysteresis streaks) so the next frame is judged from scratch. The
+   * low-light gate keeps its state so the guidance line stays steady.
+   */
+  const maybeResetStall = () => {
+    const now = Date.now();
+    if (lastPublished === 'holding' || lastPublished === 'not_upright') return;
+    if (!lastPublishedChangeAt || now - lastPublishedChangeAt < STALL_RESET_MS) return;
+    motion = [];
+    bodyStill = [];
+    armTracker.reset();
+    hysteresis.reset();
+    stallResets += 1;
+    lastPublishedChangeAt = now;
+    if (__DEV__) {
+      console.log(
+        `[quiett pose] stall reset #${stallResets} status=${lastPublished} frames=${frameCount}`,
+      );
+    }
+  };
+
+  const logFrames = () => {
+    if (!__DEV__) return;
+    const now = Date.now();
+    if (now - lastFrameLogAt < 2000) return;
+    lastFrameLogAt = now;
+    console.log(
+      `[quiett pose] frames=${frameCount} status=${lastPublished ?? '-'} raw=${lastDiagnostics?.rawStatus ?? '-'}` +
+        ` firstHolding=${firstHoldingAt != null ? `${firstHoldingAt - startedAt}ms` : 'none'} stallResets=${stallResets}`,
+    );
+  };
+
   const onLiveFrame: PoseFrameListener = (frame) => {
     if (stopped) return;
     if (simulated != null) {
@@ -700,7 +771,10 @@ export function createOnDevicePoseDetector(
       emit('absent', 0);
       return;
     }
+    frameCount += 1;
+    maybeResetStall();
     processLandmarks(landmarksFromNative(frame));
+    logFrames();
   };
 
   return {
@@ -710,6 +784,12 @@ export function createOnDevicePoseDetector(
     start() {
       if (!stopped && (timer || unsubLive)) return;
       stopped = false;
+      startedAt = Date.now();
+      frameCount = 0;
+      firstHoldingAt = null;
+      lastPublished = null;
+      lastPublishedChangeAt = startedAt;
+      stallResets = 0;
       hysteresis.reset();
       motion = [];
       bodyStill = [];

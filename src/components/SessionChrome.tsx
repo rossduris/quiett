@@ -63,8 +63,6 @@ const RING_STROKE = 8;
 const COPY_H = 132;
 /** Rounded rect, not a circle. A face-sized circle made people lean in. */
 const FRAME_RADIUS = 28;
-/** Hold progress on the camera frame. Was 2px and easy to miss. */
-const HOLD_BAR = 6;
 
 /**
  * Session screen, two modes:
@@ -205,7 +203,6 @@ export function SessionChrome({
 
   const a11yLabel = isMeditate ? `${timerLabel} remaining` : isDetect ? 'Settling in' : 'Camera view';
   const frameBottom = bottomInset + copyBlock + frameGap;
-  const barPct = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%` as const;
 
   return (
     <View
@@ -222,11 +219,6 @@ export function SessionChrome({
         {camera}
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgTop }, arriveVeil]} />
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.sessionBgMid }, veilStyle]} />
-        {isDetect || paused ? (
-          <View style={styles.track}>
-            <View style={[styles.bar, { width: barPct, backgroundColor: colors.sessionGlow }]} />
-          </View>
-        ) : null}
       </Animated.View>
       <Animated.View
         pointerEvents="none"
@@ -322,17 +314,6 @@ function createStyles(colors: ColorTokens) {
       borderRadius: FRAME_RADIUS,
       borderWidth: 1.5,
     },
-    track: {
-      position: 'absolute',
-      left: spacing.lg,
-      right: spacing.lg,
-      bottom: spacing.md,
-      height: HOLD_BAR,
-      borderRadius: HOLD_BAR / 2,
-      backgroundColor: colors.sessionChipBg,
-      overflow: 'hidden',
-    },
-    bar: { height: HOLD_BAR, borderRadius: HOLD_BAR / 2 },
     medallionLayer: {
       ...StyleSheet.absoluteFill,
       alignItems: 'center',

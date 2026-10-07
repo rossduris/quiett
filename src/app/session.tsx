@@ -79,6 +79,8 @@ export default function SessionScreen() {
   const [sitMinutes, setSitMinutes] = useState<SitMinutes>(DEFAULT_SIT_MINUTES);
   const [durationReady, setDurationReady] = useState(false);
   const [pose, setPose] = useState<PoseStatus>('absent');
+  /** Bumped on each return to foreground so the pose → phase sync re-runs. */
+  const [appActiveTick, setAppActiveTick] = useState(0);
   const [confirmLeft, setConfirmLeft] = useState(CONFIRM_HOLD_MS);
   const [sitLeft, setSitLeft] = useState(() => sitDurationMs(DEFAULT_SIT_MINUTES));
   const durationMs = sitDurationMs(sitMinutes);
@@ -211,6 +213,7 @@ export default function SessionScreen() {
       if (state === 'active') {
         clearInactiveArm();
         appActive.current = true;
+        setAppActiveTick((n) => n + 1);
         // Back in /session — kill OS nag; resume the right in-app bed by phase.
         void silenceOsRingForSession().then(() => {
           if (phaseRef.current === 'meditating') {
@@ -311,13 +314,20 @@ export default function SessionScreen() {
     };
   }, [detector, permission?.granted, cameraReady]);
 
+  // Level-triggered pose → phase sync. This used to run only when `pose` CHANGED, so a
+  // "holding" that arrived while the app was still inactive (alarm handoff) was dropped
+  // and never re-sent: a perfectly still user stayed on "alarming" until they moved
+  // (pose flipped away and back). Now it re-syncs whenever pose, phase, or app activity changes.
   useEffect(() => {
     // Ignore pose loss while backgrounded/inactive — camera freeze is not a real break,
     // and it was aborting meditating before swipe-away could re-arm.
     if (!appActive.current) return;
-    if (pose === 'holding') dispatch({ type: 'POSE_HOLDING' });
-    else dispatch({ type: 'POSE_BROKEN' });
-  }, [pose]);
+    if (pose === 'holding') {
+      if (phase === 'alarming') dispatch({ type: 'POSE_HOLDING' });
+    } else if (phase === 'detecting' || phase === 'meditating') {
+      dispatch({ type: 'POSE_BROKEN' });
+    }
+  }, [pose, phase, appActiveTick]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;

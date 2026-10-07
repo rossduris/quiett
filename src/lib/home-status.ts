@@ -76,8 +76,32 @@ export function relativeDayLabel(date: Date, now: Date = new Date()): string {
   return date.toLocaleDateString([], { weekday: 'short' });
 }
 
-/** Post-ring window before Home may show "Missed this morning" (~18 minutes). */
+/** Settle-in window right after the ring (~18 minutes). Kept for callers that want "just rang". */
 export const MORNING_MISS_GRACE_MS = 18 * 60 * 1000;
+
+/**
+ * Late-start window: an unresolved scheduled morning still opens /session (instead of showing
+ * "Missed this morning") when the app is opened this long after the ring, however it was
+ * opened (alarm Stop, notification, or app icon). Judgment call — tune here.
+ */
+export const MORNING_LATE_START_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * True when today's scheduled ring passed less than MORNING_LATE_START_MS ago and that ring
+ * was armed (alarm saved before it was due). Does not check resolved/completed — callers do.
+ */
+export function isWithinMorningLateStart(
+  alarm: AlarmPrefs,
+  now: Date = new Date(),
+  savedAt: number | null = null,
+): boolean {
+  if (!alarm.enabled || alarm.weekdays.length === 0) return false;
+  if (!alarm.weekdays.includes(isoWeekday(now))) return false;
+  const todayRing = parseAlarmToday(alarm.time, now);
+  if (savedAt != null && savedAt > todayRing.getTime()) return false;
+  const elapsed = now.getTime() - todayRing.getTime();
+  return elapsed >= 0 && elapsed < MORNING_LATE_START_MS;
+}
 
 /** True from today's scheduled ring until grace elapses (morning still locked). */
 export function isWithinMorningWakeGrace(alarm: AlarmPrefs, now: Date = new Date()): boolean {
@@ -118,7 +142,8 @@ export function getTodayStatusChip(
   const todayRing = parseAlarmToday(alarm.time, now);
   const ringWasArmed = savedAt == null || savedAt <= todayRing.getTime();
   if (todayScheduled && now.getTime() >= todayRing.getTime() && ringWasArmed) {
-    if (liveWakePending || isWithinMorningWakeGrace(alarm, now)) {
+    // Never "missed" while a wake is unresolved or a late start is still allowed.
+    if (liveWakePending || isWithinMorningLateStart(alarm, now, savedAt)) {
       return { status: 'waiting_settle', label: 'Waiting for you to settle in' };
     }
     return { status: 'missed_morning', label: 'Missed this morning' };
